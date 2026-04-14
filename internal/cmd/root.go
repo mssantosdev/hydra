@@ -13,14 +13,14 @@ var (
 	cfg     *config.Config
 	rootCmd = &cobra.Command{
 		Use:   "hydra",
-		Short: "🐍 Hydra - Git worktree manager",
+		Short: "Hydra - Git worktree manager",
 		Long: `Hydra is a beautiful CLI tool for managing Git worktrees.
 
 It helps you organize multiple worktrees across different repositories
 and ecosystems, making it easy to work on multiple branches simultaneously.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Skip config loading for init, clone and help commands
-			if cmd.Name() == "init" || cmd.Name() == "clone" || cmd.Name() == "help" {
+			// Skip config loading for commands that don't require it
+			if cmd.Name() == "init" || cmd.Name() == "clone" || cmd.Name() == "help" || cmd.Name() == "glossary" {
 				return nil
 			}
 
