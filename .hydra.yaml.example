@@ -1,0 +1,36 @@
+# Hydra Configuration Example
+# 
+# This is an example configuration file showing the structure.
+# Copy this to your project root as .hydra.yaml and customize it.
+
+version: "1.0"
+
+paths:
+  # Directory containing bare Git repositories (relative to this config file)
+  bare_dir: ".bare"
+  
+  # Directory where worktrees are organized (relative to this config file)
+  worktree_dir: "."
+
+# Ecosystems organize your repositories into logical groups
+# Each ecosystem can contain multiple repositories with aliases
+ecosystems:
+  # Example: Backend services
+  backend:
+    api: my-project-api
+    worker: my-project-worker
+  
+  # Example: Frontend applications  
+  frontend:
+    web: my-project-web
+    admin: my-project-admin
+  
+  # Example: Infrastructure/DevOps
+  infra:
+    terraform: infrastructure-as-code
+    docker: container-configs
+
+# Optional default settings
+defaults:
+  # Default branch to create new worktrees from
+  base_branch: "main"
