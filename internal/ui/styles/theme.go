@@ -5,48 +5,161 @@ import (
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mssantosdev/hydra/internal/config/global"
+	"github.com/mssantosdev/hydra/internal/ui/themes"
 	"golang.org/x/term"
 )
 
-// Tokyo Night theme colors - exported for use across the app
+// Theme colors - these will be populated from the selected theme
 var (
 	// Backgrounds
-	BgDark   = lipgloss.Color("#1a1b26")
-	BgDarker = lipgloss.Color("#16161e")
-	BgLight  = lipgloss.Color("#24283b")
+	BgDark   lipgloss.Color
+	BgDarker lipgloss.Color
+	BgLight  lipgloss.Color
 
 	// Foregrounds
-	Fg        = lipgloss.Color("#a9b1d6")
-	FgBright  = lipgloss.Color("#c0caf5")
-	FgComment = lipgloss.Color("#565f89")
+	Fg        lipgloss.Color
+	FgBright  lipgloss.Color
+	FgComment lipgloss.Color
 
 	// Accents
-	Blue   = lipgloss.Color("#7aa2f7")
-	Cyan   = lipgloss.Color("#7dcfff")
-	Green  = lipgloss.Color("#9ece6a")
-	Orange = lipgloss.Color("#ff9e64")
-	Pink   = lipgloss.Color("#bb9af7")
-	Purple = lipgloss.Color("#9d7cd8")
-	Red    = lipgloss.Color("#f7768e")
-	Yellow = lipgloss.Color("#e0af68")
+	Blue   lipgloss.Color
+	Cyan   lipgloss.Color
+	Green  lipgloss.Color
+	Orange lipgloss.Color
+	Pink   lipgloss.Color
+	Purple lipgloss.Color
+	Red    lipgloss.Color
+	Yellow lipgloss.Color
 )
 
-// Common styles used across the application
+// Styles - will be initialized with theme colors
 var (
-	// App Header - Centered and prominent
-	AppHeader = lipgloss.NewStyle().
-			Background(Blue).
-			Foreground(BgDark).
-			Bold(true).
-			Padding(0, 3)
+	// App Header
+	AppHeader lipgloss.Style
 
-	// Centered header for better visual hierarchy
+	// Centered header
+	CenteredHeader lipgloss.Style
+
+	// Title styles
+	Title    lipgloss.Style
+	Subtitle lipgloss.Style
+
+	// Status badges
+	CleanBadge    lipgloss.Style
+	ModifiedBadge lipgloss.Style
+	ErrorBadge    lipgloss.Style
+	WarningBadge  lipgloss.Style
+
+	// Ecosystem header
+	EcosystemHeader lipgloss.Style
+
+	// Text styles
+	Branch lipgloss.Style
+	Dimmed lipgloss.Style
+
+	// Labels
+	Label lipgloss.Style
+
+	// Help text
+	HelpKey  lipgloss.Style
+	HelpDesc lipgloss.Style
+
+	// Error/Success
+	Error   lipgloss.Style
+	Success lipgloss.Style
+
+	// Box/Panel
+	Box lipgloss.Style
+
+	// Stats
+	StatBox    lipgloss.Style
+	TotalBadge lipgloss.Style
+
+	// Prompts
+	Prompt lipgloss.Style
+
+	// Table styles
+	TableHeader lipgloss.Style
+	TableCell   lipgloss.Style
+	TableBorder lipgloss.Style
+
+	// Compact mode
+	Compact lipgloss.Style
+)
+
+// init loads the global config and applies the selected theme
+func init() {
+	loadTheme()
+}
+
+// loadTheme reads the global config and applies the selected theme
+func loadTheme() {
+	// Load global config (ignore errors, use defaults)
+	cfg, err := global.Load()
+	if err != nil {
+		cfg = global.DefaultGlobalConfig()
+	}
+
+	// Get theme
+	theme := themes.Get(cfg.Theme.Name)
+
+	// Apply theme colors
+	applyTheme(theme)
+}
+
+// applyTheme sets all color variables and styles from a theme
+func applyTheme(theme themes.Theme) {
+	// Set colors from theme
+	BgDark = theme.Background
+	BgDarker = darken(theme.Background)
+	BgLight = lighten(theme.Background)
+	Fg = theme.Foreground
+	FgBright = theme.Highlight
+	FgComment = theme.Muted
+	Blue = theme.Primary
+	Cyan = theme.Secondary
+	Green = theme.Success
+	Orange = theme.Warning
+	Pink = theme.Highlight
+	Purple = theme.Secondary
+	Red = theme.Error
+	Yellow = theme.Warning
+
+	// Initialize styles with theme colors
+	initStyles()
+}
+
+// darken returns a darker version of a color (simple approximation)
+func darken(c lipgloss.Color) lipgloss.Color {
+	// For now, return the same color
+	// In a full implementation, this would darken the color
+	return c
+}
+
+// lighten returns a lighter version of a color (simple approximation)
+func lighten(c lipgloss.Color) lipgloss.Color {
+	// For now, return the same color
+	// In a full implementation, this would lighten the color
+	return c
+}
+
+// initStyles initializes all styles with current theme colors
+func initStyles() {
+	// App Header
+	AppHeader = lipgloss.NewStyle().
+		Background(Blue).
+		Foreground(BgDark).
+		Bold(true).
+		Padding(0, 3)
+
+	// Centered header
 	CenteredHeader = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(Blue).
-			Background(BgDarker).
-			Padding(1, 3).
-			Align(lipgloss.Center)
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(Blue).
+		Background(BgDarker).
+		Padding(1, 3).
+		Align(lipgloss.Center)
 
 	// Title styles
 	Title = lipgloss.NewStyle().
@@ -56,42 +169,42 @@ var (
 		MarginBottom(1)
 
 	Subtitle = lipgloss.NewStyle().
-			Foreground(FgComment).
-			MarginBottom(0)
+		Foreground(FgComment).
+		MarginBottom(0)
 
 	// Status badges
 	CleanBadge = lipgloss.NewStyle().
-			Background(Green).
-			Foreground(BgDark).
-			Bold(true).
-			Padding(0, 1)
+		Background(Green).
+		Foreground(BgDark).
+		Bold(true).
+		Padding(0, 1)
 
 	ModifiedBadge = lipgloss.NewStyle().
-			Background(Yellow).
-			Foreground(BgDark).
-			Bold(true).
-			Padding(0, 1)
+		Background(Yellow).
+		Foreground(BgDark).
+		Bold(true).
+		Padding(0, 1)
 
 	ErrorBadge = lipgloss.NewStyle().
-			Background(Red).
-			Foreground(BgDark).
-			Bold(true).
-			Padding(0, 1)
+		Background(Red).
+		Foreground(BgDark).
+		Bold(true).
+		Padding(0, 1)
 
 	WarningBadge = lipgloss.NewStyle().
-			Background(Orange).
-			Foreground(BgDark).
-			Bold(true).
-			Padding(0, 1)
+		Background(Orange).
+		Foreground(BgDark).
+		Bold(true).
+		Padding(0, 1)
 
 	// Ecosystem header
 	EcosystemHeader = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(Cyan).
-			BorderStyle(lipgloss.ThickBorder()).
-			BorderBottom(true).
-			BorderForeground(Blue).
-			PaddingBottom(0)
+		Bold(true).
+		Foreground(Cyan).
+		BorderStyle(lipgloss.ThickBorder()).
+		BorderBottom(true).
+		BorderForeground(Blue).
+		PaddingBottom(0)
 
 	// Text styles
 	Branch = lipgloss.NewStyle().
@@ -111,7 +224,7 @@ var (
 		Foreground(Pink)
 
 	HelpDesc = lipgloss.NewStyle().
-			Foreground(FgComment)
+		Foreground(FgComment)
 
 	// Error/Success
 	Error = lipgloss.NewStyle().
@@ -136,32 +249,37 @@ var (
 		Padding(0, 1)
 
 	TotalBadge = lipgloss.NewStyle().
-			Background(Blue).
-			Foreground(BgDark).
-			Bold(true).
-			Padding(0, 1)
+		Background(Blue).
+		Foreground(BgDark).
+		Bold(true).
+		Padding(0, 1)
 
 	// Prompts
 	Prompt = lipgloss.NewStyle().
 		Foreground(Pink)
 
-	// Table styles for consistent column widths
+	// Table styles
 	TableHeader = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(Blue).
-			Underline(true)
+		Bold(true).
+		Foreground(Blue).
+		Underline(true)
 
 	TableCell = lipgloss.NewStyle().
-			Foreground(Fg)
+		Foreground(Fg)
 
 	TableBorder = lipgloss.NewStyle().
-			Foreground(BgLight)
+		Foreground(BgLight)
 
-	// Compact mode - tighter spacing
+	// Compact mode
 	Compact = lipgloss.NewStyle().
 		MarginTop(0).
 		MarginBottom(0)
-)
+}
+
+// ReloadTheme reloads the theme from config (call after changing theme)
+func ReloadTheme() {
+	loadTheme()
+}
 
 // StatusBadge returns the appropriate badge for a status (fixed width)
 func StatusBadge(isClean bool, count int) string {
