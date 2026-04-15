@@ -65,7 +65,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		os.Exit(1)
+		return fmt.Errorf("shell helper not initialized")
 	}
 
 	wd, err := os.Getwd()
@@ -108,7 +108,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			} else {
 				return fmt.Errorf("worktree not found: %s", args[0])
 			}
-			os.Exit(1)
+			return fmt.Errorf("shell helper not initialized")
 		}
 	}
 
