@@ -1,0 +1,42 @@
+# Portuguese (Brazil) translations
+app.name: "Hydra"
+app.description: "Gerenciador de worktrees Git"
+
+# Commands
+cmd.clone: "Clonar novo repositório e configurar worktrees"
+cmd.sync: "Puxar últimas alterações para worktrees"
+cmd.list: "Listar todos os worktrees"
+cmd.status: "Mostrar visão geral dos worktrees"
+cmd.checkout: "Criar ou trocar para um worktree"
+cmd.init: "Inicializar configuração do Hydra"
+cmd.glossary: "Mostrar glossário de termos do Hydra"
+cmd.config: "Gerenciar configuração global"
+
+# Common terms
+term.group: "Grupo"
+term.alias: "Alias"
+term.worktree: "Worktree"
+term.branch: "Branch"
+term.repository: "Repositório"
+term.bare_repo: "Repositório Bare"
+term.project: "Projeto"
+
+# Status
+status.clean: "limpo"
+status.dirty: "modificado"
+status.ahead: "à frente"
+status.behind: "atrás"
+
+# Messages
+msg.no_config: "Arquivo .hydra.yaml não encontrado"
+msg.no_worktrees: "Nenhum worktree encontrado"
+msg.clone_success: "Repositório clonado com sucesso"
+msg.sync_complete: "Sincronização completa"
+msg.select_branches: "Selecionar branches para criar"
+msg.select_group: "Selecionar grupo"
+
+# Errors
+err.no_config: "Arquivo .hydra.yaml não encontrado. Execute 'hydra init' primeiro"
+err.clone_failed: "Falha ao clonar repositório"
+err.sync_failed: "Falha ao sincronizar worktree"
+err.unknown_alias: "Alias desconhecido"

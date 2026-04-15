@@ -1,0 +1,42 @@
+# English (US) translations
+app.name: "Hydra"
+app.description: "Git worktree manager"
+
+# Commands
+cmd.clone: "Clone a new repository and set up worktrees"
+cmd.sync: "Pull latest changes for worktrees"
+cmd.list: "List all worktrees"
+cmd.status: "Show worktree status overview"
+cmd.checkout: "Create or switch to a worktree"
+cmd.init: "Initialize Hydra configuration"
+cmd.glossary: "Show glossary of Hydra terms"
+cmd.config: "Manage global configuration"
+
+# Common terms
+term.group: "Group"
+term.alias: "Alias"
+term.worktree: "Worktree"
+term.branch: "Branch"
+term.repository: "Repository"
+term.bare_repo: "Bare Repository"
+term.project: "Project"
+
+# Status
+status.clean: "clean"
+status.dirty: "modified"
+status.ahead: "ahead"
+status.behind: "behind"
+
+# Messages
+msg.no_config: "No .hydra.yaml found"
+msg.no_worktrees: "No worktrees found"
+msg.clone_success: "Successfully cloned repository"
+msg.sync_complete: "Sync complete"
+msg.select_branches: "Select branches to create"
+msg.select_group: "Select group"
+
+# Errors
+err.no_config: "No .hydra.yaml found. Run 'hydra init' first"
+err.clone_failed: "Failed to clone repository"
+err.sync_failed: "Failed to sync worktree"
+err.unknown_alias: "Unknown alias"
