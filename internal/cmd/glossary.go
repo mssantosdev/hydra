@@ -91,8 +91,10 @@ func newGlossaryModel() glossaryModel {
 	l.Styles.HelpStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#565f89"))
 
-	// Custom key bindings
+	// Custom key bindings - include all navigation keys
 	l.KeyMap = list.KeyMap{
+		CursorUp:             key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+		CursorDown:           key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 		GoToStart:            key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("g/home", "go to start")),
 		GoToEnd:              key.NewBinding(key.WithKeys("end", "G"), key.WithHelp("G/end", "go to end")),
 		NextPage:             key.NewBinding(key.WithKeys("right", "l", "pgdown"), key.WithHelp("→/l/pgdn", "next page")),
