@@ -20,7 +20,7 @@ It helps you organize multiple worktrees across different repositories
 and ecosystems, making it easy to work on multiple branches simultaneously.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Skip config loading for commands that don't require it
-			if cmd.Name() == "init" || cmd.Name() == "clone" || cmd.Name() == "help" || cmd.Name() == "glossary" || cmd.Name() == "config" {
+			if cmd.Name() == "init" || cmd.Name() == "clone" || cmd.Name() == "help" || cmd.Name() == "glossary" || cmd.Name() == "config" || cmd.Name() == "init-shell" {
 				return nil
 			}
 
