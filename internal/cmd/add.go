@@ -16,19 +16,51 @@ import (
 var addCmd = &cobra.Command{
 	Use:   "add [<repo-alias> <branch-name>]",
 	Short: "Add a new worktree",
-	Long: `Create a new worktree for the specified repository and branch.
+	Long: `Create a new worktree for a repository branch.
 
-If run without arguments, an interactive prompt will help you select the repository and branch.
+DESCRIPTION
+  Creates a Git worktree - a separate working directory for a specific branch.
+  Worktrees allow you to work on multiple branches simultaneously without
+  stashing or committing incomplete work.
 
-Examples:
-  # Interactive mode
-  hydra add
+  When you run this command:
+  1. Creates worktree directory: .bare/<repo>/<branch>/
+  2. Creates symlink: <ecosystem>/<repo>-<branch>
+  3. Checks out the specified branch (creating it if needed)
 
-  # Direct mode
-  hydra add mykids-back feature/new-api
-  
-  # Create from specific branch
-  hydra add mykids-back hotfix-123 --from=stage`,
+WHEN TO USE
+  • Starting work on a new feature
+  • Creating hotfix branches from production
+  • Setting up staging or production worktrees
+  • Working on multiple features in parallel
+
+EXAMPLES
+  # Interactive mode - prompts for repo and branch
+  $ hydra add
+
+  # Create worktree from current HEAD
+  $ hydra add api feature-x
+
+  # Create branch from specific base (not HEAD)
+  $ hydra add api feature-y --from=develop
+
+  # Track remote branch
+  $ hydra add api feature-z --track=origin/feature-z
+
+FLAGS
+  -f, --from string    Create branch from this branch (default: HEAD)
+  -t, --track string   Track remote branch
+  -h, --help           Show help
+
+EXIT CODES
+  0  Success (worktree created or already exists)
+  1  General error (invalid args, repo not found)
+  2  Config file (.hydra.yaml) not found
+
+SEE ALSO
+  • hydra remove - Remove a worktree
+  • hydra switch - Switch to a worktree
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
 	RunE: runAdd,
 }
 

@@ -16,8 +16,43 @@ import (
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all worktrees",
-	Long:  "Display all worktrees organized by group with their current status.",
-	RunE:  runList,
+	Long: `Display all worktrees organized by ecosystem with their current status.
+
+DESCRIPTION
+  Shows a formatted table of all worktrees across all ecosystems.
+  Displays worktree name, current branch, and modification status.
+
+  Status indicators:
+    ✓ clean    - No uncommitted changes
+    ~N         - N modified/uncommitted files
+
+WHEN TO USE
+  • Getting an overview of all worktrees
+  • Checking which branches have uncommitted changes
+  • Finding the exact name for hydra switch
+  • Daily standup status check
+
+EXAMPLES
+  # List all worktrees
+  $ hydra list
+
+  # Typical output:
+  # ▸ BACKEND
+  #   WORKTREE          BRANCH            STATUS
+  #   ───────────────────────────────────────────
+  #   api               main              ✓clean
+  #   api-feature-x     feature/x         ~3
+
+EXIT CODES
+  0  Success (list displayed, may be empty)
+  1  General error
+  2  Config file (.hydra.yaml) not found
+
+SEE ALSO
+  • hydra status - Compact status overview
+  • hydra switch - Navigate to a listed worktree
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
+	RunE: runList,
 }
 
 func init() {

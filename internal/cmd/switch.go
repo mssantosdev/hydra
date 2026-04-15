@@ -17,19 +17,51 @@ var switchCmd = &cobra.Command{
 	Short: "Switch to a worktree",
 	Long: `Switch to a different worktree by changing directory.
 
-This command requires shell helper to be initialized. Run 'hydra init-shell' first.
+DESCRIPTION
+  Changes to the specified worktree directory. Requires shell integration
+  to be initialized (see PREREQUISITES below).
 
-If run without arguments, an interactive prompt will help you select a worktree.
+  Works by outputting a special directive (__HYDRA_CD__) that the shell
+  helper intercepts and executes as a cd command.
 
-Examples:
-  # Interactive mode
-  hydra switch
+PREREQUISITES
+  Shell helper must be initialized:
+    $ hydra init-shell
+    $ source ~/.bashrc  # or ~/.zshrc
 
-  # Direct mode
-  hydra switch mykids-back-stage
-  
-  # Partial match
-  hydra switch stage  # Matches any *stage*`,
+WHEN TO USE
+  • Moving between different feature branches
+  • Switching from development to hotfix work
+  • Navigating to staging/production worktrees
+  • Quick context switching during code reviews
+
+EXAMPLES
+  # Interactive mode - select from list
+  $ hydra switch
+
+  # Switch by full worktree name
+  $ hydra switch api-feature-login
+
+  # Partial match (matches any *stage*)
+  $ hydra switch stage
+
+  # Quick switch using hsw alias
+  $ hsw api-feature-login
+
+EXIT CODES
+  0  Success (directory changed)
+  1  General error (worktree not found)
+  2  Config file (.hydra.yaml) not found
+  3  Shell helper not initialized
+
+ALIASES
+  hsw  Quick alias for 'hydra switch' (after init-shell)
+
+SEE ALSO
+  • hydra init-shell - Setup shell integration
+  • hydra add - Create a new worktree to switch to
+  • hydra list - View available worktrees
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
 	RunE: runSwitch,
 }
 

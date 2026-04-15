@@ -15,8 +15,42 @@ import (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show worktree status overview",
-	Long:  "Display a quick overview of all worktrees and their status.",
-	RunE:  runStatus,
+	Long: `Display a compact overview of all worktrees and their status.
+
+DESCRIPTION
+  Shows summary statistics and quick navigation paths.
+  Faster than 'hydra list' for a quick health check.
+
+  Displays:
+    • Total worktree count
+    • Clean vs modified counts
+    • Quick cd commands for common worktrees
+
+WHEN TO USE
+  • Quick daily status check
+  • Before running sync to see what's modified
+  • Finding navigation paths without listing everything
+
+EXAMPLES
+  # Show status overview
+  $ hydra status
+
+  # Typical output:
+  # [ TOTAL 5 ]  [ CLEAN 3 ]  [ MODIFIED 2 ]
+  # Quick navigation:
+  #   cd backend/api
+  #   cd backend/api-stage
+
+EXIT CODES
+  0  Success
+  1  General error
+  2  Config file (.hydra.yaml) not found
+
+SEE ALSO
+  • hydra list - Detailed worktree listing
+  • hydra sync - Pull updates for worktrees
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
+	RunE: runStatus,
 }
 
 func init() {

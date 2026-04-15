@@ -18,20 +18,51 @@ var removeCmd = &cobra.Command{
 	Short: "Remove a worktree",
 	Long: `Remove a worktree for the specified repository and branch.
 
-If run without arguments, an interactive prompt will help you select which worktree to remove.
+DESCRIPTION
+  Removes a Git worktree directory and cleans up associated symlinks.
+  By default, protects against removing worktrees with uncommitted changes.
 
-Examples:
-  # Interactive mode
-  hydra remove
+  When you run this command:
+  1. Checks for uncommitted changes (unless --force)
+  2. Removes the worktree directory
+  3. Removes the symlink from <ecosystem>/<alias>-<branch>
+  4. Optionally deletes the git branch (--delete-branch)
 
-  # Direct mode
-  hydra remove mykids-back old-feature
-  
+WHEN TO USE
+  • Cleaning up merged feature branches
+  • Removing old or abandoned worktrees
+  • Switching to a different approach on a feature
+  • Housekeeping to free disk space
+
+EXAMPLES
+  # Interactive mode - select from list
+  $ hydra remove
+
+  # Direct removal
+  $ hydra remove api old-feature
+
   # Force remove (ignore uncommitted changes)
-  hydra remove mykids-back old-feature --force
-  
-  # Remove and delete branch
-  hydra remove mykids-back merged-feature --delete-branch`,
+  $ hydra remove api feature-x --force
+
+  # Remove and delete the branch
+  $ hydra remove api merged-feature --delete-branch
+
+FLAGS
+  -f, --force           Force remove (ignore uncommitted changes)
+  -d, --delete-branch   Also delete the git branch
+  -y, --yes             Skip confirmation prompt
+  -h, --help            Show help
+
+EXIT CODES
+  0  Success (worktree removed)
+  1  General error (invalid args, repo not found)
+  2  Config file (.hydra.yaml) not found
+  3  Worktree has uncommitted changes (use --force)
+
+SEE ALSO
+  • hydra add - Create a worktree
+  • hydra list - View all worktrees
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
 	RunE: runRemove,
 }
 

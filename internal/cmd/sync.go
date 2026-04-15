@@ -22,24 +22,51 @@ var syncCmd = &cobra.Command{
 	Short: "Pull latest changes for worktrees",
 	Long: `Check remote for updates and pull changes to selected worktrees.
 
-By default, sync checks the current repository if you're inside a worktree,
-or all repositories if you're at the project root.
+DESCRIPTION
+  Fetches remote updates and pulls them into local worktrees.
+  Handles dirty worktrees by stashing changes (with confirmation).
 
-Examples:
+  By default:
+    • Inside a worktree: syncs current repository
+    • At project root: syncs all repositories
+
+WHEN TO USE
+  • Morning routine - get latest changes
+  • Before starting work on a feature
+  • Keeping staging/production worktrees updated
+  • After a teammate merges to shared branch
+
+EXAMPLES
   # Sync current repository
-  hydra sync
+  $ hydra sync
 
   # Sync specific repository
-  hydra sync api
+  $ hydra sync api
 
   # Sync all repositories
-  hydra sync --all
+  $ hydra sync --all
 
   # Non-interactive mode (pull all clean worktrees)
-  hydra sync --yes
+  $ hydra sync --yes
 
-  # Force pull dirty worktrees (with stash)
-  hydra sync --yes --force`,
+  # Force pull dirty worktrees (stash, pull, restore)
+  $ hydra sync --yes --force
+
+FLAGS
+  -a, --all     Sync all repositories
+  -y, --yes     Skip confirmation, pull all clean worktrees
+  -f, --force   Pull dirty worktrees (stash changes first)
+  -h, --help    Show help
+
+EXIT CODES
+  0  Success (all selected worktrees synced)
+  1  General error or sync failures
+  2  Config file (.hydra.yaml) not found
+
+SEE ALSO
+  • hydra status - Check which worktrees have updates
+  • hydra add - Create worktrees from updated branches
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
 	RunE: runSync,
 }
 

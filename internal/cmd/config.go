@@ -15,18 +15,48 @@ import (
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage global configuration",
-	Long: `Manage Hydra's global configuration settings.
+	Long: `Manage Hydra's global settings interactively.
 
-This command allows you to customize:
-- Language (en-US, pt-BR)
-- Theme (tokyonight, catppuccin, dracula, nord, onedark)
-- Default editor
-- Other preferences
+DESCRIPTION
+  Opens an interactive TUI to configure Hydra preferences.
+  Changes are saved to Hydra's global config file.
 
-Configuration is stored in:
-  Linux: ~/.config/hydra/config.yaml
-  macOS: ~/Library/Application Support/hydra/config.yaml
-  Windows: %APPDATA%/hydra/config.yaml`,
+  Configurable options:
+    • Language    - Interface language (en-US, pt-BR)
+    • Theme       - Color scheme (tokyonight, catppuccin, dracula, nord, onedark)
+    • Editor      - Default editor command (code, vim, nano, etc.)
+
+CONFIG LOCATION
+  Linux:   ~/.config/hydra/config.yaml
+  macOS:   ~/Library/Application Support/hydra/config.yaml
+  Windows: %APPDATA%/hydra/config.yaml
+
+WHEN TO USE
+  • First-time setup (choose language and theme)
+  • Switching to a preferred color scheme
+  • Changing default editor
+  • After updates that add new config options
+
+EXAMPLES
+  # Open interactive config
+  $ hydra config
+
+  # Follow the prompts to change settings
+
+EXIT CODES
+  0  Success (config saved or no changes)
+  1  General error (save failed)
+
+AVAILABLE THEMES
+  tokyonight   (default) - Dark blue theme
+  catppuccin   - Pastel colors
+  dracula      - Purple-tinted dark
+  nord         - Arctic-inspired
+  onedark      - Atom's One Dark
+
+SEE ALSO
+  • hydra init - Project-level configuration (.hydra.yaml)
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/configuration.md`,
 	RunE: runConfig,
 }
 

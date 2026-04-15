@@ -14,8 +14,51 @@ import (
 var glossaryCmd = &cobra.Command{
 	Use:   "glossary",
 	Short: "Show glossary of Hydra terms",
-	Long:  "Display explanations for all Hydra terminology and concepts in an interactive view.",
-	RunE:  runGlossary,
+	Long: `Interactive glossary of Hydra terminology and concepts.
+
+DESCRIPTION
+  Opens an interactive TUI explaining Hydra-specific terms:
+    • Group       - Category organizing related repositories
+    • Alias       - Short name for a repository
+    • Worktree    - Git feature for multiple working directories
+    • Bare Repo   - Git repository without working directory
+    • Hydra Project - Directory with .hydra.yaml configuration
+
+  Navigate with arrow keys or vim bindings (j/k).
+  Press Enter or Space to select terms.
+  Press q or Esc to quit.
+
+WHEN TO USE
+  • New to Hydra - learn the terminology
+  • Understanding the architecture
+  • Before running other commands
+  • When docs reference unfamiliar terms
+
+EXAMPLES
+  # Open interactive glossary
+  $ hydra glossary
+
+  # Navigate: ↑/↓ or j/k
+  # Select: Enter or Space
+  # Quit: q or Esc
+
+NAVIGATION
+  ↑/↓ or j/k     Navigate terms
+  Enter/Space    View term details
+  q / Esc / Ctrl+c   Quit
+
+EXIT CODES
+  0  Success (user quit)
+  1  Error (terminal error)
+
+TERMS COVERED
+  Group, Alias, Worktree, Bare Repository, Hydra Project
+
+SEE ALSO
+  • hydra init - Create your first Hydra project
+  • hydra clone - Add your first repository
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/README.md`,
+	RunE: runGlossary,
 }
 
 // GlossaryEntry represents a single glossary entry

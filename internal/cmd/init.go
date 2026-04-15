@@ -15,10 +15,54 @@ import (
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize Hydra configuration",
-	Long: `Creates a .hydra.yaml configuration file in the current directory.
+	Long: `Create a .hydra.yaml configuration file in the current directory.
 
-Hydra will automatically detect Git repositories and help you organize
-them into ecosystems.`,
+DESCRIPTION
+  Initializes a new Hydra project by creating the configuration file.
+  Scans for existing Git repositories and helps organize them.
+
+  Creates:
+    • .hydra.yaml - Project configuration
+    • Directory structure for worktrees
+
+  Detects Git repositories in subdirectories and offers to organize
+  them into ecosystems (backend, frontend, etc.).
+
+WHEN TO USE
+  • Setting up Hydra in an existing project
+  • Starting a new Hydra-managed project
+  • After cloning multiple repos that need organization
+
+EXAMPLES
+  # Initialize in current directory
+  $ hydra init
+
+  # Interactive flow:
+  # 1. Scans for Git repositories
+  # 2. Asks to organize into ecosystems
+  # 3. Creates .hydra.yaml
+
+NEXT STEPS AFTER INIT
+  $ hydra clone <url>     # Add a new repository
+  $ hydra add <repo> <branch>  # Create worktrees
+  $ hydra list            # View all worktrees
+
+CONFIG FILE
+  The .hydra.yaml file contains:
+    • Ecosystem definitions (group aliases)
+    • Repository mappings
+    • Path configurations
+
+  Edit manually or use hydra commands to update.
+
+EXIT CODES
+  0  Success (config created or already exists)
+  1  General error (write failed)
+
+SEE ALSO
+  • hydra clone - Add repositories after init
+  • hydra config - Manage global (not project) settings
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/configuration.md`,
 	RunE: runInit,
 }
 

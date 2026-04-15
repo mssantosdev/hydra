@@ -21,23 +21,62 @@ import (
 var cloneCmd = &cobra.Command{
 	Use:   "clone <repo-url>",
 	Short: "Clone a new repository and set up worktrees",
-	Long: `Clone a new repository as a bare repo and create worktrees.
+	Long: `Clone a repository as bare and create initial worktrees.
 
-This command will:
-1. Clone the repository as a bare repo to .bare/
-2. Create worktrees for specified branches
-3. Add the repository to your .hydra.yaml configuration
-4. Create symlinks in the appropriate group folder
+DESCRIPTION
+  Clones a Git repository in a Hydra-optimized way:
+    1. Clones as bare repository to .bare/<alias>.git/
+    2. Creates worktrees for specified branches
+    3. Adds repository to .hydra.yaml configuration
+    4. Creates symlinks in <group>/ folder
 
-Examples:
-  # Interactive mode
-  hydra clone github.com/user/repo
+  Can create a new Hydra project if run outside an existing one.
+
+WHEN TO USE
+  • Adding a new repository to your Hydra project
+  • Starting fresh with a new codebase
+  • Setting up worktrees for multiple branches upfront
+
+EXAMPLES
+  # Interactive mode (prompts for all options)
+  $ hydra clone github.com/user/repo
 
   # Non-interactive with options
-  hydra clone github.com/user/repo --alias api --group backend --branches main,dev
+  $ hydra clone github.com/user/repo --alias api --group backend --branches main,dev
 
-  # Dry run to see what would happen
-  hydra clone github.com/user/repo --dry-run`,
+  # Create new project directory
+  $ hydra clone github.com/user/repo --new-project
+
+  # Dry run - see what would happen
+  $ hydra clone github.com/user/repo --dry-run
+
+FLAGS
+  -a, --alias string       Repository alias (short name)
+  -g, --group string       Group/ecosystem name (e.g., backend, frontend)
+  -b, --branches strings   Branches to create worktrees for (comma-separated)
+  -n, --dry-run            Show what would be done without executing
+  -i, --interactive        Interactive mode (default: true)
+  -p, --new-project        Create a new project directory
+  -h, --help               Show help
+
+ARGUMENTS
+  repo-url    Git repository URL or path (required)
+              Examples: github.com/user/repo, git@github.com:user/repo.git
+
+EXIT CODES
+  0  Success (repository cloned and configured)
+  1  General error (clone failed, invalid options)
+  2  No .hydra.yaml found (unless --interactive)
+
+WORKFLOW
+  1. Run 'hydra init' first (or use --new-project)
+  2. Run 'hydra clone <url>' to add repos
+  3. Use 'hydra add' to create more worktrees
+
+SEE ALSO
+  • hydra init - Initialize a Hydra project
+  • hydra add - Create additional worktrees for cloned repo
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
 	Args: cobra.ExactArgs(1),
 	RunE: runClone,
 }

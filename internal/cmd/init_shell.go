@@ -18,29 +18,61 @@ const (
 var initShellCmd = &cobra.Command{
 	Use:   "init-shell [bash|zsh|fish]",
 	Short: "Initialize shell integration",
-	Long: `Install or update shell helper functions for hydra.
+	Long: `Install shell helper for automatic directory switching.
 
-This command installs shell integration directly into your shell configuration file.
-The shell helper enables automatic directory switching with 'hydra switch' and adds
-the 'hsw' alias for quick switching.
+DESCRIPTION
+  Installs a shell wrapper that enables 'hydra switch' to automatically
+  change directories. Without this, 'hydra switch' can only suggest paths.
 
-The helper is smart - it will:
-- Detect if already installed and update instead of duplicating
-- Add the hsw alias for quick switching
-- Handle cd automatically when using hydra switch
+  Installs into your shell config:
+    • Bash: ~/.bashrc
+    • Zsh:  ~/.zshrc
+    • Fish: ~/.config/fish/config.fish
 
-Examples:
-  # Install for bash (auto-detects shell)
-  hydra init-shell
+  What it adds:
+    • hydra() wrapper function
+    • HYDRA_SHELL_HELPER=1 environment variable
+    • hsw alias for quick switching
+
+WHEN TO USE
+  • First-time Hydra setup (required for switch to work)
+  • After reinstalling Hydra
+  • When 'hydra switch' says "shell helper not initialized"
+
+EXAMPLES
+  # Auto-detect shell and install
+  $ hydra init-shell
 
   # Install for specific shell
-  hydra init-shell bash
+  $ hydra init-shell zsh
 
-  # Install for zsh
-  hydra init-shell zsh
+  # After installing, reload shell
+  $ source ~/.bashrc  # or ~/.zshrc
 
-After installing, reload your shell:
-  source ~/.bashrc  # or ~/.zshrc`,
+  # Verify installation
+  $ echo $HYDRA_SHELL_HELPER
+  1
+
+FLAGS
+  -i, --install   Install to shell config (default: true)
+  -h, --help      Show help
+
+EXIT CODES
+  0  Success (helper installed/updated)
+  1  General error (unsupported shell, write failed)
+
+SUPPORTED SHELLS
+  bash, zsh, fish
+
+NOTES
+  • Existing installations are updated (not duplicated)
+  • Removes previous helper blocks before adding new ones
+  • Backup your shell config before first install
+
+SEE ALSO
+  • hydra switch - Command that requires this helper
+  • hydra glossary - Learn about worktrees and other concepts
+  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/shell-integration.md`,
 	RunE: runInitShell,
 }
 
