@@ -77,8 +77,8 @@ func newGlossaryModel() glossaryModel {
 		items[i] = entry
 	}
 
-	// Create list
-	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	// Create list with initial size
+	l := list.New(items, list.NewDefaultDelegate(), 20, 10)
 	l.Title = "Terms"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
@@ -130,6 +130,19 @@ func (m glossaryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if i, ok := m.list.SelectedItem().(GlossaryEntry); ok {
 				m.detail = i
 			}
+			return m, nil
+		case "up", "k":
+			m.list.CursorUp()
+			if i, ok := m.list.SelectedItem().(GlossaryEntry); ok {
+				m.detail = i
+			}
+			return m, nil
+		case "down", "j":
+			m.list.CursorDown()
+			if i, ok := m.list.SelectedItem().(GlossaryEntry); ok {
+				m.detail = i
+			}
+			return m, nil
 		}
 	}
 
