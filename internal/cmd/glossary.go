@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -91,19 +90,9 @@ func newGlossaryModel() glossaryModel {
 	l.Styles.HelpStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#565f89"))
 
-	// Custom key bindings - include all navigation keys
-	l.KeyMap = list.KeyMap{
-		CursorUp:             key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-		CursorDown:           key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-		GoToStart:            key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("g/home", "go to start")),
-		GoToEnd:              key.NewBinding(key.WithKeys("end", "G"), key.WithHelp("G/end", "go to end")),
-		NextPage:             key.NewBinding(key.WithKeys("right", "l", "pgdown"), key.WithHelp("→/l/pgdn", "next page")),
-		PrevPage:             key.NewBinding(key.WithKeys("left", "h", "pgup"), key.WithHelp("←/h/pgup", "prev page")),
-		Filter:               key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		ClearFilter:          key.NewBinding(key.WithKeys("esc")),
-		CancelWhileFiltering: key.NewBinding(key.WithKeys("esc")),
-		AcceptWhileFiltering: key.NewBinding(key.WithKeys("enter", "tab")),
-	}
+	// Use default keymap (includes all navigation: arrows, vim keys, etc.)
+	// Default keys: up/k, down/j, left/h/pgup, right/l/pgdown, g/home, G/end, /, esc, q, ?
+	l.KeyMap = list.DefaultKeyMap()
 
 	return glossaryModel{
 		list:   l,
