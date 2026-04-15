@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
@@ -35,9 +36,24 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	projectRoot := filepath.Dir(configPath)
 
-	// Print header
-	fmt.Println(styles.AppHeader.Render("HYDRA"))
-	fmt.Println(styles.Title.Render("Status Overview"))
+	// Print header - centered with better styling
+	fmt.Println()
+	headerBox := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(styles.Blue).
+		Background(styles.BgDarker).
+		Padding(0, 4).
+		Align(lipgloss.Center).
+		Width(styles.GetTerminalWidth() - 4)
+
+	fmt.Println(headerBox.Render(
+		lipgloss.NewStyle().
+			Bold(true).
+			Foreground(styles.Blue).
+			Render("HYDRA") + "\n" +
+			lipgloss.NewStyle().
+				Foreground(styles.FgComment).
+				Render("Status Overview")))
 	fmt.Println()
 
 	totalWorktrees := 0

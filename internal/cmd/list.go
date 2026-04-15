@@ -37,33 +37,48 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	projectRoot := filepath.Dir(configPath)
 
-	// Print header
+	// Get column widths
+	_, nameWidth, branchWidth := styles.WorktreeListLayout()
+
+	// Print header - centered with better styling
 	fmt.Println()
-	fmt.Println(styles.AppHeader.Render(" HYDRA "))
-	fmt.Println()
-	fmt.Println(styles.Title.Render("Worktree Status"))
+	headerBox := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(styles.Blue).
+		Background(styles.BgDarker).
+		Padding(0, 4).
+		Align(lipgloss.Center).
+		Width(styles.GetTerminalWidth() - 4)
+
+	fmt.Println(headerBox.Render(
+		lipgloss.NewStyle().
+			Bold(true).
+			Foreground(styles.Blue).
+			Render("HYDRA") + "\n" +
+			lipgloss.NewStyle().
+				Foreground(styles.FgComment).
+				Render("Worktree Status")))
 	fmt.Println()
 
-	// Table styles
+	// Table styles with fixed widths
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#7aa2f7")).
-		Padding(0, 1)
-
-	cellStyle := lipgloss.NewStyle().
-		Padding(0, 1)
+		Foreground(styles.Blue).
+		Underline(true)
 
 	cleanStyle := lipgloss.NewStyle().
 		Background(styles.Green).
 		Foreground(styles.BgDark).
 		Bold(true).
-		Padding(0, 1)
+		Padding(0, 1).
+		Width(10)
 
 	dirtyStyle := lipgloss.NewStyle().
 		Background(styles.Yellow).
 		Foreground(styles.BgDark).
 		Bold(true).
-		Padding(0, 1)
+		Padding(0, 1).
+		Width(10)
 
 	// Iterate through groups
 	hasWorktrees := false
@@ -104,9 +119,9 @@ func runList(cmd *cobra.Command, args []string) error {
 				// Build status
 				var status string
 				if hasMod {
-					status = dirtyStyle.Render(fmt.Sprintf("~ %d", count))
+					status = dirtyStyle.Render(fmt.Sprintf("~%d", count))
 				} else {
-					status = cleanStyle.Render("✓ clean")
+					status = cleanStyle.Render("✓clean")
 				}
 
 				worktreeName := filepath.Base(wt.Path)
@@ -132,23 +147,38 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 
 		// Print group header
-		fmt.Println(styles.EcosystemHeader.Render("▸ " + strings.ToUpper(groupName)))
-		fmt.Println()
+		groupHeader := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(styles.Cyan).
+			BorderStyle(lipgloss.ThickBorder()).
+			BorderBottom(true).
+			BorderForeground(styles.Blue).
+			MarginBottom(0)
+		fmt.Println(groupHeader.Render("▸ " + strings.ToUpper(groupName)))
 
-		// Print table header
+		// Print table header with fixed widths
+		worktreeHeader := styles.PadRight("WORKTREE", nameWidth)
+		branchHeader := styles.PadRight("BRANCH", branchWidth)
 		fmt.Printf("  %s  %s  %s\n",
-			headerStyle.Render("WORKTREE"),
-			headerStyle.Render("BRANCH"),
+			headerStyle.Render(worktreeHeader),
+			headerStyle.Render(branchHeader),
 			headerStyle.Render("STATUS"))
 
 		// Print separator
-		fmt.Printf("  %s\n", strings.Repeat("─", 50))
+		sepWidth := nameWidth + branchWidth + 10 + 4
+		fmt.Printf("  %s\n", strings.Repeat("─", sepWidth))
 
-		// Print rows
+		// Print rows with fixed column widths
 		for _, row := range rows {
+			worktreeName := styles.Truncate(row[0], nameWidth)
+			branch := styles.Truncate(row[1], branchWidth)
+
+			paddedWorktree := styles.PadRight(worktreeName, nameWidth)
+			paddedBranch := styles.PadRight(branch, branchWidth)
+
 			fmt.Printf("  %s  %s  %s\n",
-				cellStyle.Render(row[0]),
-				cellStyle.Render(styles.Branch.Render(row[1])),
+				paddedWorktree,
+				styles.Branch.Render(paddedBranch),
 				row[2])
 		}
 
