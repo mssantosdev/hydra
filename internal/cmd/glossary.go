@@ -21,9 +21,9 @@ var glossaryCmd = &cobra.Command{
 
 // GlossaryEntry represents a single glossary entry
 type GlossaryEntry struct {
-	Term        string
-	Description string
-	Examples    []string
+	Term       string
+	Definition string
+	Examples   []string
 }
 
 func (e GlossaryEntry) Title() string       { return e.Term }
@@ -32,29 +32,29 @@ func (e GlossaryEntry) FilterValue() string { return e.Term }
 
 var glossaryEntries = []GlossaryEntry{
 	{
-		Term:        "Group",
-		Description: "A category that organizes related repositories. Groups help you navigate between different parts of your project.",
-		Examples:    []string{"backend (APIs, services)", "frontend (web apps)", "infra (Terraform, Docker configs)"},
+		Term:       "Group",
+		Definition: "A category that organizes related repositories. Groups help you navigate between different parts of your project.",
+		Examples:   []string{"backend (APIs, services)", "frontend (web apps)", "infra (Terraform, Docker configs)"},
 	},
 	{
-		Term:        "Alias",
-		Description: "A short name for a repository within its group. This is how you refer to and navigate to the repository.",
-		Examples:    []string{"cd backend/api", "hydra sync worker"},
+		Term:       "Alias",
+		Definition: "A short name for a repository within its group. This is how you refer to and navigate to the repository.",
+		Examples:   []string{"cd backend/api", "hydra sync worker"},
 	},
 	{
-		Term:        "Worktree",
-		Description: "A Git feature that allows multiple working directories from a single repository. Each branch can have its own worktree.",
-		Examples:    []string{"main/ - production code", "develop/ - active development", "feature/login/ - new feature"},
+		Term:       "Worktree",
+		Definition: "A Git feature that allows multiple working directories from a single repository. Each branch can have its own worktree.",
+		Examples:   []string{"main/ - production code", "develop/ - active development", "feature/login/ - new feature"},
 	},
 	{
-		Term:        "Bare Repository",
-		Description: "A Git repository without a working directory. It stores all Git history and is kept in .bare/. All worktrees share this single source.",
-		Examples:    []string{"Stored in: .bare/my-repo.git/"},
+		Term:       "Bare Repository",
+		Definition: "A Git repository without a working directory. It stores all Git history and is kept in .bare/. All worktrees share this single source.",
+		Examples:   []string{"Stored in: .bare/my-repo.git/"},
 	},
 	{
-		Term:        "Hydra Project",
-		Description: "A directory containing a .hydra.yaml configuration file. This is the root where Hydra manages all your repositories.",
-		Examples:    []string{"Contains: .hydra.yaml, .bare/, group folders"},
+		Term:       "Hydra Project",
+		Definition: "A directory containing a .hydra.yaml configuration file. This is the root where Hydra manages all your repositories.",
+		Examples:   []string{"Contains: .hydra.yaml, .bare/, group folders"},
 	},
 }
 
@@ -178,10 +178,6 @@ func (m glossaryModel) View() string {
 	title := styles.Title.Render("Glossary")
 
 	// Build detail view
-	detailStyle := lipgloss.NewStyle().
-		Width(detailWidth).
-		Padding(1)
-
 	termStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("#7aa2f7")).
@@ -206,7 +202,7 @@ func (m glossaryModel) View() string {
 
 	detailContent := fmt.Sprintf("%s\n%s\n%s",
 		termStyle.Render(m.detail.Term),
-		descStyle.Render(m.detail.Description),
+		descStyle.Render(m.detail.Definition),
 		exampleStyle.Render(examples.String()),
 	)
 
