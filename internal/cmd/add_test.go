@@ -8,12 +8,12 @@ import (
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
-func TestCheckout_NoConfig(t *testing.T) {
+func TestAdd_NoConfig(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	// Don't create config
 	env.Chdir()
 
-	rootCmd.SetArgs([]string{"checkout", "api"})
+	rootCmd.SetArgs([]string{"add", "api", "main"})
 
 	err := rootCmd.Execute()
 	if err == nil {
@@ -23,12 +23,12 @@ func TestCheckout_NoConfig(t *testing.T) {
 	testutil.Contains(t, err.Error(), "no .hydra.yaml")
 }
 
-func TestCheckout_UnknownAlias(t *testing.T) {
+func TestAdd_UnknownAlias(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
 	env.Chdir()
 
-	rootCmd.SetArgs([]string{"checkout", "unknown-alias"})
+	rootCmd.SetArgs([]string{"add", "unknown-alias", "main"})
 
 	err := rootCmd.Execute()
 	if err == nil {
@@ -38,13 +38,13 @@ func TestCheckout_UnknownAlias(t *testing.T) {
 	testutil.Contains(t, err.Error(), "unknown alias")
 }
 
-func TestCheckout_NoBareRepo(t *testing.T) {
+func TestAdd_NoBareRepo(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
 	env.AddToConfig("backend", "api", "api")
 	env.Chdir()
 
-	rootCmd.SetArgs([]string{"checkout", "api"})
+	rootCmd.SetArgs([]string{"add", "api", "main"})
 
 	err := rootCmd.Execute()
 	if err == nil {
@@ -54,7 +54,7 @@ func TestCheckout_NoBareRepo(t *testing.T) {
 	testutil.Contains(t, err.Error(), "bare repository not found")
 }
 
-func TestCheckout_CreateNewWorktree(t *testing.T) {
+func TestAdd_CreateNewWorktree(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
 
@@ -66,7 +66,7 @@ func TestCheckout_CreateNewWorktree(t *testing.T) {
 	env.Chdir()
 
 	// Create a new worktree for feature branch
-	rootCmd.SetArgs([]string{"checkout", "api", "feature/new-feature"})
+	rootCmd.SetArgs([]string{"add", "api", "feature/new-feature"})
 
 	err := rootCmd.Execute()
 	if err != nil {
@@ -80,7 +80,7 @@ func TestCheckout_CreateNewWorktree(t *testing.T) {
 	}
 }
 
-func TestCheckout_ExistingWorktree(t *testing.T) {
+func TestAdd_ExistingWorktree(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
 
@@ -93,7 +93,7 @@ func TestCheckout_ExistingWorktree(t *testing.T) {
 	env.Chdir()
 
 	// Checkout existing worktree
-	rootCmd.SetArgs([]string{"checkout", "api", "develop"})
+	rootCmd.SetArgs([]string{"add", "api", "develop"})
 
 	err := rootCmd.Execute()
 	if err != nil {
@@ -101,7 +101,7 @@ func TestCheckout_ExistingWorktree(t *testing.T) {
 	}
 }
 
-func TestCheckout_CreatesSymlink(t *testing.T) {
+func TestAdd_CreatesSymlink(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
 
@@ -117,7 +117,7 @@ func TestCheckout_CreatesSymlink(t *testing.T) {
 	env.Chdir()
 
 	// Checkout with branch
-	rootCmd.SetArgs([]string{"checkout", "web", "feature-test"})
+	rootCmd.SetArgs([]string{"add", "web", "feature-test"})
 
 	err := rootCmd.Execute()
 	if err != nil {
