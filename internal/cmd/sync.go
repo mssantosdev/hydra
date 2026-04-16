@@ -186,20 +186,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 }
 
 func detectCurrentAlias(wd string, cfg *config.Config, projectRoot string) string {
-	// Check if we're inside a worktree
-	for groupName, group := range cfg.Ecosystems {
-		for alias := range group {
-			// Check common paths
-			symlinkDir := filepath.Join(projectRoot, groupName)
-
-			for _, suffix := range []string{"", "-main", "-master", "-stage", "-prod"} {
-				linkPath := filepath.Join(symlinkDir, alias+suffix)
-				if strings.HasPrefix(wd, linkPath) {
-					return alias
-				}
-			}
-		}
+	ctx, err := resolveCurrentHydraContext(wd, cfg, projectRoot)
+	if err != nil || ctx == nil {
+		return ""
 	}
+	return ctx.RepoContext.Alias
 	return ""
 }
 

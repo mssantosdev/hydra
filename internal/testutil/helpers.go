@@ -36,6 +36,11 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		os.RemoveAll(rootDir)
 	})
 
+	os.Setenv("GO_TEST", "1")
+	t.Cleanup(func() {
+		os.Unsetenv("GO_TEST")
+	})
+
 	return &TestEnv{
 		RootDir:     rootDir,
 		OriginalDir: originalDir,

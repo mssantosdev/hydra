@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/mssantosdev/hydra/internal/config"
@@ -67,6 +66,7 @@ SEE ALSO
 
 func init() {
 	rootCmd.AddCommand(switchCmd)
+	switchCmd.ValidArgsFunction = completeWorktreeNames
 }
 
 func runSwitch(cmd *cobra.Command, args []string) error {
@@ -88,9 +88,9 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			configPath, cfg, err := config.FindConfig(wd)
 			if err == nil {
 				projectRoot := filepath.Dir(configPath)
-				path := findWorktreePath(cfg, projectRoot, args[0])
-				if path != "" {
-					relPath, _ := filepath.Rel(wd, path)
+				wt, ok := findWorktreeByName(cfg, projectRoot, args[0])
+				if ok {
+					relPath, _ := filepath.Rel(wd, wt.SymlinkPath)
 					fmt.Println("For now, manually run:")
 					fmt.Printf("  cd %s\n", relPath)
 				}
@@ -123,10 +123,10 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Find worktree by name
-		targetPath = findWorktreePath(cfg, projectRoot, args[0])
-		if targetPath == "" {
+		wt, ok := findWorktreeByName(cfg, projectRoot, args[0])
+		if !ok {
 			// Try to find similar worktrees
-			similar := findSimilarWorktrees(cfg, projectRoot, args[0])
+			similar := findSimilarWorktreesByName(cfg, projectRoot, args[0])
 			if len(similar) > 0 {
 				fmt.Println(styles.Error.Render(fmt.Sprintf("Worktree not found: %s", args[0])))
 				fmt.Println()
@@ -142,80 +142,28 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			}
 			return fmt.Errorf("shell helper not initialized")
 		}
+		targetPath = wt.WorktreePath
 	}
 
 	// Output the path for shell helper to cd to
-	// The shell helper wrapper will catch this and perform the cd
-	fmt.Printf("__HYDRA_CD__ %s\n", targetPath)
+	if err := writeSwitchTarget(targetPath); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func isShellHelperInitialized() bool {
 	// Check for environment variable set by init-shell
-	return os.Getenv("HYDRA_SHELL_HELPER") == "1"
+	return os.Getenv("HYDRA_SHELL_HELPER") == "1" && os.Getenv("GO_TEST") != "1"
 }
 
-func findWorktreePath(cfg *config.Config, projectRoot, name string) string {
-	// Try exact match first
-	for ecoName, eco := range cfg.Ecosystems {
-		for alias := range eco {
-			symlinkDir := filepath.Join(projectRoot, ecoName)
-
-			// Check various naming patterns
-			patterns := []string{
-				alias + "-" + name,
-				alias + "-" + strings.ReplaceAll(name, "/", "-"),
-				name,
-			}
-
-			for _, pattern := range patterns {
-				symlinkPath := filepath.Join(symlinkDir, pattern)
-				if _, err := os.Stat(symlinkPath); err == nil {
-					// Resolve symlink
-					if realPath, err := filepath.EvalSymlinks(symlinkPath); err == nil {
-						return realPath
-					}
-				}
-			}
-		}
+func writeSwitchTarget(targetPath string) error {
+	if outputFile := os.Getenv("HYDRA_SWITCH_OUTPUT_FILE"); outputFile != "" {
+		return os.WriteFile(outputFile, []byte(targetPath), 0600)
 	}
-
-	return ""
-}
-
-func findSimilarWorktrees(cfg *config.Config, projectRoot, query string) []string {
-	var matches []string
-
-	for ecoName, eco := range cfg.Ecosystems {
-		for alias := range eco {
-			symlinkDir := filepath.Join(projectRoot, ecoName)
-
-			// List all symlinks in this directory
-			entries, err := os.ReadDir(symlinkDir)
-			if err != nil {
-				continue
-			}
-
-			for _, entry := range entries {
-				if entry.Type()&os.ModeSymlink != 0 {
-					name := entry.Name()
-					if strings.Contains(name, query) ||
-						strings.Contains(query, name) ||
-						strings.HasPrefix(name, alias+"-") {
-						matches = append(matches, fmt.Sprintf("%s/%s", ecoName, name))
-					}
-				}
-			}
-		}
-	}
-
-	// Limit to 5 suggestions
-	if len(matches) > 5 {
-		matches = matches[:5]
-	}
-
-	return matches
+	fmt.Printf("__HYDRA_CD__ %s\n", targetPath)
+	return nil
 }
 
 func interactiveSwitch(cfg *config.Config, projectRoot string) (string, error) {
@@ -225,30 +173,17 @@ func interactiveSwitch(cfg *config.Config, projectRoot string) (string, error) {
 		label string
 	}
 
-	var items []worktreeItem
+	choices, err := collectWorktreeChoices(cfg, projectRoot)
+	if err != nil {
+		return "", err
+	}
 
-	for ecoName, eco := range cfg.Ecosystems {
-		for alias := range eco {
-			symlinkDir := filepath.Join(projectRoot, ecoName)
-
-			entries, err := os.ReadDir(symlinkDir)
-			if err != nil {
-				continue
-			}
-
-			for _, entry := range entries {
-				if entry.Type()&os.ModeSymlink != 0 {
-					name := entry.Name()
-					if strings.HasPrefix(name, alias+"-") || name == alias {
-						symlinkPath := filepath.Join(symlinkDir, name)
-						if realPath, err := filepath.EvalSymlinks(symlinkPath); err == nil {
-							label := fmt.Sprintf("%s/%s", ecoName, name)
-							items = append(items, worktreeItem{path: realPath, label: label})
-						}
-					}
-				}
-			}
-		}
+	items := make([]worktreeItem, 0, len(choices))
+	for _, choice := range choices {
+		items = append(items, worktreeItem{
+			path:  choice.WorktreePath,
+			label: fmt.Sprintf("%s/%s", choice.RepoContext.Ecosystem, choice.SymlinkName),
+		})
 	}
 
 	if len(items) == 0 {

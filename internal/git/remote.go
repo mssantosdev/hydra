@@ -131,7 +131,38 @@ func GetRemoteBranchesFromBare(bareRepo string) ([]RemoteBranch, error) {
 		}
 	}
 
+	if len(branches) == 0 {
+		locals, localErr := ListLocalBranches(bareRepo)
+		if localErr == nil {
+			for _, branchName := range locals {
+				branches = append(branches, RemoteBranch{
+					Name:      branchName,
+					IsDefault: branchName == "main" || branchName == "master",
+					IsRemote:  false,
+				})
+			}
+		}
+	}
+
 	return branches, nil
+}
+
+// GetRemoteDefaultBranch resolves the default branch configured on origin/HEAD.
+func GetRemoteDefaultBranch(bareRepo string) (string, error) {
+	_ = FetchBareRepo(bareRepo)
+
+	cmd := exec.Command("git", "--git-dir="+bareRepo, "symbolic-ref", "refs/remotes/origin/HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", nil
+	}
+
+	ref := strings.TrimSpace(string(output))
+	if ref == "" {
+		return "", nil
+	}
+
+	return strings.TrimPrefix(ref, "refs/remotes/origin/"), nil
 }
 
 // WorktreeStatus represents the status of a worktree

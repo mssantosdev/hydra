@@ -78,11 +78,11 @@ func TestFullFlow(t *testing.T) {
 		t.Errorf("Status failed: %v", err)
 	}
 
-	// Step 5: Checkout a new branch
-	t.Log("Step 5: Checkout new branch")
-	rootCmd.SetArgs([]string{"checkout", "hydra", "feature-test"})
+	// Step 5: Add a new branch worktree
+	t.Log("Step 5: Add new branch worktree")
+	rootCmd.SetArgs([]string{"add", "hydra", "feature-test"})
 	if err := rootCmd.Execute(); err != nil {
-		t.Errorf("Checkout failed: %v", err)
+		t.Errorf("Add failed: %v", err)
 	}
 
 	// Verify new worktree

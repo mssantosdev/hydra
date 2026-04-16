@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 )
 
@@ -58,30 +59,20 @@ func ListWorktrees(bareRepo string) ([]WorktreeInfo, error) {
 	return worktrees, nil
 }
 
-// CreateWorktree creates a new worktree
-func CreateWorktree(bareRepo, worktreePath, branch string) error {
-	// Check if branch exists
-	branchExists := false
-	cmd := exec.Command("git", "--git-dir="+bareRepo, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
-	if err := cmd.Run(); err == nil {
-		branchExists = true
+// CreateWorktreeForBranch creates a worktree for an existing local or remote branch.
+func CreateWorktreeForBranch(bareRepo, worktreePath, branch string) error {
+	branchRef, err := ResolveBranchRef(bareRepo, branch)
+	if err != nil {
+		return err
 	}
 
-	var args []string
-	args = append(args, "--git-dir="+bareRepo, "worktree", "add")
-
-	if !branchExists {
-		// Create new branch from HEAD
+	args := []string{"--git-dir=" + bareRepo, "worktree", "add"}
+	if strings.HasPrefix(branchRef, "origin/") {
 		args = append(args, "-b", branch)
 	}
+	args = append(args, worktreePath, branchRef)
 
-	args = append(args, worktreePath)
-
-	if branchExists {
-		args = append(args, branch)
-	}
-
-	cmd = exec.Command("git", args...)
+	cmd := exec.Command("git", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -90,6 +81,84 @@ func CreateWorktree(bareRepo, worktreePath, branch string) error {
 	}
 
 	return nil
+}
+
+// CreateWorktreeFromBase creates a new branch from a specific base branch or ref.
+func CreateWorktreeFromBase(bareRepo, worktreePath, branch, baseBranch string) error {
+	baseRef, err := ResolveBranchRef(bareRepo, baseBranch)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command("git", "--git-dir="+bareRepo, "worktree", "add", "-b", branch, worktreePath, baseRef)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create worktree: %w", err)
+	}
+
+	return nil
+}
+
+// CreateWorktreeNewBranch creates a new branch without forcing a base ref.
+func CreateWorktreeNewBranch(bareRepo, worktreePath, branch string) error {
+	cmd := exec.Command("git", "--git-dir="+bareRepo, "worktree", "add", "-b", branch, worktreePath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create worktree: %w", err)
+	}
+
+	return nil
+}
+
+// CreateWorktree keeps backward-compatible behavior for callers that only know the target branch.
+func CreateWorktree(bareRepo, worktreePath, branch string) error {
+	exists, err := BranchExists(bareRepo, branch)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return CreateWorktreeForBranch(bareRepo, worktreePath, branch)
+	}
+	return CreateWorktreeNewBranch(bareRepo, worktreePath, branch)
+}
+
+// BranchExists reports whether a branch exists locally or on origin.
+func BranchExists(bareRepo, branch string) (bool, error) {
+	if hasRef(bareRepo, "refs/heads/"+branch) || hasRef(bareRepo, "refs/remotes/origin/"+branch) {
+		return true, nil
+	}
+	return false, nil
+}
+
+// RefExists reports whether an arbitrary ref exists.
+func RefExists(bareRepo, ref string) bool {
+	return hasRef(bareRepo, ref)
+}
+
+// ResolveBranchRef returns the best ref for a branch name.
+func ResolveBranchRef(bareRepo, branch string) (string, error) {
+	if hasRef(bareRepo, "refs/heads/"+branch) {
+		return branch, nil
+	}
+	if hasRef(bareRepo, "refs/remotes/origin/"+branch) {
+		return "origin/" + branch, nil
+	}
+	return "", fmt.Errorf("branch not found: %s", branch)
+}
+
+// ListLocalBranches returns local branches from the bare repository.
+func ListLocalBranches(bareRepo string) ([]string, error) {
+	cmd := exec.Command("git", "--git-dir="+bareRepo, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list local branches: %w", err)
+	}
+
+	return parseRefList(output), nil
 }
 
 // RemoveWorktree removes a worktree
@@ -150,6 +219,30 @@ func CloneBare(source, dest string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func hasRef(bareRepo, ref string) bool {
+	cmd := exec.Command("git", "--git-dir="+bareRepo, "show-ref", "--verify", "--quiet", ref)
+	return cmd.Run() == nil
+}
+
+func parseRefList(output []byte) []string {
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	branches := make([]string, 0, len(lines))
+	seen := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		branches = append(branches, name)
+	}
+	sort.Strings(branches)
+	return branches
 }
 
 // PushAll pushes all branches and tags to a remote

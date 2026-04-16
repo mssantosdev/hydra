@@ -18,6 +18,8 @@ Create a new worktree for a repository branch.
 
 `hydra add` creates a new Git worktree - a separate working directory linked to a specific branch. This allows you to work on multiple branches simultaneously without stashing or committing incomplete work.
 
+Interactive mode separates existing-branch checkout from new-branch creation. When you create a new branch, Hydra prefers `--from`, otherwise it tries to infer the current branch when you run the command from inside the same repo worktree, and finally falls back to the repo's default branch.
+
 When you run `hydra add`:
 1. Creates a new worktree directory in `.bare/<repo>/<branch>/`
 2. Creates a symlink in `<ecosystem>/<repo>-<branch>` for easy access
@@ -38,8 +40,7 @@ hydra add [<repo-alias> <branch-name>] [flags]
 
 | Flag | Short | Type | Default | Description |
 |------|-------|------|---------|-------------|
-| `--from` | `-f` | string | `HEAD` | Create branch from this branch |
-| `--track` | `-t` | string | `""` | Track remote branch (e.g., `origin/feature-x`) |
+| `--from` | `-f` | string | inferred | Create branch from this branch |
 | `--help` | `-h` | bool | - | Show help |
 
 ### Arguments
@@ -55,7 +56,7 @@ hydra add [<repo-alias> <branch-name>] [flags]
 
 #### Interactive Mode
 
-Run without arguments to get an interactive form:
+Run without arguments to get an interactive flow:
 
 ```bash
 $ hydra add
@@ -69,9 +70,13 @@ $ hydra add
 │      web                                │
 │      worker                             │
 │                                         │
-│  Branch name: [feature/my-feature______]│
+│  Branch Mode: [New branch ▼]            │
+│  Branch Name: feature/my-feature        │
+│  From: stage                            │
+│  Create worktree                        │
 │                                         │
-│         [Create]  [Cancel]              │
+│  Selecting `From` opens the branch list │
+│  and cancel keeps the current branch.   │
 └─────────────────────────────────────────┘
 ```
 
@@ -85,27 +90,18 @@ Creating worktree for api:feature-x...
   Branch: feature-x
   Symlink: backend/api-feature-x
 
-Switch to it with: hydra switch api-feature-x
+ cd backend/api-feature-x
+ hydra switch api-feature-x
 ```
 
 #### Create from Specific Branch
 
 ```bash
-# Create feature branch from develop instead of HEAD
+# Create feature branch from develop
 $ hydra add api feature-y --from=develop
 Creating worktree for api:feature-y...
 ✓ Worktree created
-  Branch created from: develop
-```
-
-#### Track Remote Branch
-
-```bash
-# Create worktree tracking origin/feature-z
-$ hydra add api feature-z --track=origin/feature-z
-Creating worktree for api:feature-z...
-✓ Worktree created
-  Tracking: origin/feature-z
+  From: develop
 ```
 
 #### Create from Production
@@ -125,7 +121,6 @@ Creating worktree for api:hotfix/critical-bug...
 | Create feature from main | `hydra add repo feature-x --from=main` |
 | Create feature from develop | `hydra add repo feature-x --from=develop` |
 | Create hotfix from prod | `hydra add repo hotfix-x --from=prod` |
-| Track remote PR branch | `hydra add repo pr-123 --track=origin/pr-123` |
 | Interactive selection | `hydra add` (no args) |
 
 ### Branch Naming

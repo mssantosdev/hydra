@@ -242,25 +242,35 @@ export HYDRA_SHELL_HELPER=1
 hydra() {
     # Check if this is a switch command
     if [ "$1" = "switch" ]; then
-        # Run hydra switch and capture output
-        local output=$(command hydra "$@" 2>&1)
+        local cleanup_output_file=0
+        local output_file="$HYDRA_SWITCH_OUTPUT_FILE"
+        if [ -z "$output_file" ]; then
+            output_file=$(mktemp "${TMPDIR:-/tmp}/hydra-switch.XXXXXX") || return 1
+            cleanup_output_file=1
+        fi
+        : > "$output_file"
+
+        HYDRA_SWITCH_OUTPUT_FILE="$output_file" command hydra "$@"
         local exit_code=$?
-        
-        # Check if output contains cd directive
-        if echo "$output" | grep -q "^__HYDRA_CD__"; then
-            # Extract path and cd
-            local path=$(echo "$output" | grep "^__HYDRA_CD__" | cut -d' ' -f2-)
-            if [ -n "$path" ] && [ -d "$path" ]; then
+
+        local path=""
+        if [ -f "$output_file" ]; then
+            path=$(cat "$output_file")
+        fi
+
+        if [ $cleanup_output_file -eq 1 ]; then
+            rm -f "$output_file"
+        fi
+
+        if [ $exit_code -eq 0 ] && [ -n "$path" ]; then
+            if [ -d "$path" ]; then
                 cd "$path"
             else
                 echo "Error: Invalid path: $path" >&2
                 return 1
             fi
-        else
-            # Print output (error messages, etc.)
-            echo "$output"
-            return $exit_code
         fi
+        return $exit_code
     else
         # Pass through to regular hydra for other commands
         command hydra "$@"
@@ -286,25 +296,36 @@ set -x HYDRA_SHELL_HELPER 1
 function hydra
     # Check if this is a switch command
     if test "$argv[1]" = "switch"
-        # Run hydra switch and capture output
-        set -l output (command hydra $argv 2>&1)
+        set -l cleanup_output_file 0
+        set -l output_file $HYDRA_SWITCH_OUTPUT_FILE
+        if test -z "$output_file"
+            set output_file (mktemp "TMPDIR=${TMPDIR:-/tmp} hydra-switch.XXXXXX")
+            or return 1
+            set cleanup_output_file 1
+        end
+        printf '' > "$output_file"
+
+        env HYDRA_SWITCH_OUTPUT_FILE="$output_file" command hydra $argv
         set -l exit_code $status
-        
-        # Check if output contains cd directive
-        if echo "$output" | grep -q "^__HYDRA_CD__"
-            # Extract path and cd
-            set -l path (echo "$output" | grep "^__HYDRA_CD__" | cut -d' ' -f2-)
-            if test -n "$path" -a -d "$path"
+
+        set -l path ''
+        if test -f "$output_file"
+            set path (cat "$output_file")
+        end
+
+        if test $cleanup_output_file -eq 1
+            rm -f "$output_file"
+        end
+
+        if test $exit_code -eq 0 -a -n "$path"
+            if test -d "$path"
                 cd "$path"
             else
                 echo "Error: Invalid path: $path" >&2
                 return 1
             end
-        else
-            # Print output (error messages, etc.)
-            echo "$output"
-            return $exit_code
         end
+        return $exit_code
     else
         # Pass through to regular hydra for other commands
         command hydra $argv

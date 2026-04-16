@@ -124,6 +124,15 @@ func init() {
 }
 
 func runClone(cmd *cobra.Command, args []string) error {
+	defer func() {
+		cmd.Flags().Set("dry-run", "false")
+		cmd.Flags().Set("interactive", "true")
+		cmd.Flags().Set("new-project", "false")
+		cmd.Flags().Set("branches", "")
+		cmd.Flags().Set("alias", "")
+		cmd.Flags().Set("group", "")
+	}()
+
 	url := args[0]
 
 	// Parse flags
@@ -541,10 +550,15 @@ func executeClone(opts *CloneOptions, cfg *config.Config, configPath, projectRoo
 	for _, branch := range opts.Branches {
 		log.Info("Creating worktree", "branch", branch)
 
-		worktreePath := filepath.Join(barePath, branch)
-		safeBranch := strings.ReplaceAll(branch, "/", "-")
+		repo := repoContext{
+			Ecosystem: opts.Group,
+			Alias:     opts.Alias,
+			RepoName:  opts.Alias,
+			BareRepo:  barePath,
+		}
+		wt := buildWorktreeContext(repo, projectRoot, branch)
 
-		if err := git.CreateWorktree(barePath, worktreePath, branch); err != nil {
+		if err := git.CreateWorktree(barePath, wt.WorktreePath, branch); err != nil {
 			log.Error("Failed to create worktree", "branch", branch, "error", err)
 			failedWorktrees = append(failedWorktrees, branch)
 			continue
@@ -553,18 +567,9 @@ func executeClone(opts *CloneOptions, cfg *config.Config, configPath, projectRoo
 		createdWorktrees = append(createdWorktrees, branch)
 		log.Success("Worktree created", "branch", branch)
 
-		// Create symlink
-		symlinkDir := filepath.Join(projectRoot, opts.Group)
-		os.MkdirAll(symlinkDir, 0755)
-
-		symlinkName := opts.Alias + "-" + safeBranch
-		if safeBranch == "main" || safeBranch == "master" {
-			symlinkName = opts.Alias
+		if err := ensureSymlink(wt); err != nil {
+			log.Error("Failed to create symlink", "branch", branch, "error", err)
 		}
-
-		symlinkPath := filepath.Join(symlinkDir, symlinkName)
-		relPath, _ := filepath.Rel(symlinkDir, worktreePath)
-		os.Symlink(relPath, symlinkPath)
 	}
 
 	// Update config
