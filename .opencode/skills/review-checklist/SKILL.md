@@ -18,14 +18,16 @@ If changes are requested, include:
 
 ## Focus areas
 
-- task definition and acceptance criteria from the assigned file under `tasks/`
+- task definition and acceptance criteria from the assigned planning task file
 - acceptance criteria
 - regressions and risks
 - tests
 - docs/help drift when behavior changed
+- reviewed SHA and whether the runtime file records it
+- whether integration-style validation was performed where feasible
 
 ## Important
 
 Do not fix the code directly.
 
-Record the review outcome and guidance in the task file when operating in a write-capable review flow, or explicitly return the text needed for that update.
+Record the review outcome, reviewed SHA, next owner, and guidance in the runtime task file when operating in a write-capable review flow, or explicitly return the text needed for that update.

@@ -8,7 +8,9 @@ Hydra should be developed using a predictable multi-agent workflow that favors b
 
 - `manager` orchestrates epics, tasks, and delegation
 - `implementer` executes assigned work on an owned branch/worktree
+- `sub-implementer` executes smaller delegated subtasks for an implementer
 - `reviewer` approves or requests changes with actionable guidance
+- `checkpoint-reviewer` provides advisory fast review before official review
 - `merger` integrates approved work and handles release flow
 
 ## State Model
@@ -30,6 +32,17 @@ Tasks move through these states:
 - Reviewer must return findings, required changes, guidance, and validation expectations.
 - Reviewer does not directly implement fixes.
 - Only approved work can be passed to the merger.
+- Manager is the role that hands approved work to the merger.
+- Checkpoint review is advisory only; it does not replace official review.
+- Official review should target a committed branch HEAD SHA whenever practical.
+- Reviewer records the reviewed SHA in runtime state.
+
+## Delegation Discipline
+
+- Implementers may delegate focused subtasks to `sub-implementer`.
+- Parent implementer remains the owner of the full task.
+- Sub-implementers may request checkpoint validation from `checkpoint-reviewer`.
+- Only the parent implementer submits a task for official review.
 
 ## Branch Discipline
 
@@ -49,6 +62,8 @@ Tasks move through these states:
 - Implementers validate their own branch before requesting review.
 - Reviewer checks task acceptance criteria and project standards.
 - Merger reruns integration validation after merging approved work.
+- Repo-native validation commands and integration-style checks should be used where feasible.
+- Runtime coordination state must reflect current owner, approval state, and reviewed or approved SHA before the next role proceeds.
 
 ## Release Discipline
 

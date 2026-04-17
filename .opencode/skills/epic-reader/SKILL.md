@@ -10,6 +10,8 @@ description: Load the active epic context, including constitution, branch plan, 
 4. the active epic folder under `planning/epics/`
 5. the active epic's `tasks.md`
 6. the active epic's `tasks/` directory
+7. the matching coordination directory under `coordination/epics/`
+8. `planning/workspace-sync.md`
 
 ## What to return
 
@@ -19,6 +21,8 @@ description: Load the active epic context, including constitution, branch plan, 
 - task index and acceptance criteria
 - relevant branches
 - relevant agent assignments
+- shared runtime task files
+- workspace sync state
 
 When a specific task is assigned, also identify the matching task file under `tasks/`.
 

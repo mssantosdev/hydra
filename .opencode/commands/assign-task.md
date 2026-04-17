@@ -15,3 +15,5 @@ Return:
 4. acceptance criteria
 5. review readiness expectations
 6. task file to update during execution
+7. whether sub-implementer delegation is expected or optional
+8. runtime state fields that must be updated before review, including current status, validation run, and ready-for-review SHA
