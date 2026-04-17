@@ -34,6 +34,8 @@ Tasks move through these states:
 - Only approved work can be passed to the merger.
 - Manager is the role that hands approved work to the merger.
 - Checkpoint review is advisory only; it does not replace official review.
+- Official review should target a committed branch HEAD SHA whenever practical.
+- Reviewer records the reviewed SHA in runtime state.
 
 ## Delegation Discipline
 
@@ -60,6 +62,8 @@ Tasks move through these states:
 - Implementers validate their own branch before requesting review.
 - Reviewer checks task acceptance criteria and project standards.
 - Merger reruns integration validation after merging approved work.
+- Repo-native validation commands and integration-style checks should be used where feasible.
+- Runtime coordination state must reflect current owner, approval state, and reviewed or approved SHA before the next role proceeds.
 
 ## Release Discipline
 

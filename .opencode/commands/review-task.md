@@ -10,11 +10,13 @@ Use the active epic's `tasks.md` index and the assigned task file under `tasks/`
 Return:
 
 1. status: `approved` or `changes_requested`
-2. findings
-3. required changes if any
-4. guidance
-5. validation expectations
+2. reviewed SHA
+3. findings
+4. required changes if any
+5. guidance
+6. validation expectations
+7. whether integration-style validation was performed, and what was checked instead if not
 
-Also update or return the text needed for the task file's review history and current state sections.
+Also update or return the text needed for the runtime task file's review history, review decision, next owner, and current state sections.
 
 This command is for official review, not checkpoint review.
