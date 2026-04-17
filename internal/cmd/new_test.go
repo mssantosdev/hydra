@@ -80,8 +80,10 @@ func TestBootstrapLocalProject(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(projectRoot, "api-repo", ".git")); err != nil {
 		t.Fatalf("expected local repo: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(projectRoot, "backend", "api")); err != nil {
+	if info, err := os.Lstat(filepath.Join(projectRoot, "backend", "api")); err != nil {
 		t.Fatalf("expected symlink for main branch: %v", err)
+	} else if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected backend/api to be a symlink, got %v", info.Mode())
 	}
 
 	content, err := os.ReadFile(configPath)
@@ -91,5 +93,25 @@ func TestBootstrapLocalProject(t *testing.T) {
 	configContent := string(content)
 	if !strings.Contains(configContent, "backend") || !strings.Contains(configContent, "api-repo") {
 		t.Fatalf("config missing registered repo: %s", configContent)
+	}
+}
+
+func TestCreateProjectRootWithoutExistingConfig(t *testing.T) {
+	env := testutil.NewTestEnv(t)
+
+	projectRoot, configPath, cfg, err := createProjectRoot(env.RootDir, "client-a/platform")
+	if err != nil {
+		t.Fatalf("createProjectRoot failed: %v", err)
+	}
+
+	if projectRoot == "" || configPath == "" || cfg == nil {
+		t.Fatal("expected project root, config path, and config")
+	}
+
+	if _, err := os.Stat(filepath.Join(projectRoot, ".hydra.yaml")); err != nil {
+		t.Fatalf("expected config file: %v", err)
+	}
+	if _, err := os.Stat(projectRoot); err != nil {
+		t.Fatalf("expected project root to exist: %v", err)
 	}
 }
