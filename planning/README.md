@@ -46,11 +46,13 @@ We keep epic folders flat and track state inside each epic `README.md`.
 
 ## Roles
 
-The project uses four durable agent roles:
+The project uses these durable agent roles:
 
 - `manager`
 - `implementer`
+- `sub-implementer`
 - `reviewer`
+- `checkpoint-reviewer`
 - `merger`
 
 Their reusable OpenCode definitions live under `.opencode/agents/`, while per-epic assignments live in `planning/epics/<epic-id>/agents.md`.

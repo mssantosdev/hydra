@@ -18,3 +18,5 @@ Return:
 7. whether integration-style validation was performed, and what was checked instead if not
 
 Also update or return the text needed for the runtime task file's review history, review decision, next owner, and current state sections.
+
+This command is for official review, not checkpoint review.
