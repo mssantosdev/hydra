@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"os"
+	"bytes"
 	"strings"
 	"testing"
 
@@ -17,17 +17,16 @@ func TestRootVersionFlag(t *testing.T) {
 		rootCmd.SetOut(oldOut)
 		rootCmd.SetErr(oldErr)
 	})
-	rootCmd.SetOut(os.Stdout)
-	rootCmd.SetErr(os.Stderr)
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
 	rootCmd.Version = versionInfo()
 
-	out := testutil.CaptureOutput(func() {
-		rootCmd.SetArgs([]string{"--version"})
-		_ = rootCmd.Execute()
-	})
+	rootCmd.SetArgs([]string{"--version"})
+	_ = rootCmd.Execute()
 
-	if !strings.Contains(out, "v1.2.3") || !strings.Contains(out, "abc123") {
-		t.Fatalf("expected version output, got %q", out)
+	if !strings.Contains(out.String(), "v1.2.3") || !strings.Contains(out.String(), "abc123") {
+		t.Fatalf("expected version output, got %q", out.String())
 	}
 }
 
@@ -40,17 +39,16 @@ func TestRootHelpShowsVersion(t *testing.T) {
 		rootCmd.SetOut(oldOut)
 		rootCmd.SetErr(oldErr)
 	})
-	rootCmd.SetOut(os.Stdout)
-	rootCmd.SetErr(os.Stderr)
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
 	rootCmd.Version = versionInfo()
 
-	out := testutil.CaptureOutput(func() {
-		rootCmd.SetArgs([]string{"--help"})
-		_ = rootCmd.Execute()
-	})
+	rootCmd.SetArgs([]string{"--help"})
+	_ = rootCmd.Execute()
 
-	testutil.Contains(t, out, "Version:")
-	testutil.Contains(t, out, "dev")
+	testutil.Contains(t, out.String(), "Version:")
+	testutil.Contains(t, out.String(), "dev")
 }
 
 func TestRootDefaultOutputShowsVersion(t *testing.T) {
@@ -62,15 +60,14 @@ func TestRootDefaultOutputShowsVersion(t *testing.T) {
 		rootCmd.SetOut(oldOut)
 		rootCmd.SetErr(oldErr)
 	})
-	rootCmd.SetOut(os.Stdout)
-	rootCmd.SetErr(os.Stderr)
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
 	rootCmd.Version = versionInfo()
 
-	out := testutil.CaptureOutput(func() {
-		rootCmd.SetArgs([]string{})
-		_ = rootCmd.Execute()
-	})
+	rootCmd.SetArgs([]string{})
+	_ = rootCmd.Execute()
 
-	testutil.Contains(t, out, "Version:")
-	testutil.Contains(t, out, "dev")
+	testutil.Contains(t, out.String(), "Version:")
+	testutil.Contains(t, out.String(), "dev")
 }
