@@ -5,7 +5,9 @@ subtask: true
 ---
 Read the active epic release plan and produce the exact release workflow for the current state.
 
-Confirm all tasks defined in `tasks.md` are either approved and merged or intentionally excluded from the release, using the detailed task files for final state checks.
+Confirm all tasks defined in `tasks.md` are either approved and merged or intentionally excluded from the release, using the runtime task files and `planning/workspace-sync.md` for final state checks.
+
+Do not recommend merging to `master`, tagging, pushing, or publishing unless the user explicitly requested release execution.
 
 Include:
 

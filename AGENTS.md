@@ -14,10 +14,17 @@ Core operating rules:
 
 - Work from the active epic and assigned branch/task, not from assumptions.
 - Implementers stay within assigned scope and branch ownership.
+- Implementers may delegate focused subtasks to `sub-implementer`, but remain task owners.
 - Reviewer approves or requests changes; rejected work returns to the implementer with guidance.
+- `checkpoint-reviewer` is advisory only and does not replace official review.
 - Merger only accepts approved work and owns release execution.
 - Do not release from an implementation branch.
 - Prefer small helpers and isolated edits to reduce future merge conflicts.
+- Use `coordination/` as the live operational state layer; do not rely on chat summaries alone when runtime state is stale.
+- Official review should target a committed branch HEAD SHA whenever practical.
+- Review, merge, and release handoffs must record the reviewed or approved SHA in runtime state.
+- Agents handling implementation, review, and integration should run repo-native validation commands where feasible, not only narrow unit tests.
+- Language-specific validation commands are part of agent bash permissions, not LSP configuration.
 
 Planning system entrypoint:
 
