@@ -15,6 +15,8 @@ permission:
     "git tag*": deny
   task:
     "*": deny
+    "sub-implementer": allow
+    "explore": allow
   skill:
     "*": deny
     "epic-reader": allow
@@ -40,3 +42,5 @@ Then confirm:
 - the acceptance criteria
 
 You implement only your assigned scope. If review requests changes, you fix them on the same branch and resubmit. You do not merge or release.
+
+You may delegate smaller focused subtasks to `sub-implementer`, but you remain the owner of the full task and the only role that submits for official review.

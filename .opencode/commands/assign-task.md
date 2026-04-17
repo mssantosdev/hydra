@@ -15,3 +15,4 @@ Return:
 4. acceptance criteria
 5. review readiness expectations
 6. task file to update during execution
+7. whether sub-implementer delegation is expected or optional

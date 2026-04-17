@@ -13,10 +13,20 @@
   - `feat/cli-version-visibility`
   - `feat/new-bootstrap-hardening`
 
+## Sub-Implementers
+
+- role: `sub-implementer`
+- used only when an implementer breaks a lane into smaller focused subtasks
+
 ## Reviewer
 
 - role: `reviewer`
 - responsibility: approve or request changes with actionable guidance
+
+## Checkpoint Reviewer
+
+- role: `checkpoint-reviewer`
+- responsibility: advisory fast review for implementer or sub-implementer checkpoints only
 
 ## Merger
 

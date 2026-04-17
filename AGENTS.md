@@ -14,7 +14,9 @@ Core operating rules:
 
 - Work from the active epic and assigned branch/task, not from assumptions.
 - Implementers stay within assigned scope and branch ownership.
+- Implementers may delegate focused subtasks to `sub-implementer`, but remain task owners.
 - Reviewer approves or requests changes; rejected work returns to the implementer with guidance.
+- `checkpoint-reviewer` is advisory only and does not replace official review.
 - Merger only accepts approved work and owns release execution.
 - Do not release from an implementation branch.
 - Prefer small helpers and isolated edits to reduce future merge conflicts.

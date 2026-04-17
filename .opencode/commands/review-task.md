@@ -16,3 +16,5 @@ Return:
 5. validation expectations
 
 Also update or return the text needed for the task file's review history and current state sections.
+
+This command is for official review, not checkpoint review.

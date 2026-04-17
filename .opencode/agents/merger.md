@@ -17,6 +17,7 @@ permission:
     "git push*": ask
   task:
     "*": deny
+    "explore": allow
   skill:
     "*": deny
     "epic-reader": allow
