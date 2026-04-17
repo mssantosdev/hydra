@@ -46,15 +46,15 @@ Expose Hydra version information clearly in command-line entrypoints.
 
 ## Current State
 
-- current status: `assigned`
+- current status: `in_review`
 - current owner: `implementer`
 - current blocker: none
-- next expected action: implement version visibility in the assigned branch
+- next expected action: reviewer validation
 - latest reviewer decision: none
 
 ## Observations / Comments
 
-- empty
+- root command now renders version info in help/default output and supports `--version`.
 
 ## Decision Log
 
@@ -66,7 +66,7 @@ Expose Hydra version information clearly in command-line entrypoints.
 
 ## Handoff Summary
 
-- implementer should update readiness details before requesting review
+- Implemented version visibility, default output/help version text, and dev fallback support. Validation passed with `go test ./...` and `go run . --version` / `go run . --help`.
 
 ## Completion Notes
 

@@ -2,9 +2,20 @@
 
 BINARY_NAME=hydra
 INSTALL_PATH=$(HOME)/.local/bin
+VERSION ?= dev
+COMMIT ?=
+BUILT_AT ?=
+
+LDFLAGS=-X github.com/mssantosdev/hydra/internal/cmd.version=$(VERSION)
+ifneq ($(strip $(COMMIT)),)
+LDFLAGS += -X github.com/mssantosdev/hydra/internal/cmd.commit=$(COMMIT)
+endif
+ifneq ($(strip $(BUILT_AT)),)
+LDFLAGS += -X github.com/mssantosdev/hydra/internal/cmd.builtAt=$(BUILT_AT)
+endif
 
 build:
-	go build -o $(BINARY_NAME) ./cmd/hydra
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) .
 
 install: build
 	mkdir -p $(INSTALL_PATH)

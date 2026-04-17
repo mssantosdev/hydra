@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/spf13/cobra"
@@ -11,6 +12,9 @@ import (
 var (
 	cfgFile string
 	cfg     *config.Config
+	version = "dev"
+	commit  = ""
+	builtAt = ""
 	rootCmd = &cobra.Command{
 		Use:   "hydra",
 		Short: "Hydra - Git worktree manager",
@@ -20,7 +24,7 @@ It helps you organize multiple worktrees across different repositories
 and ecosystems, making it easy to work on multiple branches simultaneously.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Skip config loading for commands that don't require it
-			if cmd.Name() == "init" || cmd.Name() == "clone" || cmd.Name() == "help" || cmd.Name() == "glossary" || cmd.Name() == "config" || cmd.Name() == "init-shell" {
+			if cmd.Parent() == nil || cmd.Name() == "init" || cmd.Name() == "clone" || cmd.Name() == "help" || cmd.Name() == "glossary" || cmd.Name() == "config" || cmd.Name() == "init-shell" {
 				return nil
 			}
 
@@ -39,6 +43,9 @@ Run "hydra init" to create a new configuration.`, err)
 
 			return nil
 		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
 	}
 )
 
@@ -49,9 +56,45 @@ func Execute() error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is .hydra.yaml)")
+	rootCmd.Version = versionInfo()
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
+	rootCmd.SetHelpTemplate(`{{with .Long}}{{.}}{{else}}{{.Short}}{{end}}
+
+Version: {{.Version}}
+
+Usage:
+  {{.UseLine}}
+
+{{if .HasAvailableSubCommands}}Commands:
+{{range .Commands}}{{if .IsAvailableCommand}}  {{rpad .Name .NamePadding }} {{.Short}}
+{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}Flags:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+Global Flags:
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}`)
 }
 
 // GetConfig returns the loaded configuration
 func GetConfig() *config.Config {
 	return cfg
+}
+
+func versionInfo() string {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		v = "dev"
+	}
+
+	if !strings.HasPrefix(v, "v") && v != "dev" {
+		v = "v" + v
+	}
+
+	parts := []string{v}
+	if commit != "" {
+		parts = append(parts, commit)
+	}
+	if builtAt != "" {
+		parts = append(parts, builtAt)
+	}
+
+	return strings.Join(parts, " ")
 }
