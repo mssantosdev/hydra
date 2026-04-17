@@ -42,10 +42,7 @@ func ListWorktrees(bareRepo string) ([]WorktreeInfo, error) {
 			current.Path = strings.TrimPrefix(line, "worktree ")
 		} else if strings.HasPrefix(line, "branch ") {
 			branchRef := strings.TrimPrefix(line, "branch ")
-			parts := strings.Split(branchRef, "/")
-			if len(parts) > 0 {
-				current.Branch = parts[len(parts)-1]
-			}
+			current.Branch = branchNameFromRef(branchRef)
 		} else if line == "bare" {
 			current.IsBare = true
 		}
@@ -243,6 +240,15 @@ func parseRefList(output []byte) []string {
 	}
 	sort.Strings(branches)
 	return branches
+}
+
+func branchNameFromRef(ref string) string {
+	for _, prefix := range []string{"refs/heads/", "refs/remotes/origin/"} {
+		if strings.HasPrefix(ref, prefix) {
+			return strings.TrimPrefix(ref, prefix)
+		}
+	}
+	return ref
 }
 
 // PushAll pushes all branches and tags to a remote

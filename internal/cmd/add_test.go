@@ -130,3 +130,33 @@ func TestAdd_CreatesSymlink(t *testing.T) {
 		t.Error("Symlink should exist")
 	}
 }
+
+func TestSwitch_SlashBranchWorktreeName(t *testing.T) {
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+
+	bareRepo := env.CreateBareRepo("backend-v2")
+	env.CreateWorktree(bareRepo, "main")
+	env.CreateWorktree(bareRepo, "marcus/feat-onboarding")
+	env.AddToConfig("mykids", "backend-v2", "backend-v2")
+
+	groupDir := filepath.Join(env.RootDir, "mykids")
+	if err := os.MkdirAll(groupDir, 0755); err != nil {
+		t.Fatalf("failed to create group dir: %v", err)
+	}
+	symlinkPath := filepath.Join(groupDir, "backend-v2-marcus-feat-onboarding")
+	if err := os.Symlink(filepath.Join("..", ".bare", "backend-v2.git", "marcus-feat-onboarding"), symlinkPath); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	env.Chdir()
+	rootCmd.SetArgs([]string{"switch", "backend-v2-marcus-feat-onboarding"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected shell helper error after successful worktree lookup")
+	}
+	if err.Error() != "shell helper not initialized" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
