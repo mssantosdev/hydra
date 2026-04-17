@@ -42,10 +42,12 @@ This creates `.hydra.yaml` configuration file.
 
 ```bash
 hydra init-shell
-source ~/.bashrc  # or ~/.zshrc
+source your shell rc/config file
 ```
 
-This enables automatic directory switching.
+This installs a small loader block in your shell rc and stores generated shell
+assets under `~/.config/hydra/shell/`. Use `hydra completion bash|zsh|fish`
+if you want the completion script directly.
 
 ### 3. Add a Worktree
 
@@ -176,8 +178,8 @@ The shell helper enables `hydra switch` to automatically change your directory:
 
 ```bash
 # Install helper
-hydra init-shell >> ~/.bashrc
-source ~/.bashrc
+hydra init-shell
+source your shell rc/config file
 
 # Now this changes directory automatically!
 hydra switch my-worktree

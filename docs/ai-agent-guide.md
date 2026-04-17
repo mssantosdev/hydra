@@ -57,7 +57,8 @@ fi
 # Check environment variable
 if [ -z "$HYDRA_SHELL_HELPER" ]; then
     echo "Shell helper not initialized"
-    echo "Run: hydra init-shell && source ~/.bashrc"
+    echo "Run: hydra init-shell"
+    echo "Then source your shell rc/config file"
     exit 1
 fi
 ```
@@ -141,7 +142,7 @@ done
 | Error | Detection | Solution |
 |-------|-----------|----------|
 | `no .hydra.yaml found` | `hydra list` exit code 2 | Run `hydra init` or cd to project root |
-| `Shell helper not initialized` | `$HYDRA_SHELL_HELPER` empty | Run `hydra init-shell && source ~/.bashrc` |
+| `Shell helper not initialized` | `$HYDRA_SHELL_HELPER` empty | Run `hydra init-shell`, then source your shell rc/config file |
 | `worktree has uncommitted changes` | `hydra remove` fails | Stash: `git stash` or force: `--force` |
 | `unknown alias` | `hydra add` fails | Check `hydra list` for valid aliases |
 
@@ -165,7 +166,7 @@ check_hydra_project() {
 check_shell_helper() {
     if [ -z "$HYDRA_SHELL_HELPER" ]; then
         echo "WARNING: Shell helper not initialized"
-        echo "SOLUTION: Run 'hydra init-shell && source ~/.bashrc'"
+        echo "SOLUTION: Run 'hydra init-shell', then source your shell rc/config file"
         return 1
     fi
     return 0

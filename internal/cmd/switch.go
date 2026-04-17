@@ -26,7 +26,7 @@ DESCRIPTION
 PREREQUISITES
   Shell helper must be initialized:
     $ hydra init-shell
-    $ source ~/.bashrc  # or ~/.zshrc
+    $ source your shell rc/config file
 
 WHEN TO USE
   • Moving between different feature branches
@@ -76,8 +76,8 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println("To enable automatic directory switching, run:")
 		fmt.Println()
-		fmt.Println("  hydra init-shell >> ~/.bashrc")
-		fmt.Println("  source ~/.bashrc")
+		fmt.Println("  hydra init-shell")
+		fmt.Println("  source your shell rc/config file")
 		fmt.Println()
 		fmt.Println("Then you can use: hydra switch <worktree>")
 		fmt.Println()

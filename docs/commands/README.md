@@ -23,6 +23,7 @@ Complete reference for all Hydra commands.
 | **Sync updates** | `hydra sync [<alias>]` | [Sync](./sync.md#hydra-sync) |
 | **Configure settings** | `hydra config` | [Configuration](./config-shell.md#hydra-config) |
 | **Setup shell** | `hydra init-shell [bash\|zsh\|fish]` | [Configuration](./config-shell.md#hydra-init-shell) |
+| **Generate completion** | `hydra completion <bash\|zsh\|fish>` | Built-in help |
 | **Show glossary** | `hydra glossary` | Built-in help |
 
 ## Command Categories
@@ -55,6 +56,7 @@ Commands for keeping worktrees up to date:
 Commands for settings and shell integration:
 - `hydra config` - Manage global configuration
 - `hydra init-shell` - Setup shell integration
+- `hydra completion` - Print shell completion scripts
 
 ## Decision Tree for Command Selection
 
