@@ -12,6 +12,7 @@ A beautiful CLI tool for managing Git worktrees with ecosystem organization.
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
 - 🌍 **Multi-language**: English and Portuguese (BR) support
+- 🔖 **Version Visibility**: `hydra`, `hydra --help`, and `hydra --version` show version info
 
 ## Installation
 

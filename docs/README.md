@@ -20,6 +20,7 @@ Hydra helps you work with multiple Git branches simultaneously by creating separ
 - 🎨 **Beautiful CLI**: Tokyo Night theme with styled output
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
+- 🔖 **Version Visibility**: Root output and help include version information
 
 ## Quick Start
 
@@ -175,6 +176,7 @@ Need to cleanup?
 
 - **Command help**: `hydra <command> --help`
 - **All commands**: `hydra --help`
+- **Version**: `hydra --version`
 - **Glossary**: `hydra glossary`
 - **This docs**: See links above
 

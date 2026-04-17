@@ -26,6 +26,8 @@ Complete reference for all Hydra commands.
 | **Generate completion** | `hydra completion <bash\|zsh\|fish>` | Built-in help |
 | **Show glossary** | `hydra glossary` | Built-in help |
 
+Version details are shown directly in `hydra`, `hydra --help`, and `hydra --version`.
+
 ## Command Categories
 
 ### [Project Setup](./init-clone.md)
@@ -104,6 +106,7 @@ Need to cleanup?
 |------|-------------|
 | `--config string` | Config file path (default: `.hydra.yaml`) |
 | `-h, --help` | Help for command |
+| `--version` | Show Hydra version |
 
 ### Common Patterns by Category
 
