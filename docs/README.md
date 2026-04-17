@@ -53,7 +53,10 @@ hydra add backend-api feature/new-endpoint
 ```bash
 # Requires shell helper (one-time setup)
 hydra init-shell
-source ~/.bashrc
+source your shell rc/config file
+
+# Or install completion at the same time
+hydra init-shell --with-completion
 
 # Then switch (auto-cd!)
 hydra switch backend-api-feature-new-endpoint

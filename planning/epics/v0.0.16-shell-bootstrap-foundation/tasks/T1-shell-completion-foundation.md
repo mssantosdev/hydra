@@ -6,7 +6,7 @@
 - Epic: `v0.0.16-shell-bootstrap-foundation`
 - Branch: `feat/shell-completion-foundation`
 - Owner role: `implementer`
-- Status: `assigned`
+- Status: `in_review`
 - Reviewer state: `pending`
 - Merger state: `pending`
 - Last updated: `2026-04-17`
@@ -62,20 +62,21 @@ Create a maintainable shell integration architecture and first-class completion 
 
 ## Current State
 
-- current status: `assigned`
+- current status: `in_review`
 - current owner: `implementer`
 - current blocker: none
-- next expected action: implement shell/completion foundation in the assigned branch
+- next expected action: reviewer validation on shell/completion foundation changes
 - latest reviewer decision: none
 
 ## Observations / Comments
 
-- empty
+- implemented completion command, generated shell assets, loader-block init-shell flow, and docs alignment for T1
 
 ## Decision Log
 
 - use generated shell files under `~/.config/hydra/shell/`
 - keep one minimal loader block in shell rc
+- prompt defaults to install completion unless declined
 
 ## Review History
 
@@ -87,4 +88,4 @@ Create a maintainable shell integration architecture and first-class completion 
 
 ## Completion Notes
 
-- not completed yet
+- implementation complete; ready for review after validation
