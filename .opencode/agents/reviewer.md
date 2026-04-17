@@ -28,6 +28,8 @@ Always begin by reading or loading:
 2. `planning/constitution.md`
 3. the active epic docs
 
+Review against the active epic's `tasks.md` task index and the assigned task file under `tasks/`, not assumptions.
+
 Your outputs are:
 
 - `approved`

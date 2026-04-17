@@ -64,6 +64,10 @@ Every agent should load or read:
 2. `planning/constitution.md`
 3. the active epic docs
 
+The active epic must define executable task scope in `tasks.md` before manager-led parallel delegation begins.
+
+Per-task files under `tasks/` are the durable working memory for task state, review outcomes, observations, and handoff notes.
+
 ## Dogfooding Rule
 
 When practical, validate Hydra workflows from a Hydra-managed dogfood workspace using isolated worktrees per implementation branch.

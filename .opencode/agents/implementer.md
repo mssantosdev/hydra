@@ -31,6 +31,8 @@ Always begin by reading or loading:
 2. `planning/constitution.md`
 3. the active epic docs
 
+Treat the active epic's `tasks.md` as the source of truth for task selection, and the assigned task file under `tasks/` as the durable source of detailed scope, status, observations, and handoff state.
+
 Then confirm:
 
 - the assigned task

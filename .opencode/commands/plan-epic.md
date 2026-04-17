@@ -5,6 +5,8 @@ subtask: true
 ---
 Read the active epic docs and produce a concrete execution breakdown.
 
+Use `tasks.md` as the source of truth for executable lanes.
+
 Include:
 
 1. tasks

@@ -14,6 +14,10 @@ Establish the first durable multi-agent development wave for Hydra, focusing on 
 - `hydra new` hardening and polish
 - planning/agent framework required to execute this epic with Hydra itself
 
+## Execution Source
+
+Concrete lane definitions, acceptance criteria, and review gates live in `tasks.md`.
+
 ## Excluded
 
 - local-only file tracking/copying

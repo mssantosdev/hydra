@@ -5,6 +5,8 @@ subtask: true
 ---
 Read the active epic release plan and produce the exact release workflow for the current state.
 
+Confirm all tasks defined in `tasks.md` are either approved and merged or intentionally excluded from the release, using the detailed task files for final state checks.
+
 Include:
 
 1. latest tag check

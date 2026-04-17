@@ -14,6 +14,8 @@ Each epic folder should contain:
 - `orchestration.md` — phases, dependencies, and execution flow
 - `branches.md` — branch ownership and merge order
 - `agents.md` — role assignments for the epic
+- `tasks.md` — executable task index and quick-reference ledger
+- `tasks/` — one file per task or lane with persistent state, review history, and handoff notes
 - `merge-release.md` — validation, merge, and publish checklist
 
 OpenCode runtime assets live in:

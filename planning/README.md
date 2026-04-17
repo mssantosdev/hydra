@@ -10,6 +10,30 @@ This directory contains the permanent operating model and epic-by-epic execution
 
 Each folder under `epics/` defines one implementation wave.
 
+Recommended epic files:
+
+- `README.md`
+- `orchestration.md`
+- `branches.md`
+- `agents.md`
+- `tasks.md`
+- `tasks/`
+- `merge-release.md`
+
+## Task Tracking Standard
+
+Use `tasks.md` as the fast-search task index for an epic.
+
+Use the files under `tasks/` as the durable execution records for:
+
+- current state
+- observations/comments
+- decisions
+- review history
+- handoff summary
+
+This keeps parallel work persistent and compaction-proof across long agent sessions.
+
 Epic lifecycle states:
 
 - `draft`

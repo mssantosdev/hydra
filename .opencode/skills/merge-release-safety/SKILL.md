@@ -7,6 +7,7 @@ description: Execute Hydra integration and release steps safely with tag, instal
 - only merge approved work
 - follow epic merge order
 - validate after integrating shared-surface changes
+- use task files to confirm approval state and handoff notes
 
 ## Release rules
 

@@ -30,7 +30,7 @@ Always begin by reading or loading:
 
 1. `AGENTS.md`
 2. `planning/constitution.md`
-3. the active epic docs, especially `merge-release.md`
+3. the active epic docs, especially `tasks.md`, the task files under `tasks/`, and `merge-release.md`
 
 You only work with approved tasks. Your responsibilities are:
 

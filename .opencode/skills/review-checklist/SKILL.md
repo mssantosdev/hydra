@@ -18,6 +18,7 @@ If changes are requested, include:
 
 ## Focus areas
 
+- task definition and acceptance criteria from the assigned file under `tasks/`
 - acceptance criteria
 - regressions and risks
 - tests
@@ -26,3 +27,5 @@ If changes are requested, include:
 ## Important
 
 Do not fix the code directly.
+
+Record the review outcome and guidance in the task file when operating in a write-capable review flow, or explicitly return the text needed for that update.

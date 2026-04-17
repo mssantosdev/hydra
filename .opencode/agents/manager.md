@@ -28,9 +28,12 @@ Always begin by reading or loading:
 2. `planning/constitution.md`
 3. the active epic docs under `planning/epics/`
 
+Use the active epic's `tasks.md` as the canonical task index and the files under `tasks/` as the canonical detailed state for delegation and follow-up.
+
 Your job is to:
 
 - break epic work into tasks
+- break epic work into executable tasks from `tasks.md`
 - identify what can run in parallel
 - assign work to implementers
 - route completed work to review

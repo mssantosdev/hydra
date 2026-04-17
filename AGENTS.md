@@ -8,6 +8,8 @@ Read these files before starting any non-trivial task:
 2. `planning/README.md`
 3. The active epic folder under `planning/epics/`
 
+For executable task scope, acceptance criteria, and review gates, use the active epic's `tasks.md` and the detailed task files under `tasks/`.
+
 Core operating rules:
 
 - Work from the active epic and assigned branch/task, not from assumptions.
