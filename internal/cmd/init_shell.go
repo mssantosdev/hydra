@@ -248,7 +248,6 @@ hydra() {
             output_file=$(mktemp "${TMPDIR:-/tmp}/hydra-switch.XXXXXX") || return 1
             cleanup_output_file=1
         fi
-        : > "$output_file"
 
         HYDRA_SWITCH_OUTPUT_FILE="$output_file" command hydra "$@"
         local exit_code=$?
@@ -303,7 +302,6 @@ function hydra
             or return 1
             set cleanup_output_file 1
         end
-        printf '' > "$output_file"
 
         env HYDRA_SWITCH_OUTPUT_FILE="$output_file" command hydra $argv
         set -l exit_code $status

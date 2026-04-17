@@ -13,6 +13,7 @@ Complete reference for all Hydra commands.
 | Task | Command | Documentation |
 |------|---------|---------------|
 | **Initialize project** | `hydra init` | [Project Setup](./init-clone.md#hydra-init) |
+| **Bootstrap new project** | `hydra new` | [Project Bootstrap](./project-bootstrap.md#hydra-new) |
 | **Clone repository** | `hydra clone <url>` | [Project Setup](./init-clone.md#hydra-clone) |
 | **Add worktree** | `hydra add [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-add) |
 | **Remove worktree** | `hydra remove [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-remove) |
@@ -30,6 +31,10 @@ Complete reference for all Hydra commands.
 Commands for initializing and cloning:
 - `hydra init` - Initialize Hydra in current directory
 - `hydra clone <url>` - Clone repository and setup worktrees
+
+### [Project Bootstrap](./project-bootstrap.md)
+Commands for creating a new Hydra project and first repository:
+- `hydra new` - Create project root and bootstrap the first repo
 
 ### [Worktree Management](./worktree-management.md)
 Commands for creating and deleting worktrees:
@@ -56,7 +61,8 @@ Commands for settings and shell integration:
 ```
 Starting new project?
 ├── Yes
-│   └── hydra init
+│   ├── Want a guided local-first setup? → hydra new
+│   └── Already have the project directory? → hydra init
 │       └── Then: hydra clone <url>
 └── No
     └── Continue...
@@ -103,9 +109,6 @@ Need to cleanup?
 ```bash
 # From specific base branch
 hydra add api feature-x --from=develop
-
-# Track remote branch
-hydra add api feature-y --track=origin/feature-y
 
 # Interactive mode (no args)
 hydra add
