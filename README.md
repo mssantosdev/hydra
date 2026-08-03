@@ -1,18 +1,18 @@
 # Hydra 🐍
 
-A beautiful CLI tool for managing Git worktrees with ecosystem organization.
+A beautiful CLI tool for managing Git worktrees with group organization.
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/mssantosdev/hydra)](https://goreportcard.com/report/github.com/mssantosdev/hydra)
 
 ## Features
 
 - 🌿 **Worktree Management**: Create, switch, and remove Git worktrees easily
-- 🏗️ **Ecosystem Organization**: Group related repositories (backend, frontend, infra)
+- 🏗️ **Group Organization**: Group related repositories (backend, frontend, infra)
 - 🎨 **Beautiful CLI**: Multiple themes (Tokyo Night, Catppuccin, Dracula, Nord, One Dark)
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
-- 🌍 **Multi-language**: English and Portuguese (BR) support
 - 🔖 **Version Visibility**: `hydra`, `hydra --help`, and `hydra --version` show version info
+- 🤖 **Machine-readable output**: JSON envelopes for scripting and agents
 
 ## Installation
 
@@ -28,6 +28,16 @@ cd hydra
 go build -o hydra .
 ```
 
+`go build` produces a binary that reports `dev`. A released build stamps the version
+through ldflags, which `make` wires up:
+
+```bash
+make build VERSION=v0.0.17 COMMIT=$(git rev-parse --short HEAD)
+./hydra --version   # v0.0.17 <commit>
+```
+
+`make gate` runs the pre-commit contract: `gofmt`, `go vet`, and the test suite.
+
 ## Quick Start
 
 ### 1. Initialize Hydra
@@ -41,14 +51,22 @@ This creates `.hydra.yaml` configuration file.
 
 ### 2. Setup Shell Integration (Recommended)
 
+`hydra init-shell` installs the shell helper by default: it writes a loader block into your shell rc file **and** prints a human success message to stdout. Do **not** redirect the default command into your rc file.
+
 ```bash
+# Install helper and loader block (default)
 hydra init-shell
-source your shell rc/config file
+source ~/.bashrc   # or your shell rc file
 ```
 
-This installs a small loader block in your shell rc and stores generated shell
-assets under `~/.config/hydra/shell/`. Use `hydra completion bash|zsh|fish`
-if you want the completion script directly.
+To capture only the raw loader snippet for manual installation:
+
+```bash
+hydra init-shell --install=false >> ~/.bashrc
+source ~/.bashrc
+```
+
+Generated shell assets live under `~/.config/hydra/shell/`. Use `hydra completion bash|zsh|fish` if you want the completion script directly.
 
 ### 3. Add a Worktree
 
@@ -63,51 +81,95 @@ hydra add api feature/new-endpoint
 ### 4. Switch Between Worktrees
 
 ```bash
-# With shell helper - automatically changes directory!
+# Prints the worktree path and exits 0 (works without shell helper)
 hydra switch api-feature-new-endpoint
 
-# Without shell helper - shows cd command
+# With shell helper installed — automatically changes directory
 hydra switch api-feature-new-endpoint
+
+# Requires shell helper; fails with exit 3 if missing
+hydra switch api-feature-new-endpoint --cd
 ```
+
+For scripts and agents, use `hydra path <worktree>` instead of `switch`.
 
 ### 5. List All Worktrees
 
 ```bash
 hydra list
+# alias: hydra ls
 ```
+
+## On-Disk Layout
+
+Hydra keeps bare git data separate from real working directories. Worktrees are **sibling directories**, never symlinks:
+
+```text
+<project-root>/
+  .hydra.yaml
+  .bare/
+    api.git/              # git data only — never cd into or write here
+    web.git/
+  backend/
+    api/                  # default-branch worktree for alias api
+    api-feat-login/       # branch feat/login  →  api-feat-login
+  frontend/
+    web/
+    web-hotfix-urgent/
+```
+
+The map key under each group **is** the repo alias. It determines both `.bare/<alias>.git` and the worktree directory base name.
 
 ## Documentation
 
-Complete documentation available in the [`docs/`](docs/) directory:
+Complete documentation is in [`docs/`](docs/):
 
-- **[Getting Started](docs/README.md)** - Overview and quick start
-- **[Commands](docs/commands/)** - Complete command reference
-  - [Worktree Management](docs/commands/worktree-management.md) - `add`, `remove`
-  - [Navigation](docs/commands/navigation.md) - `switch`, `list`, `status`
-  - [Project Setup](docs/commands/init-clone.md) - `init`, `clone`
-  - [Sync](docs/commands/sync.md) - `sync`
-  - [Configuration](docs/commands/config-shell.md) - `config`, `init-shell`
-- **[Configuration](docs/configuration.md)** - `.hydra.yaml` specification
-- **[Shell Integration](docs/shell-integration.md)** - Auto-cd setup
-- **[Themes](docs/themes.md)** - Theme configuration
-- **[AI Agent Guide](docs/ai-agent-guide.md)** - For AI automation
+- **[Getting Started](docs/README.md)** — Overview and quick start
+- **[Commands](docs/commands/README.md)** — Complete command reference
+  - [Worktree Management](docs/commands/worktree-management.md) — `add`, `remove`
+  - [Project Bootstrap](docs/commands/project-bootstrap.md) — `new`, `init`, `clone`, `adopt`
+- **[Configuration](docs/configuration.md)** — `.hydra.yaml` schema v2
+
+For AI agents and automation, use the embedded skill contract:
+
+- **[skills/hydra/SKILL.md](skills/hydra/SKILL.md)** — version-locked agent contract
+- **`hydra skill`** — print the skill to stdout
+- **`hydra skill --install`** — install the skill for your agent environment
 
 ## Example Configuration
 
-`.hydra.yaml`:
+`.hydra.yaml` (schema v2):
 
 ```yaml
-version: "1.0"
+version: "2"
+project: my-project
 
-ecosystems:
+paths:
+  bare_dir: ".bare"
+
+groups:
   backend:
-    api: my-api
-    worker: my-worker
-  
+    api:
+      remote: git@github.com:org/my-api.git
+      default_branch: main
+    worker:
+      remote: git@github.com:org/my-worker.git
   frontend:
-    web: my-web
-    admin: my-admin
+    web:
+      remote: git@github.com:org/my-web.git
+
+defaults:
+  base_branch: ""   # usually leave empty; see configuration.md
+
+hooks:
+  post_add:
+    - run: npm install
+  post_sync:
+    - run: echo "synced $HYDRA_BRANCH"
+      optional: true
 ```
+
+See [Configuration](docs/configuration.md) for every field, hook events, and the global project registry.
 
 ## Common Workflows
 
@@ -115,17 +177,17 @@ ecosystems:
 
 ```bash
 # 1. Create feature worktree
-hydra add backend-api feature/JIRA-123
+hydra add api feature/JIRA-123
 
-# 2. Switch to it (auto-cd!)
-hydra switch backend-api-feature-JIRA-123
+# 2. Switch to it (auto-cd when shell helper is installed)
+hydra switch api-feature-JIRA-123
 
 # 3. Do work...
 git commit -m "feat: new feature"
 
 # 4. Cleanup when done
-hydra switch backend-api-main
-hydra remove backend-api feature/JIRA-123
+hydra switch api
+hydra remove api feature/JIRA-123
 ```
 
 ### Hotfix Production
@@ -139,7 +201,9 @@ hydra switch api-hotfix-critical-bug
 # ... fix ...
 git push
 
-# Cleanup
+# Cleanup, once the hotfix is merged into the default branch.
+# --delete-branch is refused if the branch is not merged there yet, and nothing is
+# removed in that case. Being pushed to origin does not count as merged.
 hydra remove api hotfix/critical-bug --delete-branch
 ```
 
@@ -147,17 +211,96 @@ hydra remove api hotfix/critical-bug --delete-branch
 
 | Command | Description |
 |---------|-------------|
-| `hydra init` | Initialize Hydra in current directory |
-| `hydra clone <url>` | Clone repository and setup worktrees |
-| `hydra add [<repo> <branch>]` | Create new worktree |
-| `hydra remove [<repo> <branch>]` | Remove worktree |
-| `hydra switch [<worktree>]` | Switch to worktree (auto-cd) |
-| `hydra list` | List all worktrees |
-| `hydra status` | Show worktree overview |
-| `hydra sync [<alias>]` | Pull updates across worktrees |
-| `hydra config` | Manage global configuration |
-| `hydra init-shell` | Setup shell integration |
+| `hydra init` | Initialize Hydra in the current directory |
+| `hydra new` | Bootstrap a new project and first repository |
+| `hydra clone <url>` | Clone a remote into a project |
+| `hydra adopt` | Import an existing checkout into the current project |
+| `hydra add [<repo> <branch>]` | Create a new worktree |
+| `hydra remove [<repo> <branch>]` | Remove a worktree |
+| `hydra path <worktree>` | Print a worktree's absolute path |
+| `hydra switch [<worktree>]` | Print path; auto-cd with shell helper |
+| `hydra list` / `hydra ls` | List worktrees (`--all` includes every project) |
+| `hydra status` | Per-worktree tracking and dirtiness (`--all`) |
+| `hydra sync [<alias>]` | Fast-forward worktrees from upstreams |
+| `hydra doctor` | Diagnose workspace problems (`--fix`, `--all`) |
+| `hydra prune` | Drop stale worktree registrations (`--dry-run`) |
+| `hydra project` | Manage global registry (`ls` / `add` / `rm`) |
+| `hydra hooks` | Inspect or run hooks (`ls` / `run <event>`) |
+| `hydra config` | Manage global configuration (theme, editor) |
+| `hydra init-shell` | Install shell integration |
+| `hydra completion` | Emit shell completion script |
 | `hydra glossary` | Show terminology help |
+| `hydra skill` | Emit the agent skill (`--install`) |
+
+## Machine-readable output
+
+Hydra can emit structured JSON for scripting and agents.
+
+### Output mode
+
+| Mechanism | Behavior |
+|-----------|----------|
+| `--output auto` | Default. JSON when stdout is not a terminal; styled text in a TTY |
+| `--output json` | Always JSON on stdout |
+| `--output text` | Always human text |
+| `HYDRA_OUTPUT` | Environment override for the default mode (`auto`, `json`, or `text`) |
+| `NO_COLOR` | Disables color in text mode |
+
+Two commands are value emitters rather than reporters, and are exempt from the
+`auto` upgrade so shell substitution keeps working:
+
+- `hydra path` prints a bare path on stdout. `cd "$(hydra path api)"` works as written;
+  pass `--output json` explicitly to get the envelope with group, repo, and branch.
+- `hydra skill` writes `SKILL.md` verbatim, so `hydra skill > SKILL.md` is never mangled.
+
+Global flags also include `--project <name>`, `--config <path>`, `--verbose`, `--yes`, and `--no-hooks`.
+
+### Success envelope
+
+On success, stdout contains:
+
+```json
+{"schema":1,"command":"list","data":{},"warnings":[]}
+```
+
+### Error envelope
+
+On failure, stderr contains:
+
+```json
+{"schema":1,"command":"add","error":{"code":"worktree_name_conflict","message":"…","details":{}}}
+```
+
+Branch on `error.code`, not message text. Codes are stable; messages are not.
+
+### Error codes and exit codes
+
+| code | exit | raised when |
+|------|------|-------------|
+| `not_in_project` | 2 | no `.hydra.yaml` found walking up, and no `--project` |
+| `config_version_unsupported` | 2 | `.hydra.yaml` `version` is not `"2"` |
+| `project_unknown` | 2 | `--project <name>` not in the registry |
+| `repo_unknown` | 1 | alias not present in any group |
+| `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |
+| `branch_unknown` | 1 | branch does not exist where an existing branch was required |
+| `worktree_exists` | 1 | target worktree already exists for that branch |
+| `worktree_unknown` | 1 | named worktree not found |
+| `worktree_name_conflict` | 1 | derived directory name taken by a different branch |
+| `worktree_dirty` | 5 | destructive op blocked by uncommitted changes |
+| `hook_failed` | 1 | a non-`optional` hook exited non-zero |
+| `shell_helper_missing` | 3 | `switch --cd` with no shell helper installed |
+| `partial_failure` | 4 | some items succeeded, some failed |
+| `git_failed` | 1 | an underlying git invocation failed |
+| `internal` | 1 | anything unclassified |
+
+### Agent onboarding
+
+```bash
+hydra skill --install    # install the embedded skill for your agent
+hydra skill              # print skills/hydra/SKILL.md to stdout
+```
+
+Always pass `--output json` (or rely on `--output auto` with a pipe) and parse the envelope. See [skills/hydra/SKILL.md](skills/hydra/SKILL.md) for the full contract.
 
 ## Themes
 
@@ -175,49 +318,41 @@ hydra config
 
 ## Shell Integration
 
-The shell helper enables `hydra switch` to automatically change your directory:
+The shell helper enables `hydra switch` to automatically change your directory when the helper is loaded:
 
 ```bash
-# Install helper
 hydra init-shell
-source your shell rc/config file
+source ~/.bashrc
 
-# Now this changes directory automatically!
-hydra switch my-worktree
-
-# Or use the hsw alias
-hsw my-worktree
+hydra switch my-worktree   # auto-cd when helper is active
+hsw my-worktree            # alias provided by the helper
 ```
+
+Without the helper, `hydra switch` still prints the worktree path and exits 0. Only `hydra switch --cd` requires the helper (exit 3 when missing).
 
 ## Configuration
 
-Global configuration stored in:
+Project configuration lives in `.hydra.yaml` at the workspace root. Global user settings (theme, editor) are stored in:
+
 - Linux: `~/.config/hydra/config.yaml`
 - macOS: `~/Library/Application Support/hydra/config.yaml`
 - Windows: `%APPDATA%/hydra/config.yaml`
 
-Configure with:
+The global **project registry** (`projects.yaml` in the same config directory) maps project names to workspace roots. Override the config directory with `HYDRA_CONFIG_DIR`.
+
+Configure interactively:
 
 ```bash
 hydra config
 ```
 
-Settings include:
-- Language (en-US, pt-BR)
-- Theme
-- Default editor
-
 ## AI Agent Usage
 
-See [AI Agent Guide](docs/ai-agent-guide.md) for:
-- Decision trees
-- Programmatic usage patterns
-- Automation scripts
-- Error handling
+Hydra ships a single version-locked agent contract at [skills/hydra/SKILL.md](skills/hydra/SKILL.md). Install it with `hydra skill --install`, or read it with `hydra skill`. Use `--output json`, branch on `error.code`, and prefer `hydra path` over `hydra switch` in scripts.
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+MIT License.
 
 ## Contributing
 

@@ -1,4 +1,4 @@
-.PHONY: build install clean test run
+.PHONY: build install clean test run deps fmt vet gate
 
 BINARY_NAME=hydra
 INSTALL_PATH=$(HOME)/.local/bin
@@ -42,3 +42,9 @@ fmt:
 
 vet:
 	go vet ./...
+
+# gate is the pre-commit contract from AGENTS.md: formatting, vet, tests.
+gate:
+	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+	go vet ./...
+	go test ./...

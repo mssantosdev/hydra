@@ -1,36 +1,52 @@
-# Hydra Configuration Example
-# 
-# This is an example configuration file showing the structure.
+# Hydra Configuration Example (schema v2)
+#
 # Copy this to your project root as .hydra.yaml and customize it.
 
-version: "1.0"
+version: "2"
+project: my-project
 
 paths:
-  # Directory containing bare Git repositories (relative to this config file)
+  # Directory for bare Git repositories (relative to this file)
   bare_dir: ".bare"
-  
-  # Directory where worktrees are organized (relative to this config file)
-  worktree_dir: "."
 
-# Ecosystems organize your repositories into logical groups
-# Each ecosystem can contain multiple repositories with aliases
-ecosystems:
-  # Example: Backend services
+# Groups organize repositories into logical directories.
+# The map key under each group IS the repo alias — it determines both
+# .bare/<alias>.git and the worktree directory base name.
+groups:
   backend:
-    api: my-project-api
-    worker: my-project-worker
-  
-  # Example: Frontend applications  
-  frontend:
-    web: my-project-web
-    admin: my-project-admin
-  
-  # Example: Infrastructure/DevOps
-  infra:
-    terraform: infrastructure-as-code
-    docker: container-configs
+    api:
+      remote: git@github.com:org/my-project-api.git
+      default_branch: main
+    worker:
+      remote: git@github.com:org/my-project-worker.git
+      default_branch: main
 
-# Optional default settings
+  frontend:
+    web:
+      remote: git@github.com:org/my-project-web.git
+      default_branch: main
+    admin:
+      remote: git@github.com:org/my-project-admin.git
+
+  infra:
+    terraform:
+      remote: git@github.com:org/infrastructure-as-code.git
+
 defaults:
-  # Default branch to create new worktrees from
-  base_branch: "main"
+  # Base branch for new worktrees when --from is not passed.
+  # Resolution chain: --from → defaults.base_branch → repo default_branch → origin/HEAD
+  # Leaving this empty is the normal case.
+  base_branch: ""
+
+hooks:
+  post_clone:
+    - run: echo "cloned $HYDRA_REPO into $HYDRA_WORKTREE_PATH"
+  post_add:
+    - run: npm install
+  pre_remove:
+    - run: ./scripts/pre-remove-check.sh
+  post_remove:
+    - run: echo "removed $HYDRA_BRANCH"
+      optional: true
+  post_sync:
+    - run: make deps

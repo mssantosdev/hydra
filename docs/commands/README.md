@@ -1,159 +1,285 @@
 ---
 title: "Hydra Commands Reference"
-description: "Complete reference for all Hydra commands organized by category"
-ai_context: "Command index with decision trees and quick reference tables for AI agents"
+description: "Complete reference for all Hydra commands"
+ai_context: "Command index with decision trees and quick reference tables"
 ---
 
 # Commands Reference
 
-Complete reference for all Hydra commands.
-
-## Quick Command Table
-
-| Task | Command | Documentation |
-|------|---------|---------------|
-| **Initialize project** | `hydra init` | [Project Setup](./init-clone.md#hydra-init) |
-| **Bootstrap new project** | `hydra new` | [Project Bootstrap](./project-bootstrap.md#hydra-new) |
-| **Clone repository** | `hydra clone <url>` | [Project Setup](./init-clone.md#hydra-clone) |
-| **Add worktree** | `hydra add [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-add) |
-| **Remove worktree** | `hydra remove [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-remove) |
-| **Switch worktree** | `hydra switch [<worktree>]` | [Navigation](./navigation.md#hydra-switch) |
-| **List worktrees** | `hydra list` | [Navigation](./navigation.md#hydra-list) |
-| **Check status** | `hydra status` | [Navigation](./navigation.md#hydra-status) |
-| **Sync updates** | `hydra sync [<alias>]` | [Sync](./sync.md#hydra-sync) |
-| **Configure settings** | `hydra config` | [Configuration](./config-shell.md#hydra-config) |
-| **Setup shell** | `hydra init-shell [bash\|zsh\|fish]` | [Configuration](./config-shell.md#hydra-init-shell) |
-| **Generate completion** | `hydra completion <bash\|zsh\|fish>` | Built-in help |
-| **Show glossary** | `hydra glossary` | Built-in help |
-
-Version details are shown directly in `hydra`, `hydra --help`, and `hydra --version`.
-
-## Command Categories
-
-### [Project Setup](./init-clone.md)
-Commands for initializing and cloning:
-- `hydra init` - Initialize Hydra in current directory
-- `hydra clone <url>` - Clone repository and setup worktrees
-
-### [Project Bootstrap](./project-bootstrap.md)
-Commands for creating a new Hydra project and first repository:
-- `hydra new` - Create project root and bootstrap the first repo
-
-### [Worktree Management](./worktree-management.md)
-Commands for creating and deleting worktrees:
-- `hydra add` - Create new worktree
-- `hydra remove` - Delete worktree
-
-### [Navigation](./navigation.md)
-Commands for moving between and viewing worktrees:
-- `hydra switch` - Switch to worktree (with auto-cd)
-- `hydra list` - List all worktrees
-- `hydra status` - Show worktree overview
-
-### [Sync](./sync.md)
-Commands for keeping worktrees up to date:
-- `hydra sync` - Pull updates across worktrees
-
-### [Configuration & Shell](./config-shell.md)
-Commands for settings and shell integration:
-- `hydra config` - Manage global configuration
-- `hydra init-shell` - Setup shell integration
-- `hydra completion` - Print shell completion scripts
-
-## Decision Tree for Command Selection
-
-```
-Starting new project?
-├── Yes
-│   ├── Want a guided local-first setup? → hydra new
-│   └── Already have the project directory? → hydra init
-│       └── Then: hydra clone <url>
-└── No
-    └── Continue...
-
-Need to create worktree?
-├── Yes
-│   ├── Know repo and branch?
-│   │   ├── Yes → hydra add <repo> <branch>
-│   │   └── No → hydra add (interactive)
-│   └── With specific base?
-│       └── hydra add <repo> <branch> --from=<base>
-└── No
-    └── Continue...
-
-Need to switch worktrees?
-├── Yes
-│   └── hydra switch <worktree>
-│       └── Note: Requires shell helper initialized
-└── No
-    └── Continue...
-
-Need to see what's available?
-├── List all worktrees → hydra list
-├── Check status → hydra status
-└── Sync updates → hydra sync
-
-Need to cleanup?
-├── Remove worktree → hydra remove <repo> <branch>
-└── Also delete branch → hydra remove <repo> <branch> --delete-branch
-```
-
-## Common Flag Patterns
-
-### Global Flags (Available on all commands)
+Complete reference for all Hydra commands. Global flags on every command:
 
 | Flag | Description |
 |------|-------------|
-| `--config string` | Config file path (default: `.hydra.yaml`) |
-| `-h, --help` | Help for command |
-| `--version` | Show Hydra version |
+| `--output auto\|text\|json` | Output mode (`HYDRA_OUTPUT` env override; `auto` → JSON when stdout is not a TTY) |
+| `--project <name>` | Target a registered project by name |
+| `--config <path>` | Path to `.hydra.yaml` |
+| `--verbose` | Verbose logging |
+| `--yes` | Skip confirmation prompts |
+| `--no-hooks` | Skip all configured hooks |
 
-### Common Patterns by Category
+## Quick Command Table
 
-#### Creating Worktrees
+| Task | Command | Details |
+|------|---------|---------|
+| Initialize project | `hydra init` | [Project Bootstrap](./project-bootstrap.md#hydra-init) |
+| Bootstrap new project | `hydra new` | [Project Bootstrap](./project-bootstrap.md#hydra-new) |
+| Clone repository | `hydra clone <url>` | [Project Bootstrap](./project-bootstrap.md#hydra-clone) |
+| Adopt existing checkout | `hydra adopt` | [Project Bootstrap](./project-bootstrap.md#hydra-adopt) |
+| Add worktree | `hydra add [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-add) |
+| Remove worktree | `hydra remove [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-remove) |
+| Print worktree path | `hydra path <worktree>` | [Navigation](#hydra-path) |
+| Switch worktree | `hydra switch [<worktree>]` | [Navigation](#hydra-switch) |
+| List worktrees | `hydra list` / `hydra ls` | [Navigation](#hydra-list) |
+| Worktree status | `hydra status` | [Navigation](#hydra-status) |
+| Sync updates | `hydra sync [<alias>]` | [Sync](#hydra-sync) |
+| Diagnose workspace | `hydra doctor` | [Maintenance](#hydra-doctor) |
+| Prune stale entries | `hydra prune` | [Maintenance](#hydra-prune) |
+| Project registry | `hydra project ls\|add\|rm` | [Project registry](#hydra-project) |
+| Lifecycle hooks | `hydra hooks ls\|run <event>` | [Hooks](#hydra-hooks) |
+| Global settings | `hydra config` | [Configuration & shell](#hydra-config) |
+| Shell integration | `hydra init-shell` | [Configuration & shell](#hydra-init-shell) |
+| Shell completion | `hydra completion <shell>` | Built-in help |
+| Agent skill | `hydra skill [--install]` | [Agents](#hydra-skill) |
+| Glossary | `hydra glossary` | Built-in help |
+
+Version details appear in `hydra`, `hydra --help`, and `hydra --version`.
+
+## Project Bootstrap
+
+See [Project Bootstrap](./project-bootstrap.md) for `init`, `new`, `clone`, and `adopt`.
+
+## Worktree Management
+
+See [Worktree Management](./worktree-management.md) for `add` and `remove`.
+
+## Navigation
+
+### hydra path
+
+Print the absolute path of a worktree. **Preferred for scripts and agents.**
+
 ```bash
-# From specific base branch
-hydra add api feature-x --from=develop
-
-# Interactive mode (no args)
-hydra add
+hydra path api-feature-x
+hydra path api-feature-x --output json
 ```
 
-#### Removing Worktrees
+| code | exit |
+|------|------|
+| `worktree_unknown` | 1 |
+
+### hydra switch
+
+Print a worktree path (exit 0). With the shell helper installed, also emits a directive so your shell `cd`s automatically.
+
 ```bash
-# Force remove (ignore uncommitted changes)
-hydra remove api old-feature --force
-
-# Also delete git branch
-hydra remove api merged-feature --delete-branch
-
-# Skip confirmation
-hydra remove api temp --yes
+hydra switch api-feature-x          # print path; auto-cd when helper active
+hydra switch api-feature-x --cd     # require auto-cd (exit 3 without helper)
 ```
 
-#### Syncing
+Without the shell helper, `switch` still succeeds and prints the path. Only `--cd` fails with `shell_helper_missing` (exit 3).
+
+Install the helper with `hydra init-shell` (see below). Do not use `switch` in scripts — use `path`.
+
+### hydra list
+
+List worktrees in the current project.
+
 ```bash
-# Sync all repos
-hydra sync --all
-
-# Sync without prompts
-hydra sync --yes
-
-# Force pull dirty worktrees
-hydra sync --force
+hydra list
+hydra ls
+hydra list --all    # every registered project
+hydra list --output json
 ```
 
-## Exit Codes Reference
+Alias: `ls`.
 
-| Code | Meaning | Common Causes |
-|------|---------|---------------|
-| 0 | Success | Command completed successfully |
-| 1 | General error | Invalid arguments, operation failed |
-| 2 | Config not found | No `.hydra.yaml` in current or parent directories |
-| 3 | Not found | Repository, worktree, or branch not found |
+### hydra status
+
+Per-worktree summary: branch, upstream tracking, dirty/clean state.
+
+```bash
+hydra status
+hydra status --all
+```
+
+## hydra sync
+
+Fast-forward worktrees from their upstream remotes.
+
+```bash
+hydra sync              # interactive selection
+hydra sync api          # one repo alias
+hydra sync --yes        # skip prompts
+hydra sync --force      # pull dirty worktrees
+```
+
+Runs `post_sync` hooks after successful updates. Partial failures return `partial_failure` (exit 4).
+
+## Maintenance
+
+### hydra doctor
+
+Diagnose structural problems: missing bare repos, broken worktree registrations, upstream issues.
+
+```bash
+hydra doctor
+hydra doctor --fix      # attempt repairs
+hydra doctor --all      # all registered projects
+hydra doctor --output json
+```
+
+Run this first when anything looks wrong. Each check reports a stable `id` plus
+`ok` / `warn` / `fail`; `--fix` repairs only the checks marked fixable.
+
+| `id` | Detects | Fixable |
+|---|---|---|
+| `missing_fetch_refspec` | `remote.origin.fetch` absent, so no remote-tracking refs exist | yes |
+| `missing_origin_head` | `refs/remotes/origin/HEAD` unset | yes |
+| `branch_no_upstream` | branch exists on origin but the worktree has no upstream | yes |
+| `bare_unregistered` | a bare repo on disk that `.hydra.yaml` does not claim, typically left by an interrupted clone | no — re-run the clone to finish it, or delete the directory |
+| `worktree_inside_gitdir` | worktree path under `<bare_dir>/` (legacy layout) | no — re-create the worktree |
+| `legacy_symlink` | a symlink in a group dir pointing into `<bare_dir>` | yes (deleted) |
+| `worktree_missing_on_disk` | registered in git but the directory is gone | yes |
+| `worktree_unregistered` | a directory in a group dir that is not a registered worktree | no |
+| `stale_git_state` | an in-progress rebase/merge/cherry-pick | no — reported only, never touched |
+| `worktree_detached` | worktree is on a detached HEAD | no |
+| `worktree_dirty` | uncommitted changes | no |
+| `registry_dangling` | a registry entry whose root has no `.hydra.yaml` | yes |
+
+A repository with no `origin` at all (created by `hydra new` without a remote) is a
+valid local-only state, not damage: the two remote checks report `ok` for it.
+
+`doctor` exits 0 when nothing failed and 4 (`partial_failure`) when something did,
+after emitting the full report — so the report is always machine-readable.
+
+### hydra prune
+
+Remove stale worktree registrations and empty group directories.
+
+```bash
+hydra prune
+hydra prune --dry-run
+```
+
+## hydra project
+
+Manage the global project registry at `<config-dir>/projects.yaml` (see [Configuration](../configuration.md)).
+
+```bash
+hydra project ls
+hydra project add <name> <path>
+hydra project rm <name>
+hydra project ls --prune    # drop entries whose roots no longer exist
+```
+
+## hydra hooks
+
+Inspect or manually run hook chains from `.hydra.yaml`.
+
+```bash
+hydra hooks ls
+hydra hooks run post_add
+hydra hooks run post_add --worktree api-feature-x
+```
+
+Events (in order): `post_clone`, `post_add`, `pre_remove`, `post_remove`, `post_sync`.
+
+Each `run` entry executes via `sh -c` with `HYDRA_*` environment variables injected. A failing required hook returns `hook_failed` (exit 1) but does **not** roll back completed work.
+
+## Configuration & shell
+
+### hydra config
+
+Interactive editor for global user settings (theme, editor) stored under `~/.config/hydra/` (platform-specific).
+
+### hydra init-shell
+
+Install shell integration for automatic `cd` on `hydra switch`.
+
+```bash
+# Default: writes loader block to shell rc AND prints success message
+hydra init-shell
+
+# Print raw loader snippet only (safe to redirect)
+hydra init-shell --install=false >> ~/.bashrc
+```
+
+**Do not** run `hydra init-shell >> ~/.bashrc` — the default mode already writes your rc file and stdout contains human-readable prose.
+
+Supported shells: `bash`, `zsh`, `fish`.
+
+Optional flags: `--with-completion`, `--without-completion`.
+
+## hydra skill
+
+Emit the embedded agent skill contract.
+
+```bash
+hydra skill                 # print to stdout
+hydra skill --install       # install for agent tooling
+```
+
+Source of truth: [skills/hydra/SKILL.md](../../skills/hydra/SKILL.md).
+
+## Decision Tree
+
+```
+Starting new project?
+├── Guided setup → hydra new
+├── Existing directory → hydra init
+├── Remote URL → hydra clone <url>
+└── Existing checkout → hydra adopt
+
+Need a worktree?
+├── hydra add <repo> <branch>
+└── Specific base → hydra add <repo> <branch> --from=<base>
+
+Need a path (scripts/agents)?
+└── hydra path <worktree>
+
+Need to switch (interactive shell)?
+└── hydra switch <worktree>
+
+Need status or list?
+├── hydra list [--all]
+└── hydra status [--all]
+
+Need updates?
+└── hydra sync [--yes] [--force]
+
+Something broken?
+└── hydra doctor [--fix] [--output json]
+
+Need cleanup?
+├── hydra remove <repo> <branch> [--delete-branch]
+└── hydra prune [--dry-run]
+```
+
+## Error Codes and Exit Codes
+
+| code | exit | raised when |
+|------|------|-------------|
+| `not_in_project` | 2 | no `.hydra.yaml` found walking up, and no `--project` |
+| `config_version_unsupported` | 2 | `.hydra.yaml` `version` is not `"2"` |
+| `project_unknown` | 2 | `--project <name>` not in the registry |
+| `repo_unknown` | 1 | alias not present in any group |
+| `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |
+| `branch_unknown` | 1 | branch does not exist where required |
+| `worktree_exists` | 1 | target worktree already exists for that branch |
+| `worktree_unknown` | 1 | named worktree not found |
+| `worktree_name_conflict` | 1 | derived directory name taken by a different branch |
+| `worktree_dirty` | 5 | destructive op blocked by uncommitted changes |
+| `hook_failed` | 1 | a non-`optional` hook exited non-zero |
+| `shell_helper_missing` | 3 | `switch --cd` with no shell helper installed |
+| `partial_failure` | 4 | some items succeeded, some failed |
+| `git_failed` | 1 | an underlying git invocation failed |
+| `internal` | 1 | anything unclassified |
+
+In JSON mode, branch on `error.code` — never on message text.
 
 ## See Also
 
-- [AI Agent Guide](../ai-agent-guide.md) - For programmatic usage
-- [Configuration](../configuration.md) - `.hydra.yaml` specification
-- [Examples](../examples.md) - Real-world workflows
+- [Configuration](../configuration.md) — `.hydra.yaml` schema v2
+- [skills/hydra/SKILL.md](../../skills/hydra/SKILL.md) — Agent contract
+- [Worktree Management](./worktree-management.md) — `add` / `remove` details
+- [Project Bootstrap](./project-bootstrap.md) — `new` / `init` / `clone` / `adopt`
