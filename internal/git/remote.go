@@ -3,8 +3,6 @@ package git
 import (
 	"bufio"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -15,40 +13,32 @@ type RemoteBranch struct {
 	IsRemote  bool
 }
 
-// FetchRemoteBranches fetches branch information from a remote repository
-// This is used before cloning to show available branches
+// FetchRemoteBranches lists a remote's branches without cloning.
 func FetchRemoteBranches(repoURL string) ([]RemoteBranch, error) {
-	// Use git ls-remote to list branches without cloning
-	cmd := exec.Command("git", "ls-remote", "--heads", repoURL)
-	output, err := cmd.Output()
+	output, err := runGitOutput("ls-remote", "--heads", repoURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote branches: %w", err)
 	}
 
 	var branches []RemoteBranch
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-
+	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
-		line := scanner.Text()
 		// Format: <sha>\trefs/heads/<branch-name>
-		parts := strings.Split(line, "\t")
+		parts := strings.Split(scanner.Text(), "\t")
 		if len(parts) != 2 {
 			continue
 		}
-
 		ref := parts[1]
-		if strings.HasPrefix(ref, "refs/heads/") {
-			branchName := strings.TrimPrefix(ref, "refs/heads/")
-			isDefault := branchName == "main" || branchName == "master"
-
-			branches = append(branches, RemoteBranch{
-				Name:      branchName,
-				IsDefault: isDefault,
-				IsRemote:  true,
-			})
+		if !strings.HasPrefix(ref, "refs/heads/") {
+			continue
 		}
+		name := strings.TrimPrefix(ref, "refs/heads/")
+		branches = append(branches, RemoteBranch{
+			Name:      name,
+			IsDefault: name == "main" || name == "master",
+			IsRemote:  true,
+		})
 	}
-
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("failed to parse remote branches: %w", err)
 	}
@@ -56,7 +46,7 @@ func FetchRemoteBranches(repoURL string) ([]RemoteBranch, error) {
 	return branches, nil
 }
 
-// GetDefaultBranch returns the default branch (main or master) from the list
+// GetDefaultBranch picks the conventional default branch out of a branch list.
 func GetDefaultBranch(branches []RemoteBranch) string {
 	for _, b := range branches {
 		if b.Name == "main" {
@@ -68,7 +58,6 @@ func GetDefaultBranch(branches []RemoteBranch) string {
 			return "master"
 		}
 	}
-	// Return first branch if no main/master found
 	if len(branches) > 0 {
 		return branches[0].Name
 	}
@@ -86,104 +75,131 @@ func FilterBranches(branches []RemoteBranch, includeDefaults bool) []RemoteBranc
 	return result
 }
 
-// FetchBareRepo fetches updates for a bare repository
+// FetchBareRepo fetches origin into refs/remotes/origin/* for a bare repository.
 func FetchBareRepo(bareRepo string) error {
-	cmd := exec.Command("git", "--git-dir="+bareRepo, "fetch", "--all")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return runGitStreaming("--git-dir="+bareRepo, "fetch", "origin", "--prune", "--tags")
 }
 
-// GetRemoteBranchesFromBare gets branches from an existing bare repo
+// GetRemoteBranchesFromBare lists origin's branches from an existing bare repo.
+// refs/remotes/origin/* is authoritative; there is no local-branch fallback,
+// because a bare repo built by InitBareWithRemote always has remote refs.
 func GetRemoteBranchesFromBare(bareRepo string) ([]RemoteBranch, error) {
-	// First fetch to ensure we have latest
-	_ = FetchBareRepo(bareRepo)
+	if err := FetchBareRepo(bareRepo); err != nil {
+		return nil, err
+	}
+	return listRemoteRefs(bareRepo)
+}
 
-	cmd := exec.Command("git", "--git-dir="+bareRepo, "branch", "-r")
-	output, err := cmd.Output()
+// ListRemoteBranchesCached lists origin's branches without fetching first.
+func ListRemoteBranchesCached(bareRepo string) ([]RemoteBranch, error) {
+	return listRemoteRefs(bareRepo)
+}
+
+func listRemoteRefs(bareRepo string) ([]RemoteBranch, error) {
+	output, err := runGitOutput("--git-dir="+bareRepo, "for-each-ref",
+		"--format=%(refname:strip=3)", "refs/remotes/origin")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list branches: %w", err)
+		return nil, fmt.Errorf("failed to list remote branches: %w", err)
 	}
 
 	var branches []RemoteBranch
-	lines := strings.Split(string(output), "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.Contains(line, "->") {
+	for _, name := range parseRefList(output) {
+		if name == "HEAD" {
 			continue
 		}
-
-		// Format: origin/branch-name
-		if strings.HasPrefix(line, "origin/") {
-			branchName := strings.TrimPrefix(line, "origin/")
-			// Skip HEAD
-			if branchName == "HEAD" {
-				continue
-			}
-
-			isDefault := branchName == "main" || branchName == "master"
-			branches = append(branches, RemoteBranch{
-				Name:      branchName,
-				IsDefault: isDefault,
-				IsRemote:  true,
-			})
-		}
+		branches = append(branches, RemoteBranch{
+			Name:      name,
+			IsDefault: name == "main" || name == "master",
+			IsRemote:  true,
+		})
 	}
-
-	if len(branches) == 0 {
-		locals, localErr := ListLocalBranches(bareRepo)
-		if localErr == nil {
-			for _, branchName := range locals {
-				branches = append(branches, RemoteBranch{
-					Name:      branchName,
-					IsDefault: branchName == "main" || branchName == "master",
-					IsRemote:  false,
-				})
-			}
-		}
-	}
-
 	return branches, nil
 }
 
-// GetRemoteDefaultBranch resolves the default branch configured on origin/HEAD.
+// GetRemoteDefaultBranch resolves the default branch from refs/remotes/origin/HEAD.
+// It returns a real error when origin/HEAD is unset, so callers must fall back
+// explicitly instead of silently treating "" as success.
 func GetRemoteDefaultBranch(bareRepo string) (string, error) {
-	_ = FetchBareRepo(bareRepo)
-
-	cmd := exec.Command("git", "--git-dir="+bareRepo, "symbolic-ref", "refs/remotes/origin/HEAD")
-	output, err := cmd.Output()
+	output, err := runGitOutput("--git-dir="+bareRepo, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
-		return "", nil
+		return "", fmt.Errorf("origin/HEAD is not set for %s: %w", bareRepo, err)
 	}
-
-	ref := strings.TrimSpace(string(output))
+	ref := strings.TrimSpace(output)
 	if ref == "" {
-		return "", nil
+		return "", fmt.Errorf("origin/HEAD is empty for %s", bareRepo)
+	}
+	return strings.TrimPrefix(ref, "refs/remotes/origin/"), nil
+}
+
+// TrackingState describes a worktree branch relative to its upstream.
+type TrackingState struct {
+	Branch   string
+	Upstream string // "" when the branch has no upstream (a valid local-only state)
+	Ahead    int
+	Behind   int
+}
+
+// WorktreeTracking reads the real tracking state of a worktree. A branch with no
+// upstream is reported as Upstream == "" with a nil error; that is a valid state,
+// not a failure.
+func WorktreeTracking(worktreePath string) (TrackingState, error) {
+	state := TrackingState{}
+
+	branch, err := GetCurrentBranch(worktreePath)
+	if err != nil {
+		return state, fmt.Errorf("failed to read branch of %s: %w", worktreePath, err)
+	}
+	state.Branch = strings.TrimSpace(branch)
+	if state.Branch == "HEAD" {
+		// Detached: nothing to track.
+		state.Branch = ""
+		return state, nil
 	}
 
-	return strings.TrimPrefix(ref, "refs/remotes/origin/"), nil
+	upstream, err := runGitOutput("-C", worktreePath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	if err != nil {
+		return state, nil
+	}
+	state.Upstream = strings.TrimSpace(upstream)
+	if state.Upstream == "" {
+		return state, nil
+	}
+
+	counts, err := runGitOutput("-C", worktreePath, "rev-list", "--left-right", "--count",
+		state.Branch+"..."+state.Upstream)
+	if err != nil {
+		return state, fmt.Errorf("failed to count commits for %s: %w", worktreePath, err)
+	}
+	fields := strings.Fields(counts)
+	if len(fields) != 2 {
+		return state, fmt.Errorf("unexpected rev-list output for %s: %q", worktreePath, counts)
+	}
+	if _, err := fmt.Sscanf(fields[0], "%d", &state.Ahead); err != nil {
+		return state, fmt.Errorf("failed to parse ahead count for %s: %w", worktreePath, err)
+	}
+	if _, err := fmt.Sscanf(fields[1], "%d", &state.Behind); err != nil {
+		return state, fmt.Errorf("failed to parse behind count for %s: %w", worktreePath, err)
+	}
+	return state, nil
 }
 
 // WorktreeStatus represents the status of a worktree
 type WorktreeStatus struct {
 	Path          string
 	Branch        string
+	Upstream      string
 	HasChanges    bool
 	ChangeCount   int
 	CommitsBehind int
 	CommitsAhead  int
 	IsClean       bool
+	Detached      bool
 }
 
-// CheckWorktreeStatus checks the status of a worktree against remote
-func CheckWorktreeStatus(bareRepo, worktreePath, branch string) (WorktreeStatus, error) {
-	status := WorktreeStatus{
-		Path:   worktreePath,
-		Branch: branch,
-	}
+// CheckWorktreeStatus reports uncommitted changes plus real ahead/behind counts.
+func CheckWorktreeStatus(worktreePath string) (WorktreeStatus, error) {
+	status := WorktreeStatus{Path: worktreePath}
 
-	// Check for uncommitted changes
 	hasChanges, count, err := HasUncommittedChanges(worktreePath)
 	if err != nil {
 		return status, err
@@ -191,60 +207,36 @@ func CheckWorktreeStatus(bareRepo, worktreePath, branch string) (WorktreeStatus,
 	status.HasChanges = hasChanges
 	status.ChangeCount = count
 
-	// Check commits behind/ahead
-	behind, ahead, err := getCommitDiff(bareRepo, branch)
-	if err == nil {
-		status.CommitsBehind = behind
-		status.CommitsAhead = ahead
+	tracking, err := WorktreeTracking(worktreePath)
+	if err != nil {
+		return status, err
 	}
+	status.Branch = tracking.Branch
+	status.Upstream = tracking.Upstream
+	status.CommitsAhead = tracking.Ahead
+	status.CommitsBehind = tracking.Behind
+	status.Detached = tracking.Branch == ""
+	status.IsClean = !hasChanges && tracking.Ahead == 0 && tracking.Behind == 0
 
-	status.IsClean = !hasChanges && behind == 0 && ahead == 0
 	return status, nil
 }
 
-// getCommitDiff returns commits behind and ahead of remote
-func getCommitDiff(bareRepo, branch string) (behind, ahead int, err error) {
-	// Get commits behind (remote has, local doesn't)
-	cmd := exec.Command("git", "--git-dir="+bareRepo, "rev-list", "--count", "HEAD..origin/"+branch)
-	output, err := cmd.Output()
-	if err == nil {
-		fmt.Sscanf(string(output), "%d", &behind)
-	}
-
-	// Get commits ahead (local has, remote doesn't)
-	cmd = exec.Command("git", "--git-dir="+bareRepo, "rev-list", "--count", "origin/"+branch+"..HEAD")
-	output, err = cmd.Output()
-	if err == nil {
-		fmt.Sscanf(string(output), "%d", &ahead)
-	}
-
-	return behind, ahead, nil
+// PullWorktree fast-forwards a worktree from its configured upstream.
+func PullWorktree(worktreePath string) error {
+	return runGitStreaming("-C", worktreePath, "pull", "--ff-only")
 }
 
-// PullWorktree pulls the latest changes for a worktree
-func PullWorktree(worktreePath, branch string) error {
-	cmd := exec.Command("git", "-C", worktreePath, "pull", "origin", branch)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// StashChanges stashes changes in a worktree
+// StashChanges stashes changes in a worktree.
 func StashChanges(worktreePath string) error {
-	cmd := exec.Command("git", "-C", worktreePath, "stash", "push", "-m", "hydra-auto-stash")
-	return cmd.Run()
+	return runGit("-C", worktreePath, "stash", "push", "-m", "hydra-auto-stash")
 }
 
-// PopStash pops the latest stash
+// PopStash pops the latest stash.
 func PopStash(worktreePath string) error {
-	cmd := exec.Command("git", "-C", worktreePath, "stash", "pop")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return runGitStreaming("-C", worktreePath, "stash", "pop")
 }
 
-// ResetHard resets a worktree to HEAD
+// ResetHard resets a worktree to HEAD.
 func ResetHard(worktreePath string) error {
-	cmd := exec.Command("git", "-C", worktreePath, "reset", "--hard", "HEAD")
-	return cmd.Run()
+	return runGit("-C", worktreePath, "reset", "--hard", "HEAD")
 }
