@@ -5,9 +5,11 @@ import (
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+	"golang.org/x/term"
+
 	"github.com/mssantosdev/hydra/internal/config/global"
 	"github.com/mssantosdev/hydra/internal/ui/themes"
-	"golang.org/x/term"
 )
 
 // Theme colors - these will be populated from the selected theme
@@ -51,8 +53,8 @@ var (
 	ErrorBadge    lipgloss.Style
 	WarningBadge  lipgloss.Style
 
-	// Ecosystem header
-	EcosystemHeader lipgloss.Style
+	// Group header
+	GroupHeader lipgloss.Style
 
 	// Text styles
 	Branch lipgloss.Style
@@ -112,8 +114,8 @@ func loadTheme() {
 func applyTheme(theme themes.Theme) {
 	// Set colors from theme
 	BgDark = theme.Background
-	BgDarker = darken(theme.Background)
-	BgLight = lighten(theme.Background)
+	BgDarker = theme.Background
+	BgLight = theme.Background
 	Fg = theme.Foreground
 	FgBright = theme.Highlight
 	FgComment = theme.Muted
@@ -130,18 +132,15 @@ func applyTheme(theme themes.Theme) {
 	initStyles()
 }
 
-// darken returns a darker version of a color (simple approximation)
-func darken(c lipgloss.Color) lipgloss.Color {
-	// For now, return the same color
-	// In a full implementation, this would darken the color
-	return c
-}
-
-// lighten returns a lighter version of a color (simple approximation)
-func lighten(c lipgloss.Color) lipgloss.Color {
-	// For now, return the same color
-	// In a full implementation, this would lighten the color
-	return c
+// SetColorEnabled gates every style in the tree through one lever. Disabling it
+// downgrades the renderer to plain ASCII, so no inline style can leak ANSI into
+// piped or NO_COLOR output.
+func SetColorEnabled(enabled bool) {
+	if enabled {
+		lipgloss.SetColorProfile(termenv.ColorProfile())
+		return
+	}
+	lipgloss.SetColorProfile(termenv.Ascii)
 }
 
 // initStyles initializes all styles with current theme colors
@@ -197,8 +196,8 @@ func initStyles() {
 		Bold(true).
 		Padding(0, 1)
 
-	// Ecosystem header
-	EcosystemHeader = lipgloss.NewStyle().
+	// Group header
+	GroupHeader = lipgloss.NewStyle().
 		Bold(true).
 		Foreground(Cyan).
 		BorderStyle(lipgloss.ThickBorder()).
