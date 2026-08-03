@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -353,8 +354,28 @@ func runHookEventForProject(c *config.Config, root, event string, hctx hooks.Con
 	return hooks.Run(chain, hctx, cwd, os.Stderr)
 }
 
+// versionInfo renders the version string.
+//
+// The ldflags vars are only set by `make build`. `go install pkg@version` applies
+// no ldflags, so they stay at their defaults and the binary would report "dev"
+// despite being a tagged release. Go records the real module version and VCS stamp
+// in the embedded build info, so fall back to that.
 func versionInfo() string {
 	v := strings.TrimSpace(version)
+	c := commit
+	b := builtAt
+
+	if v == "" || v == "dev" {
+		if bv, bc, bt := buildInfoVersion(); bv != "" {
+			v = bv
+			if c == "" {
+				c = bc
+			}
+			if b == "" {
+				b = bt
+			}
+		}
+	}
 	if v == "" {
 		v = "dev"
 	}
@@ -363,11 +384,37 @@ func versionInfo() string {
 	}
 
 	parts := []string{v}
-	if commit != "" {
-		parts = append(parts, commit)
+	if c != "" {
+		parts = append(parts, c)
 	}
-	if builtAt != "" {
-		parts = append(parts, builtAt)
+	if b != "" {
+		parts = append(parts, b)
 	}
 	return strings.Join(parts, " ")
+}
+
+// buildInfoVersion reads the module version, VCS revision, and build time that Go
+// embeds in the binary. Version is empty for a plain `go build` from a source tree
+// (Go reports "(devel)"), in which case the caller keeps "dev".
+func buildInfoVersion() (version, commit, builtAt string) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", "", ""
+	}
+
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		version = v
+	}
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			commit = setting.Value
+			if len(commit) > 7 {
+				commit = commit[:7]
+			}
+		case "vcs.time":
+			builtAt = setting.Value
+		}
+	}
+	return version, commit, builtAt
 }
