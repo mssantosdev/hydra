@@ -36,7 +36,9 @@ make build VERSION=v0.0.17 COMMIT=$(git rev-parse --short HEAD)
 ./hydra --version   # v0.0.17 <commit>
 ```
 
-`make gate` runs the pre-commit contract: `gofmt`, `go vet`, and the test suite.
+`make gate` runs the full quality gate: `gofmt`, `go vet`, `golangci-lint` (version-pinned),
+`govulncheck`, tests with coverage, and the race detector. Individual steps are
+available as `make gate-fmt`, `gate-vet`, `gate-lint`, `gate-vuln`, `gate-test`, `gate-race`.
 
 ## Quick Start
 

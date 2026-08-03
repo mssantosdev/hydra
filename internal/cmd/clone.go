@@ -262,7 +262,7 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 	}
 	var warnings []string
 
-	if err := os.MkdirAll(filepath.Dir(result.BarePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(result.BarePath), 0750); err != nil {
 		return result, nil, output.Wrap(output.CodeInternal, err, "failed to create the bare directory")
 	}
 

@@ -330,7 +330,13 @@ func hasRef(bareRepo, ref string) bool {
 }
 
 // runGit runs git quietly and returns a wrapped error carrying stderr.
+//
+// gosec flags the variable argv (G204). It is safe and unavoidable here: hydra is a
+// git wrapper, the binary is the constant "git", exec.Command does NOT invoke a
+// shell, and every element of args is built inside this package from validated
+// aliases, branch names, and paths. There is no shell metacharacter to exploit.
 func runGit(args ...string) error {
+	//nolint:gosec // G204: constant binary, no shell, internally-built argv
 	cmd := exec.Command("git", args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -348,6 +354,7 @@ func runGit(args ...string) error {
 // long-running operations whose progress the user should see. stdout is
 // discarded so it can never corrupt a JSON envelope.
 func runGitStreaming(args ...string) error {
+	//nolint:gosec // G204: constant binary, no shell, internally-built argv
 	cmd := exec.Command("git", args...)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -358,6 +365,7 @@ func runGitStreaming(args ...string) error {
 }
 
 func runGitOutput(args ...string) (string, error) {
+	//nolint:gosec // G204: constant binary, no shell, internally-built argv
 	cmd := exec.Command("git", args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr

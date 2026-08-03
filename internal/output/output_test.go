@@ -55,7 +55,7 @@ func TestEffectiveCollapsesAutoOffTTY(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	defer pipe.Close()
+	defer func() { _ = pipe.Close() }()
 
 	if got := Effective(ModeAuto, pipe); got != ModeJSON {
 		t.Errorf("Effective(auto, pipe) = %v, want json", got)
@@ -73,9 +73,9 @@ func TestColorOffForPipesAndNoColor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	defer pipe.Close()
+	defer func() { _ = pipe.Close() }()
 
-	os.Unsetenv("NO_COLOR")
+	_ = os.Unsetenv("NO_COLOR")
 	if Color(pipe) {
 		t.Error("Color must be false when stdout is not a terminal")
 	}

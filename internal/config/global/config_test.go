@@ -64,7 +64,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create config
 	cfg := &GlobalConfig{
@@ -85,7 +85,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal: %v", err)
 	}
-	os.WriteFile(configPath, data, 0644)
+	_ = os.WriteFile(configPath, data, 0644)
 
 	// Load
 	loadedData, err := os.ReadFile(configPath)

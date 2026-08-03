@@ -69,9 +69,9 @@ func runConfig(cmd *cobra.Command, args []string) error {
 			Editor:     cfg.Defaults.Editor,
 			ConfigPath: global.GetConfigPath(),
 		}, nil, func() {
-			fmt.Fprintf(cmd.OutOrStdout(), "Theme:  %s %s\n", cfg.Theme.Name, themes.Get(cfg.Theme.Name).Preview())
-			fmt.Fprintf(cmd.OutOrStdout(), "Editor: %s\n", cfg.Defaults.Editor)
-			fmt.Fprintf(cmd.OutOrStdout(), "Config: %s\n", global.GetConfigPath())
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Theme:  %s %s\n", cfg.Theme.Name, themes.Get(cfg.Theme.Name).Preview())
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Editor: %s\n", cfg.Defaults.Editor)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Config: %s\n", global.GetConfigPath())
 		})
 	}
 
@@ -144,8 +144,8 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		fmt.Println(styles.Title.Render("Configuration"))
 		fmt.Println()
 		fmt.Println(styles.Label.Render("Current Settings:"))
-		fmt.Fprintf(cmd.OutOrStdout(), "  Theme:    %s %s\n", cfg.Theme.Name, themes.Get(cfg.Theme.Name).Preview())
-		fmt.Fprintf(cmd.OutOrStdout(), "  Editor:   %s\n", cfg.Defaults.Editor)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Theme:    %s %s\n", cfg.Theme.Name, themes.Get(cfg.Theme.Name).Preview())
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Editor:   %s\n", cfg.Defaults.Editor)
 		fmt.Println()
 		if hasChanges {
 			fmt.Println(styles.Success.Render("✓ Configuration saved"))
@@ -154,6 +154,6 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println()
 		fmt.Println(styles.Label.Render("Config file:"))
-		fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", global.GetConfigPath())
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", global.GetConfigPath())
 	})
 }

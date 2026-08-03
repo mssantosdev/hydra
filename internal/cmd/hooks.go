@@ -81,11 +81,11 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 	}
 
 	return emit(cmd, hooksLsPayload{Events: entries}, nil, func() {
-		fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %s\n",
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %s\n",
 			styles.Label.Render("EVENT"),
 			styles.Label.Render("HOOKS"))
 		for _, entry := range entries {
-			fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %d\n", entry.Event, entry.Count)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %d\n", entry.Event, entry.Count)
 		}
 	})
 }
@@ -131,7 +131,7 @@ func runHooksRun(cmd *cobra.Command, args []string) error {
 		Result:   result,
 	}
 	return emit(cmd, payload, result.Warnings, func() {
-		fmt.Fprintf(cmd.OutOrStdout(), "Ran %d hook(s) for %s in %s\n", result.Ran, event, cwd)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Ran %d hook(s) for %s in %s\n", result.Ran, event, cwd)
 	})
 }
 

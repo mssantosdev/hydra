@@ -74,7 +74,7 @@ func runSkill(cmd *cobra.Command, args []string) error {
 		// The skill is the payload, not a report: it goes to stdout verbatim in
 		// every mode, so `hydra skill > SKILL.md` works and `hydra skill --output
 		// json` never mangles the markdown.
-		fmt.Fprint(cmd.OutOrStdout(), skill.Content())
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), skill.Content())
 		return nil
 	}
 
@@ -84,6 +84,6 @@ func runSkill(cmd *cobra.Command, args []string) error {
 	}
 
 	return emit(cmd, map[string]any{"path": path, "skill": skill.Name}, nil, func() {
-		fmt.Fprintln(cmd.OutOrStdout(), path)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), path)
 	})
 }

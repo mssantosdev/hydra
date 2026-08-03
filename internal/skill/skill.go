@@ -29,10 +29,11 @@ func Install(dir string) (string, error) {
 		dir = DefaultInstallDir
 	}
 	target := filepath.Join(dir, Name)
-	if err := os.MkdirAll(target, 0755); err != nil {
+	if err := os.MkdirAll(target, 0750); err != nil {
 		return "", fmt.Errorf("failed to create %s: %w", target, err)
 	}
 	path := filepath.Join(target, "SKILL.md")
+	//nolint:gosec // G306: SKILL.md is committed to the consuming repo; it must stay readable
 	if err := os.WriteFile(path, []byte(Content()), 0644); err != nil {
 		return "", fmt.Errorf("failed to write %s: %w", path, err)
 	}
@@ -40,7 +41,7 @@ func Install(dir string) (string, error) {
 }
 
 // tableRow matches a markdown table row, capturing the cells between pipes.
-var tableRow = regexp.MustCompile("^\\|(.+)\\|$")
+var tableRow = regexp.MustCompile(`^\|(.+)\|$`)
 
 // backticked matches the `code` span a table's first cell uses.
 var backticked = regexp.MustCompile("^`([^`]+)`$")

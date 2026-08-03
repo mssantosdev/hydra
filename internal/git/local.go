@@ -9,7 +9,7 @@ import (
 
 // InitRepository creates a normal (non-bare) repository with an initial commit.
 func InitRepository(repoPath, branch string) error {
-	if err := os.MkdirAll(repoPath, 0755); err != nil {
+	if err := os.MkdirAll(repoPath, 0750); err != nil {
 		return fmt.Errorf("failed to create repository directory: %w", err)
 	}
 
@@ -29,6 +29,7 @@ func InitRepository(repoPath, branch string) error {
 	readmePath := filepath.Join(repoPath, "README.md")
 	projectName := filepath.Base(repoPath)
 	content := "# " + strings.ReplaceAll(projectName, "-", " ") + "\n"
+	//nolint:gosec // G306: README.md is a repo file; 0644 is correct
 	if err := os.WriteFile(readmePath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to create initial README: %w", err)
 	}
@@ -57,7 +58,7 @@ func InitBareLocal(barePath, branch string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create seed directory: %w", err)
 	}
-	defer os.RemoveAll(seed)
+	defer func() { _ = os.RemoveAll(seed) }()
 
 	if err := InitRepository(seed, branch); err != nil {
 		return err

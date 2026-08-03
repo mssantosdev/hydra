@@ -124,7 +124,7 @@ func summarizeStatus(items []worktreeJSON) statusSummaryJSON {
 func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayload) {
 	out := cmd.OutOrStdout()
 
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out)
 	headerBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Blue).
@@ -132,14 +132,14 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 		Padding(0, 4).
 		Align(lipgloss.Center).
 		Width(styles.GetTerminalWidth() - 4)
-	fmt.Fprintln(out, headerBox.Render(
+	_, _ = fmt.Fprintln(out, headerBox.Render(
 		lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Render("HYDRA")+"\n"+
 			lipgloss.NewStyle().Foreground(styles.FgComment).Render("Status Overview")))
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out)
 
 	for _, project := range projects {
 		if all {
-			fmt.Fprintf(out, "%s\n\n", styles.Label.Render(project.Project))
+			_, _ = fmt.Fprintf(out, "%s\n\n", styles.Label.Render(project.Project))
 		}
 
 		s := project.Summary
@@ -152,16 +152,16 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 			styles.Label.Render(fmt.Sprintf("LOCAL %d", s.LocalOnly)),
 			styles.Label.Render(fmt.Sprintf("DETACHED %d", s.Detached)),
 		}, "  ")
-		fmt.Fprintln(out, styles.StatBox.Render(stats))
-		fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out, styles.StatBox.Render(stats))
+		_, _ = fmt.Fprintln(out)
 
 		if len(project.Worktrees) == 0 {
-			fmt.Fprintln(out, styles.Dimmed.Render("  No worktrees found."))
-			fmt.Fprintln(out)
+			_, _ = fmt.Fprintln(out, styles.Dimmed.Render("  No worktrees found."))
+			_, _ = fmt.Fprintln(out)
 			continue
 		}
 
-		fmt.Fprintln(out, styles.Label.Render("Worktrees:"))
+		_, _ = fmt.Fprintln(out, styles.Label.Render("Worktrees:"))
 		for _, item := range project.Worktrees {
 			line := fmt.Sprintf("  %s  %s  %s  %s",
 				item.Name,
@@ -169,9 +169,9 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 				upstreamLabelJSON(item),
 				styles.StatusBadge(!item.Dirty, item.Changes),
 			)
-			fmt.Fprintln(out, line)
+			_, _ = fmt.Fprintln(out, line)
 		}
-		fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out)
 	}
 }
 

@@ -106,19 +106,20 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	if helperActive {
 		// The helper reads a file when it provides one, otherwise the marker line.
 		if target := os.Getenv("HYDRA_SWITCH_OUTPUT_FILE"); target != "" {
+			//nolint:gosec // G306: the switch target file is read back by the shell helper
 			if err := os.WriteFile(target, []byte(wt.Path+"\n"), 0644); err != nil {
 				return output.Wrap(output.CodeInternal, err, "failed to write the switch target file")
 			}
 		} else if !jsonMode() {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", switchMarker, wt.Path)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", switchMarker, wt.Path)
 			return nil
 		}
 	}
 
 	return emit(cmd, result, nil, func() {
-		fmt.Fprintln(cmd.OutOrStdout(), wt.Path)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), wt.Path)
 		if !helperActive {
-			fmt.Fprintln(os.Stderr, "hint: run \"hydra init-shell\" to have switch change directory for you; \"hydra path\" is the scriptable form")
+			_, _ = fmt.Fprintln(os.Stderr, "hint: run \"hydra init-shell\" to have switch change directory for you; \"hydra path\" is the scriptable form")
 		}
 	})
 }

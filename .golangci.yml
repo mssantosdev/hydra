@@ -1,0 +1,35 @@
+# Mirrors the Arvia Go standard (arviatwilio/backend/arviatwilio/.golangci.yml).
+# CI pins golangci-lint 2.12.2; `make gate` asserts the same version locally, so a
+# clean local run means a clean CI run.
+version: "2"
+run:
+  timeout: 5m
+  go: "1.26"
+
+# Report every finding; the defaults cap duplicates at 3 and hide the tail.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gosec
+
+  exclusions:
+    rules:
+      # Test fixtures build throwaway repositories under t.TempDir() and shell out
+      # to git to do it. G204 (variable argv), G301/G306 (permissive fixture
+      # perms), and G304 (reading a path the test just wrote) describe the
+      # fixtures working as intended, not a vulnerability in shipped code.
+      # Production code keeps gosec on, with inline justifications where a flagged
+      # construct is genuinely the feature.
+      - path: (_test\.go|^internal/testutil/)
+        linters:
+          - gosec
+        text: "G(204|301|304|306)"

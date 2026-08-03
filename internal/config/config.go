@@ -82,6 +82,8 @@ func (c *Config) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
+	// .hydra.yaml is committed to the repo, so it must stay world-readable.
+	//nolint:gosec // G306: 0644 is deliberate for a repo-tracked config file
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
@@ -108,7 +110,7 @@ func (e *ErrUnsupportedVersion) Error() string {
 
 // Load reads and validates a config file.
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // reading the config path the caller asked for is the whole function
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}

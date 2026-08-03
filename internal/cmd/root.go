@@ -268,7 +268,7 @@ func emitValue(cmd *cobra.Command, data any, warnings []string, text func()) err
 		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), data, warnings)
 	}
 	for _, warning := range warnings {
-		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
 	if text != nil {
 		text()
@@ -282,7 +282,7 @@ func emit(cmd *cobra.Command, data any, warnings []string, text func()) error {
 		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), data, warnings)
 	}
 	for _, warning := range warnings {
-		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
 	if text != nil {
 		text()

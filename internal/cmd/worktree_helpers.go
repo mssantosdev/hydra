@@ -399,7 +399,7 @@ func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, b
 		return output.Wrap(output.CodeGitFailed, err, "failed to classify branch %q", branch)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0750); err != nil {
 		return output.Wrap(output.CodeInternal, err, "failed to create group directory")
 	}
 

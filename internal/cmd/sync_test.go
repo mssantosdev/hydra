@@ -235,3 +235,85 @@ func TestSync_PartialFailureCode(t *testing.T) {
 		t.Fatalf("expected partial_failure, got %q", outErr.Code)
 	}
 }
+
+// TestSync_ConcurrentAcrossManyWorktrees gives the race detector something real to
+// inspect. sync fans out over two goroutine pools (status gathering, then pulling),
+// but every other sync test drives one or two worktrees, so `go test -race` was
+// effectively only checking that a single goroutine does not race with itself.
+//
+// This builds several repos with several behind branches each, syncs them all in
+// one command, and asserts every one was pulled.
+func TestSync_ConcurrentAcrossManyWorktrees(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	t.Setenv("HYDRA_OUTPUT", "json")
+
+	type wt struct {
+		path   string
+		branch string
+	}
+	var worktrees []wt
+
+	// 3 repos x 3 branches = 9 worktrees, so both pools run genuinely wide.
+	for _, repo := range []string{"api", "web", "worker"} {
+		branches := []string{"feature-a", "feature-b"}
+		_, remote, mainPath := env.SetupRepo("backend", repo, "main", branches...)
+		worktrees = append(worktrees, wt{mainPath, "main"})
+
+		for _, branch := range branches {
+			dir := repo + "-" + branch
+			worktrees = append(worktrees, wt{env.CreateWorktree("backend", repo, branch, dir), branch})
+		}
+		// Put every branch behind its upstream.
+		for _, branch := range append([]string{"main"}, branches...) {
+			env.CommitToRemote(remote, branch, "remote work on "+branch)
+		}
+		if err := git.FetchBareRepo(env.GetBarePath(repo)); err != nil {
+			t.Fatalf("fetch %s: %v", repo, err)
+		}
+	}
+
+	for _, w := range worktrees {
+		tracking, err := git.WorktreeTracking(w.path)
+		if err != nil {
+			t.Fatalf("tracking %s: %v", w.path, err)
+		}
+		if tracking.Behind == 0 {
+			t.Fatalf("fixture: %s (%s) should be behind before sync", w.path, w.branch)
+		}
+	}
+
+	env.Chdir()
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetArgs([]string{"sync", "--all", "--yes"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	for _, w := range worktrees {
+		tracking, err := git.WorktreeTracking(w.path)
+		if err != nil {
+			t.Fatalf("tracking after sync %s: %v", w.path, err)
+		}
+		if tracking.Behind != 0 {
+			t.Errorf("%s (%s) still behind by %d after sync", w.path, w.branch, tracking.Behind)
+		}
+	}
+
+	var envelope struct {
+		Data struct {
+			Summary syncSummaryJSON `json:"summary"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode json: %v\n%s", err, buf.String())
+	}
+	if got, want := envelope.Data.Summary.Pulled, len(worktrees); got != want {
+		t.Errorf("pulled = %d, want %d (summary: %+v)", got, want, envelope.Data.Summary)
+	}
+	if envelope.Data.Summary.Failed != 0 {
+		t.Errorf("failed = %d, want 0", envelope.Data.Summary.Failed)
+	}
+}

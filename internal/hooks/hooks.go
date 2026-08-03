@@ -62,6 +62,7 @@ func Run(hs []config.Hook, ctx Context, cwd string, w io.Writer) (Result, error)
 			continue
 		}
 
+		//nolint:gosec // G204: running the user's own configured hook through sh -c IS the feature
 		cmd := exec.Command("sh", "-c", hook.Run)
 		cmd.Dir = cwd
 		cmd.Env = env
@@ -78,7 +79,7 @@ func Run(hs []config.Hook, ctx Context, cwd string, w io.Writer) (Result, error)
 		if hook.Optional {
 			warning := fmt.Sprintf("optional %s hook %d (%s) failed: %v", ctx.Event, i+1, hook.Run, err)
 			result.Warnings = append(result.Warnings, warning)
-			fmt.Fprintf(w, "warning: %s\n", warning)
+			_, _ = fmt.Fprintf(w, "warning: %s\n", warning)
 			continue
 		}
 

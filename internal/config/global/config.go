@@ -85,7 +85,7 @@ func Load() (*GlobalConfig, error) {
 		return DefaultGlobalConfig(), nil
 	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) //nolint:gosec // path is derived from GetConfigDir, not caller input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read global config: %w", err)
 	}
@@ -109,7 +109,7 @@ func (c *GlobalConfig) Save() error {
 	configPath := GetConfigPath()
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -118,7 +118,7 @@ func (c *GlobalConfig) Save() error {
 		return fmt.Errorf("failed to marshal global config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write global config: %w", err)
 	}
 

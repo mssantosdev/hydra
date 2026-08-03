@@ -236,6 +236,7 @@ func (e *TestEnv) GetWorktreePath(group, dirName string) string {
 func (e *TestEnv) Upstream(worktreePath string) string {
 	e.T.Helper()
 
+	//nolint:gosec // G204: test fixture shelling out to git; constant binary, no shell
 	cmd := exec.Command("git", "-C", worktreePath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
 	out, err := cmd.Output()
 	if err != nil {
@@ -280,6 +281,7 @@ func (e *TestEnv) CreateCommit(worktreePath, message string) {
 func (e *TestEnv) git(dir string, args ...string) {
 	e.T.Helper()
 
+	//nolint:gosec // G204: test fixture shelling out to git; constant binary, no shell
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		e.T.Fatalf("git %s failed in %s: %v\n%s", strings.Join(args, " "), dir, err, out)
@@ -289,6 +291,7 @@ func (e *TestEnv) git(dir string, args ...string) {
 func (e *TestEnv) gitOutput(dir string, args ...string) string {
 	e.T.Helper()
 
+	//nolint:gosec // G204: test fixture shelling out to git; constant binary, no shell
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.Output()
 	if err != nil {

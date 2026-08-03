@@ -100,9 +100,9 @@ func runInitShell(cmd *cobra.Command, args []string) error {
 			"loader": loader,
 			"helper": helperPath,
 		}, nil, func() {
-			fmt.Fprint(cmd.OutOrStdout(), loader)
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), loader)
 			if !strings.HasSuffix(loader, "\n") {
-				fmt.Fprintln(cmd.OutOrStdout())
+				_, _ = fmt.Fprintln(cmd.OutOrStdout())
 			}
 		})
 	}
@@ -146,11 +146,12 @@ func promptInstallCompletion(cmd *cobra.Command, shell string) bool {
 }
 
 func writeShellHelperFiles(shell, helperPath, completionPath string, installCompletion bool) error {
-	if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(helperPath), 0o750); err != nil {
 		return output.Wrap(output.CodeInternal, err, "failed to create shell asset directory")
 	}
 
 	helperContent := renderShellHelper(shell, completionPath)
+	//nolint:gosec // G306: a shell helper script must be readable by the shell
 	if err := os.WriteFile(helperPath, []byte(helperContent), 0o644); err != nil {
 		return output.Wrap(output.CodeInternal, err, "failed to write shell helper")
 	}
@@ -160,6 +161,7 @@ func writeShellHelperFiles(shell, helperPath, completionPath string, installComp
 		if err != nil {
 			return err
 		}
+		//nolint:gosec // G306: a shell helper script must be readable by the shell
 		if err := os.WriteFile(completionPath, []byte(completionScript), 0o644); err != nil {
 			return output.Wrap(output.CodeInternal, err, "failed to write completion script")
 		}
@@ -182,24 +184,24 @@ func renderInitShellSummary(cmd *cobra.Command, shell, helperPath, completionPat
 	}
 
 	return emit(cmd, payload, nil, func() {
-		fmt.Fprintln(cmd.OutOrStdout())
-		fmt.Fprintln(cmd.OutOrStdout(), styles.Success.Render(fmt.Sprintf("✓ Shell helper installed for %s", shell)))
-		fmt.Fprintln(cmd.OutOrStdout())
-		fmt.Fprintf(cmd.OutOrStdout(), "Helper: %s\n", helperPath)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), styles.Success.Render(fmt.Sprintf("✓ Shell helper installed for %s", shell)))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Helper: %s\n", helperPath)
 		if installCompletion {
-			fmt.Fprintf(cmd.OutOrStdout(), "Completion: %s\n", completionPath)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Completion: %s\n", completionPath)
 		}
-		fmt.Fprintln(cmd.OutOrStdout())
-		fmt.Fprintln(cmd.OutOrStdout(), "The loader block in your shell rc now sources the generated helper.")
-		fmt.Fprintln(cmd.OutOrStdout(), styles.Title.Render("Next steps:"))
-		fmt.Fprintf(cmd.OutOrStdout(), "  1. Source your shell config: %s\n", styles.Dimmed.Render(shellSourceHint(shell)))
-		fmt.Fprintln(cmd.OutOrStdout(), "  2. Verify: echo $HYDRA_SHELL_HELPER")
-		fmt.Fprintln(cmd.OutOrStdout(), "     Should output: 1")
-		fmt.Fprintln(cmd.OutOrStdout())
-		fmt.Fprintln(cmd.OutOrStdout(), "Then you can use:")
-		fmt.Fprintln(cmd.OutOrStdout(), "  hydra switch <worktree>")
-		fmt.Fprintln(cmd.OutOrStdout(), "  hsw <worktree>")
-		fmt.Fprintln(cmd.OutOrStdout())
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "The loader block in your shell rc now sources the generated helper.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), styles.Title.Render("Next steps:"))
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  1. Source your shell config: %s\n", styles.Dimmed.Render(shellSourceHint(shell)))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  2. Verify: echo $HYDRA_SHELL_HELPER")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "     Should output: 1")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Then you can use:")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  hydra switch <worktree>")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  hsw <worktree>")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
 	})
 }
 
@@ -402,6 +404,7 @@ func replaceInstallation(existing, newContent string) string {
 func getShellConfigFile(shell string) string { return shellConfigFile(shell) }
 
 func readShellConfig(path string) (string, error) {
+	//nolint:gosec // G304: reads the shell rc file the user chose to install into
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -410,9 +413,10 @@ func readShellConfig(path string) (string, error) {
 }
 
 func writeShellConfig(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
+	//nolint:gosec // G306: the generated completion script must be readable by the shell
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
@@ -430,8 +434,6 @@ func shellConfigFile(shell string) string {
 		return filepath.Join(home, ".bashrc")
 	}
 }
-
-func generateBashZshHelper() string { return renderShellHelper("bash", shellAssetPlaceholder("bash")) }
 
 func generateFishHelper() string { return renderShellHelper("fish", shellAssetPlaceholder("fish")) }
 

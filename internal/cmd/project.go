@@ -117,13 +117,13 @@ func runProjectLs(cmd *cobra.Command, args []string) error {
 	}
 
 	return emit(cmd, payload, nil, func() {
-		fmt.Fprintf(cmd.OutOrStdout(), "Registry: %s\n\n", registry.Path())
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Registry: %s\n\n", registry.Path())
 		if len(entries) == 0 {
-			fmt.Fprintln(cmd.OutOrStdout(), "No registered projects.")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No registered projects.")
 			return
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "%-16s  %-8s  %s\n",
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-16s  %-8s  %s\n",
 			styles.Label.Render("NAME"),
 			styles.Label.Render("CONFIG"),
 			styles.Label.Render("ROOT"))
@@ -132,10 +132,10 @@ func runProjectLs(cmd *cobra.Command, args []string) error {
 			if !entry.Exists {
 				marker = styles.WarningBadge.Render("!")
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%-16s  %-8s  %s\n", entry.Name, marker, entry.Root)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-16s  %-8s  %s\n", entry.Name, marker, entry.Root)
 		}
 		if len(pruned) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "\nPruned: %s\n", stringsJoinSorted(pruned))
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nPruned: %s\n", stringsJoinSorted(pruned))
 		}
 	})
 }
@@ -179,7 +179,7 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 		"root": root,
 	}
 	return emit(cmd, payload, nil, func() {
-		fmt.Fprintf(cmd.OutOrStdout(), "Registered project %q at %s\n", name, root)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Registered project %q at %s\n", name, root)
 	})
 }
 
@@ -204,7 +204,7 @@ func runProjectRm(cmd *cobra.Command, args []string) error {
 
 	payload := map[string]any{"name": name, "removed": true}
 	return emit(cmd, payload, nil, func() {
-		fmt.Fprintf(cmd.OutOrStdout(), "Removed project %q from registry\n", name)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Removed project %q from registry\n", name)
 	})
 }
 

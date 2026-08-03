@@ -248,7 +248,7 @@ func (m glossaryModel) View() string {
 	if len(m.detail.Examples) > 0 {
 		examples.WriteString("\nExamples:\n")
 		for _, ex := range m.detail.Examples {
-			examples.WriteString(fmt.Sprintf("  - %s\n", ex))
+			_, _ = fmt.Fprintf(&examples, "  - %s\n", ex)
 		}
 	}
 
@@ -300,9 +300,9 @@ func runGlossary(cmd *cobra.Command, args []string) error {
 		data := glossaryData()
 		text := renderGlossaryText()
 		return emit(cmd, data, nil, func() {
-			fmt.Fprint(cmd.OutOrStdout(), text)
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), text)
 			if !strings.HasSuffix(text, "\n") {
-				fmt.Fprintln(cmd.OutOrStdout())
+				_, _ = fmt.Fprintln(cmd.OutOrStdout())
 			}
 		})
 	}

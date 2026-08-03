@@ -300,7 +300,7 @@ func promptForRemoteRepoOptions(opts *newProjectOptions) error {
 
 func bootstrapLocalProject(projectRoot, configPath string, cfg *config.Config, opts *newProjectOptions) error {
 	barePath := cfg.BarePath(projectRoot, opts.Alias)
-	if err := os.MkdirAll(filepath.Dir(barePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(barePath), 0750); err != nil {
 		return output.Wrap(output.CodeInternal, err, "failed to create bare directory")
 	}
 

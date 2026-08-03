@@ -75,7 +75,20 @@ hydra is not an Arvia project.
   exit-code authority.
 - No `panic` outside `main`.
 - Do not mutate shared logger or global state per call; `sync` runs concurrent goroutines.
-- Run `gofmt -l .` (must print nothing), `go vet ./...`, and `go test ./...` before calling work done.
+- Run `make gate` before calling work done. It is the Arvia Go quality gate, in CI's
+  order: `gofmt` (must print nothing), `go vet`, `golangci-lint run` (pinned to the
+  version CI uses — a mismatch fails the target rather than drifting silently),
+  `govulncheck`, `go test` with coverage, and `CGO_ENABLED=1 go test -race`.
+  The race step is deliberately stricter than CI, which has it commented out; there
+  is no local reason to inherit that gap, and `sync` is concurrent.
+- Linter policy: `.golangci.yml` mirrors Arvia's linter set. gosec stays enabled on
+  shipped code. Where a flagged construct is genuinely the feature — `exec.Command`
+  in the git wrapper, `sh -c` in the hooks engine, a config file that must stay
+  world-readable — suppress it inline with `//nolint:gosec // <rule>: <reason>` on
+  its own line above the statement, never by widening the config. Test fixtures are
+  excluded from gosec in one documented rule.
+- Concurrency changes must come with a test that actually runs wide. A green
+  `-race` on a single goroutine proves nothing.
 
 ## Rule 1 — Think Before Coding
 

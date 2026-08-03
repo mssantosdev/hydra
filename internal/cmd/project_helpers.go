@@ -44,7 +44,7 @@ func createProjectRoot(baseDir, projectPath string) (string, string, *config.Con
 	}
 
 	projectRoot := filepath.Join(baseDir, cleanPath)
-	if err := os.MkdirAll(projectRoot, 0755); err != nil {
+	if err := os.MkdirAll(projectRoot, 0750); err != nil {
 		return "", "", nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
@@ -69,7 +69,7 @@ func createProjectRootAt(root, projectName string) (string, string, *config.Conf
 	if err != nil {
 		return "", "", nil, fmt.Errorf("failed to resolve %s: %w", root, err)
 	}
-	if err := os.MkdirAll(abs, 0755); err != nil {
+	if err := os.MkdirAll(abs, 0750); err != nil {
 		return "", "", nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 

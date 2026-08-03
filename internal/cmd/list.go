@@ -158,7 +158,7 @@ func branchLabelJSON(item worktreeJSON) string {
 func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 	out := cmd.OutOrStdout()
 
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out)
 	headerBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Blue).
@@ -166,10 +166,10 @@ func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 		Padding(0, 4).
 		Align(lipgloss.Center).
 		Width(styles.GetTerminalWidth() - 4)
-	fmt.Fprintln(out, headerBox.Render(
+	_, _ = fmt.Fprintln(out, headerBox.Render(
 		lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Render("HYDRA")+"\n"+
 			lipgloss.NewStyle().Foreground(styles.FgComment).Render("Worktree Status")))
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out)
 
 	_, nameWidth, branchWidth := styles.WorktreeListLayout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Underline(true)
@@ -177,7 +177,7 @@ func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 	hasWorktrees := false
 	for _, project := range projects {
 		if all {
-			fmt.Fprintf(out, "%s\n\n", styles.Label.Render(project.Project))
+			_, _ = fmt.Fprintf(out, "%s\n\n", styles.Label.Render(project.Project))
 		}
 
 		groups := groupWorktrees(project.Worktrees)
@@ -188,30 +188,30 @@ func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 			}
 			hasWorktrees = true
 
-			fmt.Fprintln(out, styles.GroupHeader.Render("▸ "+strings.ToUpper(group)))
+			_, _ = fmt.Fprintln(out, styles.GroupHeader.Render("▸ "+strings.ToUpper(group)))
 
 			worktreeHeader := styles.PadRight("WORKTREE", nameWidth)
 			branchHeader := styles.PadRight("BRANCH", branchWidth)
-			fmt.Fprintf(out, "  %s  %s  %s\n",
+			_, _ = fmt.Fprintf(out, "  %s  %s  %s\n",
 				headerStyle.Render(worktreeHeader),
 				headerStyle.Render(branchHeader),
 				headerStyle.Render("STATUS"))
 
 			sepWidth := nameWidth + branchWidth + 10 + 4
-			fmt.Fprintf(out, "  %s\n", strings.Repeat("─", sepWidth))
+			_, _ = fmt.Fprintf(out, "  %s\n", strings.Repeat("─", sepWidth))
 
 			for _, item := range items {
 				status := styles.StatusBadge(!item.Dirty, item.Changes)
-				fmt.Fprintln(out, styles.FormatTableRow(item.Name, branchLabelJSON(item), status))
+				_, _ = fmt.Fprintln(out, styles.FormatTableRow(item.Name, branchLabelJSON(item), status))
 			}
-			fmt.Fprintln(out)
+			_, _ = fmt.Fprintln(out)
 		}
 	}
 
 	if !hasWorktrees {
-		fmt.Fprintln(out, styles.Dimmed.Render("  No worktrees found."))
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, "  Run 'hydra clone <url>' to add a repository.")
+		_, _ = fmt.Fprintln(out, styles.Dimmed.Render("  No worktrees found."))
+		_, _ = fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out, "  Run 'hydra clone <url>' to add a repository.")
 	}
 }
 

@@ -100,7 +100,7 @@ func runPath(cmd *cobra.Command, args []string) error {
 		Branch: wt.Branch,
 	}
 	return emitValue(cmd, result, nil, func() {
-		fmt.Fprintln(cmd.OutOrStdout(), wt.Path)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), wt.Path)
 	})
 }
 
@@ -115,9 +115,9 @@ func resolvePathTarget(name string) (worktreeContext, error) {
 		err = err.WithDetail("did_you_mean", similar)
 		if !explicitJSON() {
 			// Suggestions go to stderr so they never pollute the path on stdout.
-			fmt.Fprintln(os.Stderr, styles.Error.Render(fmt.Sprintf("Worktree not found: %s", name)))
+			_, _ = fmt.Fprintln(os.Stderr, styles.Error.Render(fmt.Sprintf("Worktree not found: %s", name)))
 			for i, s := range similar {
-				fmt.Fprintf(os.Stderr, "  %d. %s\n", i+1, s)
+				_, _ = fmt.Fprintf(os.Stderr, "  %d. %s\n", i+1, s)
 			}
 		}
 	}

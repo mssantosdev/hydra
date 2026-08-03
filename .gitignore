@@ -123,3 +123,6 @@ go.work.sum
 # Anchored: an unanchored "hydra" also matches the skills/hydra/ directory, which
 # would silently exclude skills/hydra/SKILL.md — the source of the embedded skill.
 /hydra
+# coverage artifacts
+coverage.out
+coverage.html

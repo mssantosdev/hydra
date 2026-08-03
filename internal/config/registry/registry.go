@@ -29,6 +29,7 @@ func Path() string {
 // Load reads the registry, returning an empty one when the file is absent.
 func Load() (*Registry, error) {
 	path := Path()
+	//nolint:gosec // G304: path comes from GetConfigDir, not caller input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -51,7 +52,7 @@ func Load() (*Registry, error) {
 // Save writes the registry to disk.
 func (r *Registry) Save() error {
 	path := Path()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 	r.Version = SchemaVersion
@@ -59,7 +60,7 @@ func (r *Registry) Save() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal project registry: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write project registry: %w", err)
 	}
 	return nil
