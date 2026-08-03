@@ -15,10 +15,6 @@ func TestDefaultGlobalConfig(t *testing.T) {
 		t.Errorf("Expected version 1.0, got %s", cfg.Version)
 	}
 
-	if cfg.Language != "en-US" {
-		t.Errorf("Expected language en-US, got %s", cfg.Language)
-	}
-
 	if cfg.Theme.Name != "tokyonight" {
 		t.Errorf("Expected theme tokyonight, got %s", cfg.Theme.Name)
 	}
@@ -72,8 +68,7 @@ func TestSaveAndLoad(t *testing.T) {
 
 	// Create config
 	cfg := &GlobalConfig{
-		Version:  "1.0",
-		Language: "pt-BR",
+		Version: "1.0",
 		Theme: ThemeConf{
 			Name: "catppuccin",
 		},
@@ -104,9 +99,6 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 
 	// Verify
-	if loaded.Language != "pt-BR" {
-		t.Errorf("Expected language pt-BR, got %s", loaded.Language)
-	}
 
 	if loaded.Theme.Name != "catppuccin" {
 		t.Errorf("Expected theme catppuccin, got %s", loaded.Theme.Name)
@@ -114,77 +106,6 @@ func TestSaveAndLoad(t *testing.T) {
 
 	if loaded.Defaults.Editor != "vim" {
 		t.Errorf("Expected editor vim, got %s", loaded.Defaults.Editor)
-	}
-}
-
-func TestAvailableLanguages(t *testing.T) {
-	langs := AvailableLanguages()
-
-	if len(langs) == 0 {
-		t.Error("Should have available languages")
-	}
-
-	foundEn := false
-	foundPt := false
-	for _, lang := range langs {
-		if lang == "en-US" {
-			foundEn = true
-		}
-		if lang == "pt-BR" {
-			foundPt = true
-		}
-	}
-
-	if !foundEn {
-		t.Error("Should have en-US language")
-	}
-
-	if !foundPt {
-		t.Error("Should have pt-BR language")
-	}
-}
-
-func TestIsValidLanguage(t *testing.T) {
-	if !IsValidLanguage("en-US") {
-		t.Error("en-US should be valid")
-	}
-
-	if !IsValidLanguage("pt-BR") {
-		t.Error("pt-BR should be valid")
-	}
-
-	if IsValidLanguage("invalid") {
-		t.Error("invalid should not be valid")
-	}
-
-	if IsValidLanguage("") {
-		t.Error("empty string should not be valid")
-	}
-}
-
-func TestSetLanguage(t *testing.T) {
-	cfg := DefaultGlobalConfig()
-
-	// Create temp directory
-	tempDir, err := os.MkdirTemp("", "hydra-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Mock GetConfigDir
-	configPath := filepath.Join(tempDir, "config.yaml")
-
-	// Set language
-	cfg.Language = "pt-BR"
-
-	// Save manually since we can't easily mock
-	data, _ := yaml.Marshal(cfg)
-	os.WriteFile(configPath, data, 0644)
-
-	// Verify file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		t.Error("Config file should exist after save")
 	}
 }
 

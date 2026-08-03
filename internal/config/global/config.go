@@ -12,7 +12,6 @@ import (
 // GlobalConfig represents user-level configuration
 type GlobalConfig struct {
 	Version  string    `yaml:"version"`
-	Language string    `yaml:"language"`
 	Theme    ThemeConf `yaml:"theme"`
 	Defaults Defaults  `yaml:"defaults"`
 }
@@ -32,8 +31,7 @@ type Defaults struct {
 // DefaultGlobalConfig returns default global configuration
 func DefaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
-		Version:  "1.0",
-		Language: "en-US",
+		Version: "1.0",
 		Theme: ThemeConf{
 			Name: "tokyonight",
 		},
@@ -45,8 +43,13 @@ func DefaultGlobalConfig() *GlobalConfig {
 	}
 }
 
-// GetConfigDir returns the platform-specific config directory
+// GetConfigDir returns the platform-specific config directory.
+// HYDRA_CONFIG_DIR overrides it, which is how tests and sandboxed runs avoid
+// touching the real user config.
 func GetConfigDir() string {
+	if dir := os.Getenv("HYDRA_CONFIG_DIR"); dir != "" {
+		return dir
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		// macOS: ~/Library/Application Support/hydra/
@@ -93,9 +96,6 @@ func Load() (*GlobalConfig, error) {
 	}
 
 	// Set defaults for missing values
-	if cfg.Language == "" {
-		cfg.Language = "en-US"
-	}
 	if cfg.Theme.Name == "" {
 		cfg.Theme.Name = "tokyonight"
 	}
@@ -125,12 +125,6 @@ func (c *GlobalConfig) Save() error {
 	return nil
 }
 
-// SetLanguage sets the language and saves
-func (c *GlobalConfig) SetLanguage(lang string) error {
-	c.Language = lang
-	return c.Save()
-}
-
 // SetTheme sets the theme and saves
 func (c *GlobalConfig) SetTheme(theme string) error {
 	c.Theme.Name = theme
@@ -141,19 +135,4 @@ func (c *GlobalConfig) SetTheme(theme string) error {
 func (c *GlobalConfig) SetEditor(editor string) error {
 	c.Defaults.Editor = editor
 	return c.Save()
-}
-
-// AvailableLanguages returns list of supported languages
-func AvailableLanguages() []string {
-	return []string{"en-US", "pt-BR"}
-}
-
-// IsValidLanguage checks if a language is supported
-func IsValidLanguage(lang string) bool {
-	for _, l := range AvailableLanguages() {
-		if l == lang {
-			return true
-		}
-	}
-	return false
 }
