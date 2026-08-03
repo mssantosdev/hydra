@@ -9,6 +9,7 @@ import (
 )
 
 func TestRootVersionFlag(t *testing.T) {
+	resetCommandState(t)
 	oldVersion, oldCommit, oldBuiltAt := version, commit, builtAt
 	oldOut, oldErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
 	version, commit, builtAt = "1.2.3", "abc123", "2026-04-17T00:00:00Z"
@@ -31,6 +32,7 @@ func TestRootVersionFlag(t *testing.T) {
 }
 
 func TestRootHelpShowsVersion(t *testing.T) {
+	resetCommandState(t)
 	oldVersion, oldCommit, oldBuiltAt := version, commit, builtAt
 	oldOut, oldErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
 	version, commit, builtAt = "dev", "", ""
@@ -52,6 +54,7 @@ func TestRootHelpShowsVersion(t *testing.T) {
 }
 
 func TestRootDefaultOutputShowsVersion(t *testing.T) {
+	resetCommandState(t)
 	oldVersion, oldCommit, oldBuiltAt := version, commit, builtAt
 	oldOut, oldErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
 	version, commit, builtAt = "dev", "", ""

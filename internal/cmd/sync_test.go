@@ -1,114 +1,237 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/mssantosdev/hydra/internal/git"
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
 func TestSync_NoConfig(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
-	// Don't create config
 	env.Chdir()
-
 	rootCmd.SetArgs([]string{"sync"})
-
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Error("Expected error when no config")
+		t.Fatal("expected error when no config")
 	}
-
 	testutil.Contains(t, err.Error(), "no .hydra.yaml")
 }
 
 func TestSync_NoWorktrees(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
 	env.Chdir()
-
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
 	rootCmd.SetArgs([]string{"sync"})
-
-	// Should complete without error but no worktrees found
-	err := rootCmd.Execute()
-	// No error expected, just "no worktrees found" message
-	if err != nil {
-		t.Logf("Sync with no worktrees returned: %v", err)
+	t.Setenv("HYDRA_OUTPUT", "json")
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("sync with no worktrees: %v", err)
+	}
+	var envelope struct {
+		Data struct {
+			Worktrees []syncWorktreeJSON `json:"worktrees"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode json: %v\n%s", err, buf.String())
+	}
+	if len(envelope.Data.Worktrees) != 0 {
+		t.Fatalf("expected no worktrees, got %d", len(envelope.Data.Worktrees))
 	}
 }
 
-func TestSync_WithWorktrees(t *testing.T) {
+func TestSync_PullsBehind(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
-
-	// Create a bare repo with worktrees
-	bareRepo := env.CreateBareRepo("test-repo")
-	mainWt := env.CreateWorktree(bareRepo, "main")
-	env.AddToConfig("backend", "test-repo", "test-repo")
-
-	// Create a commit so there's something to sync
-	env.CreateCommit(mainWt, "test commit")
-
+	t.Setenv("HYDRA_OUTPUT", "json")
+	_, remote, worktreePath := env.SetupRepo("backend", "api", "main")
+	env.CommitToRemote(remote, "main", "ahead on remote")
+	if err := git.FetchBareRepo(env.GetBarePath("api")); err != nil {
+		t.Fatalf("fetch bare repo: %v", err)
+	}
+	tracking, err := git.WorktreeTracking(worktreePath)
+	if err != nil {
+		t.Fatalf("tracking before sync: %v", err)
+	}
+	if tracking.Behind == 0 {
+		t.Fatal("expected worktree to be behind upstream before sync")
+	}
 	env.Chdir()
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetArgs([]string{"sync", "--all", "--yes"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	tracking, err = git.WorktreeTracking(worktreePath)
+	if err != nil {
+		t.Fatalf("tracking after sync: %v", err)
+	}
+	if tracking.Behind != 0 {
+		t.Fatalf("expected worktree to be up to date, still behind by %d", tracking.Behind)
+	}
+	var envelope struct {
+		Data struct {
+			Worktrees []syncWorktreeJSON `json:"worktrees"`
+			Summary   syncSummaryJSON    `json:"summary"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode json: %v\n%s", err, buf.String())
+	}
+	if envelope.Data.Summary.Pulled == 0 {
+		t.Fatalf("expected pulled worktrees, summary: %+v", envelope.Data.Summary)
+	}
+	found := false
+	for _, wt := range envelope.Data.Worktrees {
+		if wt.Path == worktreePath && wt.Status == "pulled" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected pulled status for %s, got %+v", worktreePath, envelope.Data.Worktrees)
+	}
+}
 
-	rootCmd.SetArgs([]string{"sync", "--all"})
+func TestSync_LocalOnlyBranch(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	t.Setenv("HYDRA_OUTPUT", "json")
+	env.SetupRepo("backend", "api", "main")
+	localPath := env.CreateWorktree("backend", "api", "feature/local-only", "api-feature-local")
+	env.Chdir()
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetArgs([]string{"sync", "--all", "--yes"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	var envelope struct {
+		Data struct {
+			Worktrees []syncWorktreeJSON `json:"worktrees"`
+			Summary   syncSummaryJSON    `json:"summary"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode json: %v\n%s", err, buf.String())
+	}
+	if envelope.Data.Summary.Failed != 0 {
+		t.Fatalf("local-only worktree must not count as failure, summary: %+v", envelope.Data.Summary)
+	}
+	if envelope.Data.Summary.LocalOnly == 0 {
+		t.Fatalf("expected local_only count, summary: %+v", envelope.Data.Summary)
+	}
+	found := false
+	for _, wt := range envelope.Data.Worktrees {
+		if wt.Path == localPath {
+			if wt.Status != "local-only" {
+				t.Fatalf("expected local-only status, got %q", wt.Status)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("local-only worktree missing from output: %+v", envelope.Data.Worktrees)
+	}
+}
 
-	// Execute sync (may fail due to no remote, but should handle gracefully)
-	err := rootCmd.Execute()
-	// We expect this might fail due to no remote, but shouldn't panic
-	t.Logf("Sync result: %v", err)
+func TestSync_ForceDirtyStashPullRestore(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	t.Setenv("HYDRA_OUTPUT", "json")
+	_, remote, worktreePath := env.SetupRepo("backend", "api", "main")
+	env.CommitToRemote(remote, "main", "ahead for dirty pull")
+	dirtyFile := filepath.Join(worktreePath, "README.md")
+	if err := os.WriteFile(dirtyFile, []byte("keep me"), 0644); err != nil {
+		t.Fatalf("write dirty file: %v", err)
+	}
+	if err := git.FetchBareRepo(env.GetBarePath("api")); err != nil {
+		t.Fatalf("fetch bare repo: %v", err)
+	}
+	env.Chdir()
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetArgs([]string{"sync", "--all", "--yes", "--force"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	content, err := os.ReadFile(dirtyFile)
+	if err != nil {
+		t.Fatalf("dirty file should survive stash/pull/restore: %v", err)
+	}
+	if string(content) != "keep me" {
+		t.Fatalf("dirty file content changed: %q", content)
+	}
+	tracking, err := git.WorktreeTracking(worktreePath)
+	if err != nil {
+		t.Fatalf("tracking after sync: %v", err)
+	}
+	if tracking.Behind != 0 {
+		t.Fatalf("expected worktree to be up to date, still behind by %d", tracking.Behind)
+	}
+	var envelope struct {
+		Data struct {
+			Worktrees []syncWorktreeJSON `json:"worktrees"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode json: %v\n%s", err, buf.String())
+	}
+	found := false
+	for _, wt := range envelope.Data.Worktrees {
+		if wt.Path == worktreePath && wt.Status == "stashed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected stashed status for dirty worktree, got %+v", envelope.Data.Worktrees)
+	}
 }
 
 func TestSync_DetectCurrentRepo(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
-
-	// Create a bare repo with worktrees
-	bareRepo := env.CreateBareRepo("api")
-	env.CreateWorktree(bareRepo, "main")
-	env.AddToConfig("backend", "api", "api")
-
-	// Create group directory and symlink
-	groupDir := filepath.Join(env.RootDir, "backend")
-	os.MkdirAll(groupDir, 0755)
-	worktreePath := env.GetWorktreePath("api", "main")
-	symlinkPath := filepath.Join(groupDir, "api")
-	os.Symlink(worktreePath, symlinkPath)
-
-	// Change to worktree directory
-	os.Chdir(symlinkPath)
-
+	env.SetupRepo("backend", "api", "main")
+	env.ChdirTo(filepath.Join("backend", "api"))
 	rootCmd.SetArgs([]string{"sync"})
-
-	// Should detect current repo
-	err := rootCmd.Execute()
-	t.Logf("Sync from within worktree: %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("sync from within worktree: %v", err)
+	}
 }
 
 func TestSyncFlags(t *testing.T) {
-	env := testutil.NewTestEnv(t)
-	env.InitConfig()
-	env.Chdir()
+	long := syncCmd.Long
+	for _, code := range []string{"partial_failure", "worktree_dirty", "not_in_project", "git_failed", "hook_failed"} {
+		if !strings.Contains(long, code) {
+			t.Fatalf("sync help missing exit code %q", code)
+		}
+	}
+}
 
-	// Test with --all flag
-	rootCmd.SetArgs([]string{"sync", "--all"})
-	err := rootCmd.Execute()
-	t.Logf("Sync --all: %v", err)
-
-	// Reset args for next test
-	rootCmd.SetArgs([]string{})
-
-	// Test with --yes flag
-	rootCmd.SetArgs([]string{"sync", "--yes"})
-	err = rootCmd.Execute()
-	t.Logf("Sync --yes: %v", err)
-
-	// Reset args
-	rootCmd.SetArgs([]string{})
-
-	// Test with --force flag
-	rootCmd.SetArgs([]string{"sync", "--force"})
-	err = rootCmd.Execute()
-	t.Logf("Sync --force: %v", err)
+func TestSync_PartialFailureCode(t *testing.T) {
+	err := output.Errorf(output.CodePartialFailure, "one failed").WithDetail("worktrees", []map[string]string{{"repo": "api"}})
+	var outErr *output.Error
+	if !errors.As(err, &outErr) {
+		t.Fatalf("expected *output.Error, got %T", err)
+	}
+	if outErr.Code != output.CodePartialFailure {
+		t.Fatalf("expected partial_failure, got %q", outErr.Code)
+	}
 }

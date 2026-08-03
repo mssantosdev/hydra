@@ -2,81 +2,163 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mssantosdev/hydra/internal/config"
-	"github.com/mssantosdev/hydra/internal/git"
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
 
+var listAll bool
+
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all worktrees",
-	Long: `Display all worktrees organized by ecosystem with their current status.
+	Annotations: map[string]string{annotationRegistryFanout: "all"},
+	Use:         "list",
+	Aliases:     []string{"ls"},
+	Short:       "List all worktrees",
+	Long: `Display all worktrees organized by group with their current status.
 
-DESCRIPTION
-  Shows a formatted table of all worktrees across all ecosystems.
-  Displays worktree name, current branch, and modification status.
-
-  Status indicators:
-    ✓ clean    - No uncommitted changes
-    ~N         - N modified/uncommitted files
-
-WHEN TO USE
-  • Getting an overview of all worktrees
-  • Checking which branches have uncommitted changes
-  • Finding the exact name for hydra switch
-  • Daily standup status check
-
-EXAMPLES
-  # List all worktrees
-  $ hydra list
-
-  # Typical output:
-  # ▸ BACKEND
-  #   WORKTREE          BRANCH            STATUS
-  #   ───────────────────────────────────────────
-  #   api               main              ✓clean
-  #   api-feature-x     feature/x         ~3
+JSON DATA
+  Single project: {project, root, worktrees: [worktreeJSON...], total}
+  --all: {projects: [{project, root, worktrees, total}], total}
 
 EXIT CODES
-  0  Success (list displayed, may be empty)
-  1  General error
-  2  Config file (.hydra.yaml) not found
-
-SEE ALSO
-  • hydra status - Compact status overview
-  • hydra switch - Navigate to a listed worktree
-  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
+  0  Success
+  2  not_in_project, config_version_unsupported, project_unknown
+  4  partial_failure`,
 	RunE: runList,
 }
 
 func init() {
+	listCmd.Flags().BoolVar(&listAll, "all", false, "List worktrees across every registered project")
 	rootCmd.AddCommand(listCmd)
 }
 
+type listProjectPayload struct {
+	Project   string         `json:"project"`
+	Root      string         `json:"root"`
+	Worktrees []worktreeJSON `json:"worktrees"`
+	Total     int            `json:"total"`
+}
+
+type listAllPayload struct {
+	Projects []listProjectPayload `json:"projects"`
+	Total    int                  `json:"total"`
+}
+
+type projectWorktrees struct {
+	Project   string
+	Root      string
+	Worktrees []worktreeJSON
+}
+
 func runList(cmd *cobra.Command, args []string) error {
-	wd, err := os.Getwd()
+	targets, targetWarnings, err := projectTargets(listAll)
 	if err != nil {
 		return err
 	}
 
-	configPath, cfg, err := config.FindConfig(wd)
-	if err != nil {
+	projects, warnings, attempted, succeeded := collectProjectWorktrees(targets)
+	warnings = append(warnings, targetWarnings...)
+
+	if err := checkWorktreePartialFailure(targets, targetWarnings, attempted, succeeded); err != nil {
 		return err
 	}
 
-	projectRoot := filepath.Dir(configPath)
+	var data any
+	total := 0
+	for _, project := range projects {
+		total += len(project.Worktrees)
+	}
 
-	// Get column widths
-	_, nameWidth, branchWidth := styles.WorktreeListLayout()
+	if listAll {
+		payload := listAllPayload{Total: total}
+		for _, project := range projects {
+			payload.Projects = append(payload.Projects, listProjectPayload{
+				Project:   project.Project,
+				Root:      project.Root,
+				Worktrees: project.Worktrees,
+				Total:     len(project.Worktrees),
+			})
+		}
+		data = payload
+	} else if len(projects) > 0 {
+		project := projects[0]
+		data = listProjectPayload{
+			Project:   project.Project,
+			Root:      project.Root,
+			Worktrees: project.Worktrees,
+			Total:     len(project.Worktrees),
+		}
+	} else {
+		data = listProjectPayload{Worktrees: []worktreeJSON{}, Total: 0}
+	}
 
-	// Print header - centered with better styling
-	fmt.Println()
+	return emit(cmd, data, warnings, func() {
+		renderListText(cmd, listAll, projects)
+	})
+}
+
+func collectProjectWorktrees(targets []projectTarget) ([]projectWorktrees, []string, int, int) {
+	var projects []projectWorktrees
+	var warnings []string
+	attempted, succeeded := 0, 0
+
+	for _, target := range targets {
+		repos := allRepoContexts(target.Cfg, target.Root)
+		attempted += len(repos)
+
+		contexts, wtWarnings := collectWorktrees(target.Cfg, target.Root)
+		warnings = append(warnings, wtWarnings...)
+		succeeded += len(repos) - len(wtWarnings)
+
+		items := enrichWorktrees(contexts, &warnings)
+		projects = append(projects, projectWorktrees{
+			Project:   target.Name,
+			Root:      target.Root,
+			Worktrees: items,
+		})
+	}
+
+	return projects, warnings, attempted, succeeded
+}
+
+func enrichWorktrees(contexts []worktreeContext, warnings *[]string) []worktreeJSON {
+	items := make([]worktreeJSON, 0, len(contexts))
+	for _, wt := range contexts {
+		item, err := wt.withTracking()
+		if err != nil {
+			*warnings = append(*warnings, fmt.Sprintf("%s: %v", wt.Qualified(), err))
+			item = wt.json()
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func checkWorktreePartialFailure(targets []projectTarget, targetWarnings []string, attempted, succeeded int) error {
+	if len(targets) == 0 && len(targetWarnings) > 0 {
+		return output.Errorf(output.CodePartialFailure, "every registered project failed to load")
+	}
+	if attempted > 0 && succeeded == 0 {
+		return output.Errorf(output.CodePartialFailure, "every registered repository failed to list worktrees")
+	}
+	return nil
+}
+
+func branchLabelJSON(item worktreeJSON) string {
+	if item.Detached {
+		return "(detached)"
+	}
+	return item.Branch
+}
+
+func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
+	out := cmd.OutOrStdout()
+
+	fmt.Fprintln(out)
 	headerBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Blue).
@@ -84,147 +166,68 @@ func runList(cmd *cobra.Command, args []string) error {
 		Padding(0, 4).
 		Align(lipgloss.Center).
 		Width(styles.GetTerminalWidth() - 4)
+	fmt.Fprintln(out, headerBox.Render(
+		lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Render("HYDRA")+"\n"+
+			lipgloss.NewStyle().Foreground(styles.FgComment).Render("Worktree Status")))
+	fmt.Fprintln(out)
 
-	fmt.Println(headerBox.Render(
-		lipgloss.NewStyle().
-			Bold(true).
-			Foreground(styles.Blue).
-			Render("HYDRA") + "\n" +
-			lipgloss.NewStyle().
-				Foreground(styles.FgComment).
-				Render("Worktree Status")))
-	fmt.Println()
+	_, nameWidth, branchWidth := styles.WorktreeListLayout()
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Underline(true)
 
-	// Table styles with fixed widths
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(styles.Blue).
-		Underline(true)
-
-	cleanStyle := lipgloss.NewStyle().
-		Background(styles.Green).
-		Foreground(styles.BgDark).
-		Bold(true).
-		Padding(0, 1).
-		Width(10)
-
-	dirtyStyle := lipgloss.NewStyle().
-		Background(styles.Yellow).
-		Foreground(styles.BgDark).
-		Bold(true).
-		Padding(0, 1).
-		Width(10)
-
-	// Iterate through groups
 	hasWorktrees := false
-	for groupName, group := range cfg.Ecosystems {
-		groupHasWorktrees := false
-		var rows [][]string
+	for _, project := range projects {
+		if all {
+			fmt.Fprintf(out, "%s\n\n", styles.Label.Render(project.Project))
+		}
 
-		for alias, repoName := range group {
-			bareRepo := filepath.Join(projectRoot, cfg.Paths.BareDir, repoName+".git")
-
-			// Check if bare repo exists
-			if _, err := os.Stat(bareRepo); os.IsNotExist(err) {
+		groups := groupWorktrees(project.Worktrees)
+		for _, group := range sortedGroupNames(groups) {
+			items := groups[group]
+			if len(items) == 0 {
 				continue
 			}
+			hasWorktrees = true
 
-			// List worktrees
-			worktrees, err := git.ListWorktrees(bareRepo)
-			if err != nil {
-				continue
+			fmt.Fprintln(out, styles.GroupHeader.Render("▸ "+strings.ToUpper(group)))
+
+			worktreeHeader := styles.PadRight("WORKTREE", nameWidth)
+			branchHeader := styles.PadRight("BRANCH", branchWidth)
+			fmt.Fprintf(out, "  %s  %s  %s\n",
+				headerStyle.Render(worktreeHeader),
+				headerStyle.Render(branchHeader),
+				headerStyle.Render("STATUS"))
+
+			sepWidth := nameWidth + branchWidth + 10 + 4
+			fmt.Fprintf(out, "  %s\n", strings.Repeat("─", sepWidth))
+
+			for _, item := range items {
+				status := styles.StatusBadge(!item.Dirty, item.Changes)
+				fmt.Fprintln(out, styles.FormatTableRow(item.Name, branchLabelJSON(item), status))
 			}
-
-			for _, wt := range worktrees {
-				if wt.IsBare {
-					continue
-				}
-
-				groupHasWorktrees = true
-				hasWorktrees = true
-
-				branch := wt.Branch
-				if branch == "" {
-					branch = "detached"
-				}
-
-				// Check for modifications
-				hasMod, count, _ := git.HasUncommittedChanges(wt.Path)
-
-				// Build status
-				var status string
-				if hasMod {
-					status = dirtyStyle.Render(fmt.Sprintf("~%d", count))
-				} else {
-					status = cleanStyle.Render("✓clean")
-				}
-
-				worktreeName := filepath.Base(wt.Path)
-				if worktreeName == repoName+".git" {
-					continue
-				}
-				if worktreeName == "main" || worktreeName == "master" {
-					worktreeName = alias
-				} else {
-					worktreeName = alias + "-" + worktreeName
-				}
-
-				rows = append(rows, []string{
-					worktreeName,
-					branch,
-					status,
-				})
-			}
+			fmt.Fprintln(out)
 		}
-
-		if !groupHasWorktrees {
-			continue
-		}
-
-		// Print group header
-		groupHeader := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(styles.Cyan).
-			BorderStyle(lipgloss.ThickBorder()).
-			BorderBottom(true).
-			BorderForeground(styles.Blue).
-			MarginBottom(0)
-		fmt.Println(groupHeader.Render("▸ " + strings.ToUpper(groupName)))
-
-		// Print table header with fixed widths
-		worktreeHeader := styles.PadRight("WORKTREE", nameWidth)
-		branchHeader := styles.PadRight("BRANCH", branchWidth)
-		fmt.Printf("  %s  %s  %s\n",
-			headerStyle.Render(worktreeHeader),
-			headerStyle.Render(branchHeader),
-			headerStyle.Render("STATUS"))
-
-		// Print separator
-		sepWidth := nameWidth + branchWidth + 10 + 4
-		fmt.Printf("  %s\n", strings.Repeat("─", sepWidth))
-
-		// Print rows with fixed column widths
-		for _, row := range rows {
-			worktreeName := styles.Truncate(row[0], nameWidth)
-			branch := styles.Truncate(row[1], branchWidth)
-
-			paddedWorktree := styles.PadRight(worktreeName, nameWidth)
-			paddedBranch := styles.PadRight(branch, branchWidth)
-
-			fmt.Printf("  %s  %s  %s\n",
-				paddedWorktree,
-				styles.Branch.Render(paddedBranch),
-				row[2])
-		}
-
-		fmt.Println()
 	}
 
 	if !hasWorktrees {
-		fmt.Println(styles.Dimmed.Render("  No worktrees found."))
-		fmt.Println()
-		fmt.Println("  Run 'hydra clone <url>' to add a repository.")
+		fmt.Fprintln(out, styles.Dimmed.Render("  No worktrees found."))
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "  Run 'hydra clone <url>' to add a repository.")
 	}
+}
 
-	return nil
+func groupWorktrees(items []worktreeJSON) map[string][]worktreeJSON {
+	groups := make(map[string][]worktreeJSON)
+	for _, item := range items {
+		groups[item.Group] = append(groups[item.Group], item)
+	}
+	return groups
+}
+
+func sortedGroupNames(groups map[string][]worktreeJSON) []string {
+	names := make([]string, 0, len(groups))
+	for name := range groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

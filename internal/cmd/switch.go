@@ -3,214 +3,179 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/mssantosdev/hydra/internal/config"
-	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
+
+	"github.com/mssantosdev/hydra/internal/output"
 )
 
+// switchMarker is the token the shell helper greps for. It is part of hydra's
+// public interface with the shell, not an implementation detail.
+const switchMarker = "__HYDRA_CD__"
+
+var switchCD bool
+
+type switchResult struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Group     string `json:"group"`
+	Repo      string `json:"repo"`
+	Branch    string `json:"branch"`
+	CDEmitted bool   `json:"cd_emitted"`
+}
+
 var switchCmd = &cobra.Command{
-	Use:   "switch [<worktree-name>]",
-	Short: "Switch to a worktree",
-	Long: `Switch to a different worktree by changing directory.
+	Use:     "switch [<worktree>]",
+	Aliases: []string{"sw"},
+	Short:   "Change directory to a worktree",
+	Long: `Resolve a worktree and hand its path to the shell.
 
 DESCRIPTION
-  Changes to the specified worktree directory. Requires shell integration
-  to be initialized (see PREREQUISITES below).
+  With the shell helper installed (see "hydra init-shell"), switch emits the change
+  directory instruction the helper consumes, and your shell lands in the worktree.
 
-  Works by outputting a special directive (__HYDRA_CD__) that the shell
-  helper intercepts and executes as a cd command.
+  Without the helper, switch still answers: it prints the absolute path on stdout,
+  a one-line hint on stderr, and exits 0. Scripts and agents can therefore always
+  ask where a worktree is. For scripting, prefer "hydra path", which is the explicit
+  path-printing command and never involves the shell helper.
 
-PREREQUISITES
-  Shell helper must be initialized:
-    $ hydra init-shell
-    $ source your shell rc/config file
+  Only "switch --cd" requires the helper; without it that form fails with exit 3.
 
 WHEN TO USE
-  • Moving between different feature branches
-  • Switching from development to hotfix work
-  • Navigating to staging/production worktrees
-  • Quick context switching during code reviews
+  • Interactively moving between worktrees
+  • Picking a worktree from a list when you do not remember its name
 
 EXAMPLES
-  # Interactive mode - select from list
+  # Jump to a worktree (with the shell helper installed)
+  $ hydra switch api-stage
+
+  # Pick from a list
   $ hydra switch
 
-  # Switch by full worktree name
-  $ hydra switch api-feature-login
+  # Just tell me the path
+  $ hydra path api-stage
 
-  # Partial match (matches any *stage*)
-  $ hydra switch stage
-
-  # Quick switch using hsw alias
-  $ hsw api-feature-login
+FLAGS
+  --cd   require the shell helper and fail with exit 3 when it is missing
 
 EXIT CODES
-  0  Success (directory changed)
-  1  General error (worktree not found)
-  2  Config file (.hydra.yaml) not found
-  3  Shell helper not initialized
-
-ALIASES
-  hsw  Quick alias for 'hydra switch' (after init-shell)
+  0  Success
+  1  repo_unknown, bare_missing, git_failed
+  1  worktree_unknown (details.did_you_mean lists close matches)
+  2  not_in_project, config_version_unsupported, project_unknown
+  3  shell_helper_missing (only with --cd)
 
 SEE ALSO
-  • hydra init-shell - Setup shell integration
-  • hydra add - Create a new worktree to switch to
-  • hydra list - View available worktrees
-  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
-	RunE: runSwitch,
+  • hydra path       - print a worktree path, no shell helper needed
+  • hydra init-shell - install the shell helper
+  • hydra list       - list worktrees`,
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeWorktreeNames,
+	RunE:              runSwitch,
 }
 
 func init() {
+	switchCmd.Flags().BoolVar(&switchCD, "cd", false, "require the shell helper")
 	rootCmd.AddCommand(switchCmd)
-	switchCmd.ValidArgsFunction = completeWorktreeNames
 }
 
 func runSwitch(cmd *cobra.Command, args []string) error {
-	// Check if shell helper is initialized
-	if !isShellHelperInitialized() {
-		fmt.Println(styles.Error.Render("Error: Shell helper not initialized"))
-		fmt.Println()
-		fmt.Println("To enable automatic directory switching, run:")
-		fmt.Println()
-		fmt.Println("  hydra init-shell")
-		fmt.Println("  source your shell rc/config file")
-		fmt.Println()
-		fmt.Println("Then you can use: hydra switch <worktree>")
-		fmt.Println()
+	wt, err := resolveSwitchTarget(args)
+	if err != nil {
+		return err
+	}
 
-		// Try to find the worktree to show cd command
-		if len(args) > 0 {
-			wd, _ := os.Getwd()
-			configPath, cfg, err := config.FindConfig(wd)
-			if err == nil {
-				projectRoot := filepath.Dir(configPath)
-				wt, ok := findWorktreeByName(cfg, projectRoot, args[0])
-				if ok {
-					relPath, _ := filepath.Rel(wd, wt.SymlinkPath)
-					fmt.Println("For now, manually run:")
-					fmt.Printf("  cd %s\n", relPath)
-				}
+	helperActive := isShellHelperInitialized()
+	if switchCD && !helperActive {
+		return output.Errorf(output.CodeShellHelperMissing,
+			"the hydra shell helper is not initialized; run \"hydra init-shell\" and restart your shell, or use \"hydra path\"").
+			WithDetail("path", wt.Path)
+	}
+
+	result := switchResult{
+		Name:      wt.DirName,
+		Path:      wt.Path,
+		Group:     wt.RepoContext.Group,
+		Repo:      wt.RepoContext.Alias,
+		Branch:    wt.Branch,
+		CDEmitted: helperActive,
+	}
+
+	if helperActive {
+		// The helper reads a file when it provides one, otherwise the marker line.
+		if target := os.Getenv("HYDRA_SWITCH_OUTPUT_FILE"); target != "" {
+			if err := os.WriteFile(target, []byte(wt.Path+"\n"), 0644); err != nil {
+				return output.Wrap(output.CodeInternal, err, "failed to write the switch target file")
 			}
+		} else if !jsonMode() {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", switchMarker, wt.Path)
+			return nil
 		}
-
-		return fmt.Errorf("shell helper not initialized")
 	}
 
-	wd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	configPath, cfg, err := config.FindConfig(wd)
-	if err != nil {
-		return err
-	}
-
-	projectRoot := filepath.Dir(configPath)
-
-	var targetPath string
-
-	// Interactive mode if no args
-	if len(args) == 0 {
-		var err error
-		targetPath, err = interactiveSwitch(cfg, projectRoot)
-		if err != nil {
-			return err
+	return emit(cmd, result, nil, func() {
+		fmt.Fprintln(cmd.OutOrStdout(), wt.Path)
+		if !helperActive {
+			fmt.Fprintln(os.Stderr, "hint: run \"hydra init-shell\" to have switch change directory for you; \"hydra path\" is the scriptable form")
 		}
-	} else {
-		// Find worktree by name
-		wt, ok := findWorktreeByName(cfg, projectRoot, args[0])
+	})
+}
+
+func resolveSwitchTarget(args []string) (worktreeContext, error) {
+	items, warnings := collectWorktrees(cfg, projectRoot)
+
+	if len(args) == 1 {
+		name := strings.TrimSpace(args[0])
+		wt, ok := findWorktreeInList(items, name)
 		if !ok {
-			// Try to find similar worktrees
-			similar := findSimilarWorktreesByName(cfg, projectRoot, args[0])
-			if len(similar) > 0 {
-				fmt.Println(styles.Error.Render(fmt.Sprintf("Worktree not found: %s", args[0])))
-				fmt.Println()
-				fmt.Println("Did you mean:")
-				for i, s := range similar {
-					fmt.Printf("  %d. %s\n", i+1, s)
-				}
-				fmt.Println()
-				fmt.Println("Create it with:")
-				fmt.Printf("  hydra add <repo> %s\n", args[0])
-			} else {
-				return fmt.Errorf("worktree not found: %s", args[0])
-			}
-			return fmt.Errorf("shell helper not initialized")
+			return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
+				"no worktree named %q", name).
+				WithDetail("name", name).
+				WithDetail("did_you_mean", findSimilarWorktreesByName(cfg, projectRoot, name))
 		}
-		targetPath = wt.WorktreePath
-	}
-
-	// Output the path for shell helper to cd to
-	if err := writeSwitchTarget(targetPath); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func isShellHelperInitialized() bool {
-	// Check for environment variable set by init-shell
-	return os.Getenv("HYDRA_SHELL_HELPER") == "1" && os.Getenv("GO_TEST") != "1"
-}
-
-func writeSwitchTarget(targetPath string) error {
-	if outputFile := os.Getenv("HYDRA_SWITCH_OUTPUT_FILE"); outputFile != "" {
-		return os.WriteFile(outputFile, []byte(targetPath), 0600)
-	}
-	fmt.Printf("__HYDRA_CD__ %s\n", targetPath)
-	return nil
-}
-
-func interactiveSwitch(cfg *config.Config, projectRoot string) (string, error) {
-	// Build list of available worktrees
-	type worktreeItem struct {
-		path  string
-		label string
-	}
-
-	choices, err := collectWorktreeChoices(cfg, projectRoot)
-	if err != nil {
-		return "", err
-	}
-
-	items := make([]worktreeItem, 0, len(choices))
-	for _, choice := range choices {
-		items = append(items, worktreeItem{
-			path:  choice.WorktreePath,
-			label: fmt.Sprintf("%s/%s", choice.RepoContext.Ecosystem, choice.SymlinkName),
-		})
+		return wt, nil
 	}
 
 	if len(items) == 0 {
-		return "", fmt.Errorf("no worktrees found")
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
+			"this project has no worktrees").
+			WithDetail("warnings", warnings)
 	}
 
-	// Convert to huh options
-	options := make([]huh.Option[worktreeItem], len(items))
-	for i, item := range items {
-		options[i] = huh.NewOption(item.label, item)
+	if !interactive() {
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
+			"a worktree name is required: hydra switch <worktree>").
+			WithDetail("available", worktreeHandles(items))
 	}
 
-	var selected worktreeItem
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[worktreeItem]().
-				Title("Select Worktree").
-				Description("Choose which worktree to switch to").
-				Options(options...).
-				Value(&selected),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return "", err
+	options := make([]huh.Option[string], 0, len(items))
+	for _, item := range items {
+		options = append(options, huh.NewOption(
+			fmt.Sprintf("%s (%s)", item.Qualified(), item.BranchLabel()), item.Qualified()))
 	}
+	selected := items[0].Qualified()
+	if err := huh.NewSelect[string]().Title("Switch to").Options(options...).Value(&selected).Run(); err != nil {
+		return worktreeContext{}, output.Wrap(output.CodeInternal, err, "cancelled")
+	}
+	wt, ok := findWorktreeInList(items, selected)
+	if !ok {
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown, "no worktree named %q", selected)
+	}
+	return wt, nil
+}
 
-	return selected.path, nil
+func worktreeHandles(items []worktreeContext) []string {
+	handles := make([]string, 0, len(items))
+	for _, item := range items {
+		handles = append(handles, item.Qualified())
+	}
+	return handles
+}
+
+// isShellHelperInitialized reports whether the shell function wrapping hydra is
+// active in this process's environment.
+func isShellHelperInitialized() bool {
+	return os.Getenv("HYDRA_SHELL_HELPER") == "1" || os.Getenv("HYDRA_SWITCH_OUTPUT_FILE") != ""
 }

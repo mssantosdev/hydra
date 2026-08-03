@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +20,8 @@ const (
 var (
 	withCompletion    bool
 	withoutCompletion bool
+	installFlag       = true
+	printFlag         bool
 )
 
 var initShellCmd = &cobra.Command{
@@ -26,23 +29,40 @@ var initShellCmd = &cobra.Command{
 	Short: "Install shell integration",
 	Long: `Install shell helper for automatic directory switching.
 
-` + "`hydra init-shell`" + ` writes a small loader block to your shell config and
-stores generated helper files under ~/.config/hydra/shell/.
+DESCRIPTION
+  Generates shell helper files under ~/.config/hydra/shell/ and, by default,
+  installs a small loader block into your shell configuration file.
 
-Use ` + "`hydra completion <shell>`" + ` to print a completion script directly, or
-let init-shell install it alongside the helper.`,
+FLAGS
+  --install           Install the loader block into your shell rc (default: true)
+  --install=false     Skip rc installation
+  --print             Print the loader block to stdout (same as --install=false)
+  --with-completion   Also install shell completion alongside the helper
+  --without-completion Install only the shell helper
+
+NOTES
+  Do not redirect the default install command into your shell rc: it writes the
+  rc file for you and prints a human summary to stdout. Use ` + "`--print`" + `
+  or ` + "`--install=false`" + ` when you want only the raw loader snippet.
+
+EXIT CODES
+  0  Success (helper installed or loader printed)
+  1  General error (unsupported shell, write failure)`,
 	RunE: runInitShell,
 }
 
 func init() {
 	rootCmd.AddCommand(initShellCmd)
+	initShellCmd.Flags().BoolVar(&installFlag, "install", true, "Install loader block into shell config")
+	initShellCmd.Flags().BoolVar(&printFlag, "print", false, "Print loader block to stdout instead of installing")
 	initShellCmd.Flags().BoolVar(&withCompletion, "with-completion", false, "Install completion alongside the shell helper")
 	initShellCmd.Flags().BoolVar(&withoutCompletion, "without-completion", false, "Install only the shell helper")
 }
 
 func runInitShell(cmd *cobra.Command, args []string) error {
 	if withCompletion && withoutCompletion {
-		return fmt.Errorf("--with-completion and --without-completion are mutually exclusive")
+		return output.Errorf(output.CodeInternal,
+			"--with-completion and --without-completion are mutually exclusive")
 	}
 
 	shell := detectShell()
@@ -50,21 +70,59 @@ func runInitShell(cmd *cobra.Command, args []string) error {
 		shell = args[0]
 	}
 	if shell != "bash" && shell != "zsh" && shell != "fish" {
-		return fmt.Errorf("unsupported shell: %s (supported: bash, zsh, fish)", shell)
+		return output.Errorf(output.CodeInternal,
+			"unsupported shell: %s (supported: bash, zsh, fish)", shell)
 	}
 
 	installCompletion := withCompletion
 	if !withCompletion && !withoutCompletion {
-		installCompletion = promptInstallCompletion(cmd, shell)
+		if shouldPromptCompletion(cmd) {
+			installCompletion = promptInstallCompletion(cmd, shell)
+		} else {
+			installCompletion = true
+		}
 	}
 
-	if err := writeShellAssets(shell, installCompletion); err != nil {
+	helperPath, completionPath, err := shellAssetPaths(shell)
+	if err != nil {
 		return err
 	}
 
-	return renderInitShellSummary(cmd, shell, installCompletion)
+	if err := writeShellHelperFiles(shell, helperPath, completionPath, installCompletion); err != nil {
+		return err
+	}
+
+	loader := renderLoaderBlock(shell, helperPath)
+
+	if printFlag || !installFlag {
+		return emit(cmd, map[string]any{
+			"shell":  shell,
+			"loader": loader,
+			"helper": helperPath,
+		}, nil, func() {
+			fmt.Fprint(cmd.OutOrStdout(), loader)
+			if !strings.HasSuffix(loader, "\n") {
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
+		})
+	}
+
+	if err := writeLoaderBlock(shell, helperPath); err != nil {
+		return err
+	}
+
+	return renderInitShellSummary(cmd, shell, helperPath, completionPath, installCompletion)
 }
 
+func shouldPromptCompletion(cmd *cobra.Command) bool {
+	if interactive() {
+		return true
+	}
+	if cmd != nil && cmd.InOrStdin() != os.Stdin {
+		return true
+	}
+	return false
+}
 func detectShell() string {
 	shell := os.Getenv("SHELL")
 	if strings.Contains(shell, "zsh") {
@@ -87,19 +145,14 @@ func promptInstallCompletion(cmd *cobra.Command, shell string) bool {
 	return answer == "" || answer == "y" || answer == "yes"
 }
 
-func writeShellAssets(shell string, installCompletion bool) error {
-	helperPath, completionPath, err := shellAssetPaths(shell)
-	if err != nil {
-		return err
-	}
-
+func writeShellHelperFiles(shell, helperPath, completionPath string, installCompletion bool) error {
 	if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
-		return err
+		return output.Wrap(output.CodeInternal, err, "failed to create shell asset directory")
 	}
 
 	helperContent := renderShellHelper(shell, completionPath)
 	if err := os.WriteFile(helperPath, []byte(helperContent), 0o644); err != nil {
-		return err
+		return output.Wrap(output.CodeInternal, err, "failed to write shell helper")
 	}
 
 	if installCompletion {
@@ -108,51 +161,52 @@ func writeShellAssets(shell string, installCompletion bool) error {
 			return err
 		}
 		if err := os.WriteFile(completionPath, []byte(completionScript), 0o644); err != nil {
-			return err
+			return output.Wrap(output.CodeInternal, err, "failed to write completion script")
 		}
 	} else {
 		_ = os.Remove(completionPath)
 	}
 
-	return writeLoaderBlock(shell, helperPath)
+	return nil
 }
 
-func renderInitShellSummary(cmd *cobra.Command, shell string, installCompletion bool) error {
-	helperPath, completionPath, err := shellAssetPaths(shell)
-	if err != nil {
-		return err
+func renderInitShellSummary(cmd *cobra.Command, shell, helperPath, completionPath string, installCompletion bool) error {
+	payload := map[string]any{
+		"shell":      shell,
+		"helper":     helperPath,
+		"installed":  true,
+		"completion": installCompletion,
 	}
-
-	styleOK := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#9ece6a"))
-	styleInfo := lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7"))
-	styleDim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
-
-	fmt.Fprintln(cmd.OutOrStdout())
-	fmt.Fprintln(cmd.OutOrStdout(), styleOK.Render(fmt.Sprintf("✓ Shell helper installed for %s", shell)))
-	fmt.Fprintln(cmd.OutOrStdout(), "")
-	fmt.Fprintf(cmd.OutOrStdout(), "Helper: %s\n", helperPath)
 	if installCompletion {
-		fmt.Fprintf(cmd.OutOrStdout(), "Completion: %s\n", completionPath)
+		payload["completion_path"] = completionPath
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "")
-	fmt.Fprintln(cmd.OutOrStdout(), "The loader block in your shell rc now sources the generated helper.")
-	fmt.Fprintln(cmd.OutOrStdout(), styleInfo.Render("Next steps:"))
-	fmt.Fprintf(cmd.OutOrStdout(), "  1. Source your shell config: %s\n", styleDim.Render(shellSourceHint(shell)))
-	fmt.Fprintln(cmd.OutOrStdout(), "  2. Verify: echo $HYDRA_SHELL_HELPER")
-	fmt.Fprintln(cmd.OutOrStdout(), "     Should output: 1")
-	fmt.Fprintln(cmd.OutOrStdout(), "")
-	fmt.Fprintln(cmd.OutOrStdout(), "Then you can use:")
-	fmt.Fprintln(cmd.OutOrStdout(), "  hydra switch <worktree>")
-	fmt.Fprintln(cmd.OutOrStdout(), "  hsw <worktree>")
-	fmt.Fprintln(cmd.OutOrStdout(), "")
 
-	return nil
+	return emit(cmd, payload, nil, func() {
+		fmt.Fprintln(cmd.OutOrStdout())
+		fmt.Fprintln(cmd.OutOrStdout(), styles.Success.Render(fmt.Sprintf("✓ Shell helper installed for %s", shell)))
+		fmt.Fprintln(cmd.OutOrStdout())
+		fmt.Fprintf(cmd.OutOrStdout(), "Helper: %s\n", helperPath)
+		if installCompletion {
+			fmt.Fprintf(cmd.OutOrStdout(), "Completion: %s\n", completionPath)
+		}
+		fmt.Fprintln(cmd.OutOrStdout())
+		fmt.Fprintln(cmd.OutOrStdout(), "The loader block in your shell rc now sources the generated helper.")
+		fmt.Fprintln(cmd.OutOrStdout(), styles.Title.Render("Next steps:"))
+		fmt.Fprintf(cmd.OutOrStdout(), "  1. Source your shell config: %s\n", styles.Dimmed.Render(shellSourceHint(shell)))
+		fmt.Fprintln(cmd.OutOrStdout(), "  2. Verify: echo $HYDRA_SHELL_HELPER")
+		fmt.Fprintln(cmd.OutOrStdout(), "     Should output: 1")
+		fmt.Fprintln(cmd.OutOrStdout())
+		fmt.Fprintln(cmd.OutOrStdout(), "Then you can use:")
+		fmt.Fprintln(cmd.OutOrStdout(), "  hydra switch <worktree>")
+		fmt.Fprintln(cmd.OutOrStdout(), "  hsw <worktree>")
+		fmt.Fprintln(cmd.OutOrStdout())
+	})
 }
 
 func shellAssetPaths(shell string) (string, string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", "", err
+		return "", "", output.Wrap(output.CodeInternal, err, "failed to resolve home directory")
 	}
 	shellDir := filepath.Join(home, ".config", "hydra", "shell")
 	helperName := fmt.Sprintf("hydra-shell.%s", shell)
@@ -164,7 +218,7 @@ func writeLoaderBlock(shell, helperPath string) error {
 	configFile := getShellConfigFile(shell)
 	existing, err := readShellConfig(configFile)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read %s: %w", configFile, err)
+		return output.Wrap(output.CodeInternal, err, "failed to read %s", configFile)
 	}
 
 	loader := renderLoaderBlock(shell, helperPath)
@@ -208,13 +262,19 @@ function hydra
         set -l cleanup_output_file 0
         set -l output_file $HYDRA_SWITCH_OUTPUT_FILE
         if test -z "$output_file"
-            set output_file (mktemp "TMPDIR=${TMPDIR:-/tmp} hydra-switch.XXXXXX")
+            set -l tmpdir $TMPDIR
+            if test -z "$tmpdir"
+                set tmpdir /tmp
+            end
+            set output_file (mktemp "$tmpdir/hydra-switch.XXXXXX")
             or return 1
             set cleanup_output_file 1
         end
 
-        env HYDRA_SWITCH_OUTPUT_FILE="$output_file" command hydra $argv
+        set -lx HYDRA_SWITCH_OUTPUT_FILE $output_file
+        command hydra $argv
         set -l exit_code $status
+        set -e HYDRA_SWITCH_OUTPUT_FILE
 
         set -l path ''
         if test -f "$output_file"
@@ -308,7 +368,7 @@ func renderCompletionScript(shell string) (string, error) {
 			return "", err
 		}
 	default:
-		return "", fmt.Errorf("unsupported shell: %s", shell)
+		return "", output.Errorf(output.CodeInternal, "unsupported shell: %s", shell)
 	}
 	return buf.String(), nil
 }

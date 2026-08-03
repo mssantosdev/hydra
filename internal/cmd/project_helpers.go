@@ -53,7 +53,7 @@ func createProjectRoot(baseDir, projectPath string) (string, string, *config.Con
 		return "", "", nil, fmt.Errorf("hydra project already exists at %s", projectRoot)
 	}
 
-	cfg := config.DefaultConfig()
+	cfg := config.DefaultConfig(filepath.Base(cleanPath))
 	if err := cfg.Save(configPath); err != nil {
 		return "", "", nil, fmt.Errorf("failed to save config: %w", err)
 	}
@@ -61,13 +61,31 @@ func createProjectRoot(baseDir, projectPath string) (string, string, *config.Con
 	return projectRoot, configPath, cfg, nil
 }
 
-func registerRepo(cfg *config.Config, configPath, group, alias, repoName string) error {
-	if cfg.Ecosystems == nil {
-		cfg.Ecosystems = make(map[string]config.Ecosystem)
+// createProjectRootAt writes a schema v2 .hydra.yaml directly into an existing
+// directory, which is how `hydra init` and a bare `hydra clone` create a workspace
+// in place rather than in a subdirectory.
+func createProjectRootAt(root, projectName string) (string, string, *config.Config, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("failed to resolve %s: %w", root, err)
 	}
-	if cfg.Ecosystems[group] == nil {
-		cfg.Ecosystems[group] = make(config.Ecosystem)
+	if err := os.MkdirAll(abs, 0755); err != nil {
+		return "", "", nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
-	cfg.Ecosystems[group][alias] = repoName
-	return cfg.Save(configPath)
+
+	configPath := filepath.Join(abs, ".hydra.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		return "", "", nil, fmt.Errorf("hydra project already exists at %s", abs)
+	}
+
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		name = filepath.Base(abs)
+	}
+	cfg := config.DefaultConfig(name)
+	if err := cfg.Save(configPath); err != nil {
+		return "", "", nil, fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return abs, configPath, cfg, nil
 }

@@ -1,47 +1,81 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/spf13/cobra"
+
+	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/config/registry"
+	"github.com/mssantosdev/hydra/internal/hooks"
+	"github.com/mssantosdev/hydra/internal/log"
+	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/ui/styles"
 )
 
+// Build metadata, injected via -ldflags.
 var (
-	cfgFile string
-	cfg     *config.Config
 	version = "dev"
 	commit  = ""
 	builtAt = ""
+)
+
+var (
+	cfgFile     string
+	outputFlag  string
+	projectFlag string
+	verboseFlag bool
+	noHooksFlag bool
+
+	cfg               *config.Config
+	projectRoot       string
+	projectConfigPath string
+	outMode           output.Mode
+
+	// commandsWithoutProject do not need a .hydra.yaml to run: they either create
+	// one, manage the global registry, or are pure output.
+	commandsWithoutProject = map[string]bool{
+		"init":       true,
+		"new":        true,
+		"clone":      true,
+		"help":       true,
+		"glossary":   true,
+		"config":     true,
+		"init-shell": true,
+		"completion": true,
+		"skill":      true,
+		"project":    true,
+	}
+
 	rootCmd = &cobra.Command{
 		Use:   "hydra",
 		Short: "Hydra - Git worktree manager",
-		Long: `Hydra is a beautiful CLI tool for managing Git worktrees.
+		Long: `Hydra is a CLI tool for managing Git worktrees.
 
-It helps you organize multiple worktrees across different repositories
-and ecosystems, making it easy to work on multiple branches simultaneously.`,
+It organizes work as project -> group -> repo -> worktree: a bare repository holds
+git data only, and every worktree is a real sibling directory under its group.
+
+Every command emits a machine-readable JSON envelope with --output json (and by
+default whenever stdout is not a terminal), so scripts and agents never scrape text.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Skip config loading for commands that don't require it
-			if cmd.Parent() == nil || cmd.Name() == "init" || cmd.Name() == "clone" || cmd.Name() == "new" || cmd.Name() == "help" || cmd.Name() == "glossary" || cmd.Name() == "config" || cmd.Name() == "init-shell" || cmd.Name() == "completion" {
+			mode, err := output.Resolve(outputFlag)
+			if err != nil {
+				return err
+			}
+			outMode = mode
+			styles.SetColorEnabled(output.Color(os.Stdout))
+			log.SetVerbose(verboseFlag)
+
+			if skipsProject(cmd) {
 				return nil
 			}
-
-			// Find and load config
-			wd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get current directory: %w", err)
-			}
-
-			_, cfg, err = config.FindConfig(wd)
-			if err != nil {
-				return fmt.Errorf(`%v
-
-Run "hydra init" to create a new configuration.`, err)
-			}
-
-			return nil
+			return loadProject()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
@@ -49,13 +83,133 @@ Run "hydra init" to create a new configuration.`, err)
 	}
 )
 
-// Execute runs the root command
-func Execute() error {
-	return rootCmd.Execute()
+// annotationRegistryFanout marks a command whose --all flag means "every
+// registered project" rather than "everything in this project". Only those
+// commands may run without a workspace under --all; sniffing --all generically
+// would wrongly exempt `sync --all`, which means every repo in THIS project.
+const annotationRegistryFanout = "hydra/registry-fanout"
+
+func skipsProject(cmd *cobra.Command) bool {
+	if cmd.Parent() == nil {
+		return true
+	}
+	if cmd.Annotations[annotationRegistryFanout] == "all" {
+		if flag := cmd.Flags().Lookup("all"); flag != nil && flag.Changed {
+			return true
+		}
+	}
+	for c := cmd; c != nil && c.Parent() != nil; c = c.Parent() {
+		if commandsWithoutProject[c.Name()] {
+			return true
+		}
+	}
+	return false
+}
+
+// loadProject resolves the active project from --project, --config, or by walking
+// up from the working directory.
+//
+// The globals are cleared first so a failed resolution can never leave a previous
+// invocation's workspace behind — which would silently operate on the wrong project.
+func loadProject() error {
+	cfg, projectRoot, projectConfigPath = nil, "", ""
+
+	if projectFlag != "" {
+		reg, err := registry.Load()
+		if err != nil {
+			return output.Wrap(output.CodeInternal, err, "failed to read the project registry")
+		}
+		root, ok := reg.Resolve(projectFlag)
+		if !ok {
+			return output.Errorf(output.CodeProjectUnknown,
+				"project %q is not registered; run \"hydra project ls\" to see registered projects", projectFlag).
+				WithDetail("project", projectFlag).
+				WithDetail("registry", registry.Path())
+		}
+		return loadProjectAt(root)
+	}
+
+	if cfgFile != "" {
+		loaded, err := config.Load(cfgFile)
+		if err != nil {
+			return classifyConfigError(err)
+		}
+		cfg = loaded
+		projectConfigPath = cfgFile
+		projectRoot = absDir(cfgFile)
+		return nil
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return output.Wrap(output.CodeInternal, err, "failed to resolve the working directory")
+	}
+
+	path, loaded, err := config.FindConfig(wd)
+	if err != nil {
+		return classifyConfigError(err)
+	}
+	cfg = loaded
+	projectConfigPath = path
+	projectRoot = absDir(path)
+	return nil
+}
+
+func loadProjectAt(root string) error {
+	path := filepath.Join(root, ".hydra.yaml")
+	loaded, err := config.Load(path)
+	if err != nil {
+		return classifyConfigError(err)
+	}
+	cfg = loaded
+	projectConfigPath = path
+	projectRoot = root
+	return nil
+}
+
+func classifyConfigError(err error) error {
+	var unsupported *config.ErrUnsupportedVersion
+	if errors.As(err, &unsupported) {
+		return output.Errorf(output.CodeConfigVersionUnsupported, "%s", unsupported.Error()).
+			WithDetail("path", unsupported.Path).
+			WithDetail("found_version", unsupported.Version).
+			WithDetail("required_version", config.SchemaVersion)
+	}
+	return output.Errorf(output.CodeNotInProject,
+		"%v\n\nRun \"hydra init\" to create a workspace, or pass --project <name>.", err)
+}
+
+func absDir(configPath string) string {
+	abs, err := filepath.Abs(configPath)
+	if err != nil {
+		return filepath.Dir(configPath)
+	}
+	return filepath.Dir(abs)
+}
+
+// Execute runs the root command, returning the command path that ran so the
+// caller can label the error envelope.
+func Execute() (string, error) {
+	executed, err := rootCmd.ExecuteC()
+	name := ""
+	if executed != nil {
+		name = commandName(executed)
+	}
+	return name, err
+}
+
+// ErrorsAsJSON reports whether a failure should be rendered as a JSON envelope.
+func ErrorsAsJSON() bool {
+	return jsonMode()
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is .hydra.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "path to a .hydra.yaml (default: nearest one walking up)")
+	rootCmd.PersistentFlags().StringVar(&projectFlag, "project", "", "registered project name to operate on")
+	rootCmd.PersistentFlags().StringVar(&outputFlag, "output", "", "output mode: auto|text|json (auto emits JSON when stdout is not a terminal)")
+	rootCmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "verbose logging on stderr")
+	rootCmd.PersistentFlags().BoolVar(&noHooksFlag, "no-hooks", false, "skip every configured hook")
+
 	rootCmd.Version = versionInfo()
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.SetHelpTemplate(`{{with .Long}}{{.}}{{else}}{{.Short}}{{end}}
@@ -73,9 +227,130 @@ Global Flags:
 {{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}`)
 }
 
-// GetConfig returns the loaded configuration
-func GetConfig() *config.Config {
-	return cfg
+// GetConfig returns the loaded project configuration.
+func GetConfig() *config.Config { return cfg }
+
+// RootCommand exposes the command tree for drift tests.
+func RootCommand() *cobra.Command { return rootCmd }
+
+// commandName is the envelope's "command" field: the command path without the
+// binary name, so nested commands stay unambiguous ("project ls"). An alias is
+// reported as invoked, so `hydra ls` says "ls".
+func commandName(cmd *cobra.Command) string {
+	if called := cmd.CalledAs(); called != "" && cmd.Parent() != nil && cmd.Parent().Parent() == nil {
+		return called
+	}
+	return strings.TrimSpace(strings.TrimPrefix(cmd.CommandPath(), rootCmd.Name()))
+}
+
+// jsonMode reports whether the effective output mode for stdout is JSON.
+func jsonMode() bool {
+	return output.Effective(outMode, os.Stdout) == output.ModeJSON
+}
+
+// interactive reports whether prompts may be shown.
+func interactive() bool {
+	return output.Interactive(outMode)
+}
+
+// explicitJSON reports whether JSON was actually asked for, rather than inferred
+// from stdout not being a terminal.
+func explicitJSON() bool {
+	return outMode == output.ModeJSON
+}
+
+// emitValue is the funnel for commands whose payload IS a single value the shell
+// consumes (`hydra path`). Auto mode stays text so `cd "$(hydra path api)"` works;
+// only an explicit --output json (or HYDRA_OUTPUT=json) produces an envelope.
+func emitValue(cmd *cobra.Command, data any, warnings []string, text func()) error {
+	if explicitJSON() {
+		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), data, warnings)
+	}
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+	}
+	if text != nil {
+		text()
+	}
+	return nil
+}
+
+// emit is the single success funnel: JSON envelope, or the command's text renderer.
+func emit(cmd *cobra.Command, data any, warnings []string, text func()) error {
+	if jsonMode() {
+		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), data, warnings)
+	}
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+	}
+	if text != nil {
+		text()
+	}
+	return nil
+}
+
+// projectTarget is one workspace a read-only command runs against.
+type projectTarget struct {
+	Name string
+	Root string
+	Cfg  *config.Config
+}
+
+// projectTargets resolves the workspaces a read-only command covers. With
+// all=false it is the currently loaded project; with all=true it is every
+// registered project, and unreadable entries become warnings instead of
+// disappearing.
+func projectTargets(all bool) ([]projectTarget, []string, error) {
+	if !all {
+		if cfg == nil {
+			return nil, nil, output.Errorf(output.CodeNotInProject,
+				"no hydra workspace found; run \"hydra init\" or pass --project <name>")
+		}
+		return []projectTarget{{Name: cfg.Project, Root: projectRoot, Cfg: cfg}}, nil, nil
+	}
+
+	reg, err := registry.Load()
+	if err != nil {
+		return nil, nil, output.Wrap(output.CodeInternal, err, "failed to read the project registry")
+	}
+
+	var targets []projectTarget
+	var warnings []string
+	for _, name := range reg.Names() {
+		root, _ := reg.Resolve(name)
+		loaded, loadErr := config.Load(filepath.Join(root, ".hydra.yaml"))
+		if loadErr != nil {
+			warnings = append(warnings, fmt.Sprintf("%s (%s): %v", name, root, loadErr))
+			continue
+		}
+		targets = append(targets, projectTarget{Name: name, Root: root, Cfg: loaded})
+	}
+	if len(targets) == 0 && len(warnings) == 0 {
+		warnings = append(warnings, "no projects registered; run \"hydra init\" or \"hydra project add\"")
+	}
+	return targets, warnings, nil
+}
+
+// runHookEvent runs a configured hook chain for the active project unless
+// --no-hooks was passed.
+func runHookEvent(event string, hctx hooks.Context, cwd string) (hooks.Result, error) {
+	return runHookEventForProject(cfg, projectRoot, event, hctx, cwd)
+}
+
+// runHookEventForProject is the explicit-project form, used by commands that
+// operate on a target other than the ambient one.
+func runHookEventForProject(c *config.Config, root, event string, hctx hooks.Context, cwd string) (hooks.Result, error) {
+	if noHooksFlag || c == nil {
+		return hooks.Result{}, nil
+	}
+	chain, known := c.HooksFor(event)
+	if !known {
+		return hooks.Result{}, output.Errorf(output.CodeInternal, "unknown hook event %q", event)
+	}
+	hctx.Event = event
+	hctx.Project = c.Project
+	hctx.ProjectRoot = root
+	return hooks.Run(chain, hctx, cwd, os.Stderr)
 }
 
 func versionInfo() string {
@@ -83,7 +358,6 @@ func versionInfo() string {
 	if v == "" {
 		v = "dev"
 	}
-
 	if !strings.HasPrefix(v, "v") && v != "dev" {
 		v = "v" + v
 	}
@@ -95,6 +369,5 @@ func versionInfo() string {
 	if builtAt != "" {
 		parts = append(parts, builtAt)
 	}
-
 	return strings.Join(parts, " ")
 }

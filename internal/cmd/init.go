@@ -1,213 +1,122 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/mssantosdev/hydra/internal/config"
-	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
+
+	"github.com/mssantosdev/hydra/internal/config/registry"
+	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/ui/styles"
 )
+
+var (
+	initProjectName string
+	initPath        string
+)
+
+type initResult struct {
+	Project    string `json:"project"`
+	Root       string `json:"root"`
+	ConfigPath string `json:"config_path"`
+}
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize Hydra configuration",
-	Long: `Create a .hydra.yaml configuration file in the current directory.
+	Short: "Create a hydra workspace in the current directory",
+	Long: `Create a .hydra.yaml workspace configuration.
 
 DESCRIPTION
-  Initializes a new Hydra project by creating the configuration file.
-  Scans for existing Git repositories and helps organize them.
+  Writes a schema v2 .hydra.yaml into the current directory (or --path) and
+  registers the workspace in hydra's global project registry, so it can later be
+  addressed by name with --project.
 
-  Creates:
-    • .hydra.yaml - Project configuration
-    • Directory structure for worktrees
-
-  Detects Git repositories in subdirectories and offers to organize
-  them into ecosystems (backend, frontend, etc.).
+  init creates an EMPTY workspace: no repos, no worktrees. Add repositories with
+  "hydra clone <url>" for a remote, or "hydra adopt <path>" to import a checkout
+  you already have on disk.
 
 WHEN TO USE
-  • Setting up Hydra in an existing project
-  • Starting a new Hydra-managed project
-  • After cloning multiple repos that need organization
+  • Starting a workspace you will populate with "hydra clone"
+  • Turning an existing directory into a hydra project
 
 EXAMPLES
-  # Initialize in current directory
+  # Initialize here, project name taken from the directory
   $ hydra init
 
-  # Interactive flow:
-  # 1. Scans for Git repositories
-  # 2. Asks to organize into ecosystems
-  # 3. Creates .hydra.yaml
+  # Name the project explicitly
+  $ hydra init --project-name arvia
 
-NEXT STEPS AFTER INIT
-  $ hydra clone <url>     # Add a new repository
-  $ hydra add <repo> <branch>  # Create worktrees
-  $ hydra list            # View all worktrees
+  # Initialize somewhere else
+  $ hydra init --path ~/projects/arvia
 
-CONFIG FILE
-  The .hydra.yaml file contains:
-    • Ecosystem definitions (group aliases)
-    • Repository mappings
-    • Path configurations
-
-  Edit manually or use hydra commands to update.
+FLAGS
+  --project-name <name>  registry name for this workspace (default: directory name)
+  --path <dir>           directory to initialize (default: the current directory)
 
 EXIT CODES
-  0  Success (config created or already exists)
-  1  General error (write failed)
+  0  Success
+  1  General error (directory not writable, workspace already exists)
 
 SEE ALSO
-  • hydra clone - Add repositories after init
-  • hydra config - Manage global (not project) settings
-  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/configuration.md`,
+  • hydra clone   - add a remote repository to the workspace
+  • hydra adopt   - import an existing local checkout
+  • hydra new     - bootstrap a project and its first repo in one step
+  • hydra project - manage the global project registry`,
+	Args: cobra.NoArgs,
 	RunE: runInit,
 }
 
 func init() {
+	initCmd.Flags().StringVar(&initProjectName, "project-name", "", "registry name for this workspace")
+	initCmd.Flags().StringVar(&initPath, "path", "", "directory to initialize")
 	rootCmd.AddCommand(initCmd)
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	wd, err := os.Getwd()
+	target := strings.TrimSpace(initPath)
+	if target == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return output.Wrap(output.CodeInternal, err, "failed to resolve the working directory")
+		}
+		target = wd
+	}
+
+	root, configPath, created, err := createProjectRootAt(target, initProjectName)
 	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
+		return output.Wrap(output.CodeInternal, err, "failed to initialize the workspace")
 	}
 
-	configPath := filepath.Join(wd, ".hydra.yaml")
-
-	// Check if config already exists
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println(styles.Title.Render("Configuration already exists"))
-		fmt.Printf("Found: %s\n", configPath)
-		return nil
+	if err := registry.Register(created.Project, root); err != nil {
+		return output.Wrap(output.CodeInternal, err, "failed to register project %q", created.Project)
 	}
 
-	fmt.Println(styles.AppHeader.Render("HYDRA"))
-	fmt.Println(styles.Title.Render("Initialize Configuration"))
-	fmt.Println()
+	cfg = created
+	projectRoot = root
+	projectConfigPath = configPath
 
-	cfg := config.DefaultConfig()
-	reader := bufio.NewReader(os.Stdin)
+	result := initResult{Project: created.Project, Root: root, ConfigPath: configPath}
 
-	// Auto-detect repositories
-	fmt.Println("Scanning for Git repositories...")
-	repos := findGitRepos(wd)
-
-	if len(repos) > 0 {
-		fmt.Printf("Found %d Git repositories:\n", len(repos))
-		for _, repo := range repos {
-			fmt.Printf("  • %s\n", repo)
-		}
+	return emit(cmd, result, nil, func() {
 		fmt.Println()
-
-		fmt.Print(styles.Prompt.Render("Organize into ecosystems? [Y/n]: "))
-		response, _ := reader.ReadString('\n')
-		response = strings.TrimSpace(strings.ToLower(response))
-
-		if response == "" || response == "y" || response == "yes" {
-			if err := setupEcosystems(reader, cfg, repos); err != nil {
-				return err
-			}
-		}
-	} else {
-		fmt.Println("No Git repositories found in current directory.")
-		fmt.Println("You can configure them manually in .hydra.yaml")
-	}
-
-	// Save config
-	if err := cfg.Save(configPath); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println(styles.Success.Render("✓ Created .hydra.yaml"))
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  • Run 'hydra list' to see all worktrees")
-	fmt.Println("  • Run 'hydra help' for all commands")
-	fmt.Println("  • Edit .hydra.yaml to customize configuration")
-
-	return nil
-}
-
-func findGitRepos(root string) []string {
-	var repos []string
-
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return repos
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		gitDir := filepath.Join(root, entry.Name(), ".git")
-		if _, err := os.Stat(gitDir); err == nil {
-			repos = append(repos, entry.Name())
-		}
-	}
-
-	return repos
-}
-
-func setupEcosystems(reader *bufio.Reader, cfg *config.Config, repos []string) error {
-	for len(repos) > 0 {
+		fmt.Println(styles.Success.Render("✓ Hydra workspace initialized"))
+		fmt.Printf("  Project: %s\n", result.Project)
+		fmt.Printf("  Config:  %s\n", relativeTo(result.Root, result.ConfigPath))
+		fmt.Printf("  Layout:  %s/<alias>.git holds git data; worktrees are siblings under <group>/\n", created.Paths.BareDir)
 		fmt.Println()
-		fmt.Print(styles.Prompt.Render("Ecosystem name (e.g., 'backend', 'frontend', 'services'): "))
-		ecoName, _ := reader.ReadString('\n')
-		ecoName = strings.TrimSpace(ecoName)
-
-		if ecoName == "" {
-			break
-		}
-
-		eco := make(config.Ecosystem)
-
-		fmt.Printf("Assign repositories to '%s' ecosystem:\n", ecoName)
-		remaining := []string{}
-
-		for _, repo := range repos {
-			alias := suggestAlias(repo)
-			fmt.Printf("  %s → alias: %s [Y/n/custom]: ", repo, alias)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(response)
-
-			if response == "" || strings.ToLower(response) == "y" {
-				eco[alias] = repo
-			} else if response != "n" && response != "no" {
-				// Custom alias
-				eco[response] = repo
-			} else {
-				remaining = append(remaining, repo)
-			}
-		}
-
-		if len(eco) > 0 {
-			cfg.Ecosystems[ecoName] = eco
-		}
-
-		repos = remaining
-
-		if len(repos) > 0 {
-			fmt.Printf("\n%d repositories remaining. Create another ecosystem? [Y/n]: ", len(repos))
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response == "n" || response == "no" {
-				break
-			}
-		}
-	}
-
-	return nil
+		fmt.Println(styles.Label.Render("Next:"))
+		fmt.Println("  hydra clone <url> --alias <alias> --group <group>")
+		fmt.Println("  hydra adopt <path> --group <group>")
+	})
 }
 
-func suggestAlias(repoName string) string {
-	// Generic alias suggestion - just use the repo name as-is
-	// Users can customize this during init or edit the config manually
-	return repoName
+// relativeTo renders a path relative to root when that is shorter to read.
+func relativeTo(root, path string) string {
+	if rel, err := filepath.Rel(root, path); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return path
 }

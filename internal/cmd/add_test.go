@@ -1,162 +1,323 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
+	"github.com/mssantosdev/hydra/internal/git"
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
-func TestAdd_NoConfig(t *testing.T) {
+// TestAdd_TracksRemoteBranch proves the original bug is fixed at the command
+// level: adding a branch that exists on origin must produce upstream tracking.
+func TestAdd_TracksRemoteBranch(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
-	// Don't create config
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
 	env.Chdir()
 
-	rootCmd.SetArgs([]string{"add", "api", "main"})
+	rootCmd.SetArgs([]string{"add", "api", "stage"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
 
+	worktree := env.GetWorktreePath("backend", "api-stage")
+	if !env.DirExists(worktree) {
+		t.Fatalf("expected worktree at %s", worktree)
+	}
+	if env.IsSymlink(worktree) {
+		t.Error("worktree must be a real directory, never a symlink")
+	}
+	if upstream := env.Upstream(worktree); upstream != "origin/stage" {
+		t.Errorf("upstream = %q, want origin/stage", upstream)
+	}
+}
+
+// TestAdd_NewBranchIsLocalOnly proves a brand-new branch reports no upstream
+// rather than inheriting its base branch's, which would make ahead/behind lie.
+func TestAdd_NewBranchIsLocalOnly(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"add", "api", "feat/login"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	worktree := env.GetWorktreePath("backend", "api-feat-login")
+	if !env.DirExists(worktree) {
+		t.Fatalf("expected worktree at %s (slug folds / to -)", worktree)
+	}
+	if upstream := env.Upstream(worktree); upstream != "" {
+		t.Errorf("upstream = %q, want empty for a branch that was never pushed", upstream)
+	}
+}
+
+// TestAdd_AsOverridesDirectoryName covers the real motivation for --as: a long
+// branch name that is not mechanically reducible to a short directory name.
+func TestAdd_AsOverridesDirectoryName(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("web", "gileadeweb", "main")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"add", "gileadeweb", "marcus/feat-2072958-excel-xlsx", "--as", "gileadeweb-excel-xlsx"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("add --as: %v", err)
+	}
+
+	if !env.DirExists(env.GetWorktreePath("web", "gileadeweb-excel-xlsx")) {
+		t.Error("--as must decide the directory name")
+	}
+	if env.DirExists(env.GetWorktreePath("web", "gileadeweb-marcus-feat-2072958-excel-xlsx")) {
+		t.Error("the derived name must not also be created")
+	}
+}
+
+// TestAdd_NameConflictIsRefused proves hydra never auto-suffixes a surprise
+// directory name: a clear failure beats a directory the user did not ask for.
+func TestAdd_NameConflictIsRefused(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage", "other")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"add", "api", "stage", "--as", "shared"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("first add: %v", err)
+	}
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"add", "api", "other", "--as", "shared"})
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Error("Expected error when no config")
+		t.Fatal("a colliding directory name must be refused")
 	}
-
-	testutil.Contains(t, err.Error(), "no .hydra.yaml")
+	e := output.Classify(err)
+	if e.Code != output.CodeWorktreeNameConflict {
+		t.Fatalf("error code = %q, want %q", e.Code, output.CodeWorktreeNameConflict)
+	}
+	if e.Details["existing_branch"] != "stage" {
+		t.Errorf("details should name the occupying branch, got %v", e.Details)
+	}
 }
 
-func TestAdd_UnknownAlias(t *testing.T) {
+// TestAdd_UnknownBaseIsBranchUnknown covers the resolution chain's failure mode:
+// an unknown branch is created, but an unknown BASE cannot be invented.
+func TestAdd_UnknownBaseIsBranchUnknown(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
 	env.Chdir()
 
-	rootCmd.SetArgs([]string{"add", "unknown-alias", "main"})
-
+	rootCmd.SetArgs([]string{"add", "api", "feat/x", "--from", "does-not-exist"})
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Error("Expected error for unknown alias")
+		t.Fatal("an unknown --from base must fail")
 	}
-
-	testutil.Contains(t, err.Error(), "unknown alias")
+	if code := output.Classify(err).Code; code != output.CodeBranchUnknown {
+		t.Errorf("error code = %q, want %q", code, output.CodeBranchUnknown)
+	}
 }
 
-func TestAdd_NoBareRepo(t *testing.T) {
+func TestAdd_UnknownRepoIsRepoUnknown(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
-	env.AddToConfig("backend", "api", "api")
+	env.SetupRepo("backend", "api", "main")
 	env.Chdir()
 
-	rootCmd.SetArgs([]string{"add", "api", "main"})
-
+	rootCmd.SetArgs([]string{"add", "nosuchrepo", "main"})
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Error("Expected error when bare repo not found")
+		t.Fatal("an unknown alias must fail")
 	}
-
-	testutil.Contains(t, err.Error(), "bare repository not found")
-}
-
-func TestAdd_CreateNewWorktree(t *testing.T) {
-	env := testutil.NewTestEnv(t)
-	env.InitConfig()
-
-	// Create bare repo with main worktree
-	bareRepo := env.CreateBareRepo("api")
-	env.CreateWorktree(bareRepo, "main")
-	env.AddToConfig("backend", "api", "api")
-
-	env.Chdir()
-
-	// Create a new worktree for feature branch
-	rootCmd.SetArgs([]string{"add", "api", "feature/new-feature"})
-
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Checkout new worktree failed: %v", err)
-	}
-
-	// Verify worktree was created
-	worktreePath := env.GetWorktreePath("api", "feature-new-feature")
-	if !env.DirExists(worktreePath) {
-		t.Error("New worktree should exist")
+	if code := output.Classify(err).Code; code != output.CodeRepoUnknown {
+		t.Errorf("error code = %q, want %q", code, output.CodeRepoUnknown)
 	}
 }
 
-func TestAdd_ExistingWorktree(t *testing.T) {
+// TestRemove_DirtyWorktreeIsBlocked proves destructive work is gated, with the
+// distinct exit code that lets a script tell "dirty" from "not found".
+func TestRemove_DirtyWorktreeIsBlocked(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
-
-	// Create bare repo with existing worktrees
-	bareRepo := env.CreateBareRepo("api")
-	env.CreateWorktree(bareRepo, "main")
-	env.CreateWorktree(bareRepo, "develop")
-	env.AddToConfig("backend", "api", "api")
-
+	env.SetupRepo("backend", "api", "main", "stage")
 	env.Chdir()
 
-	// Checkout existing worktree
-	rootCmd.SetArgs([]string{"add", "api", "develop"})
+	worktree := env.CreateWorktree("backend", "api", "stage", "api-stage")
+	env.MakeWorktreeDirty(worktree)
 
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Checkout existing worktree failed: %v", err)
-	}
-}
-
-func TestAdd_CreatesSymlink(t *testing.T) {
-	env := testutil.NewTestEnv(t)
-	env.InitConfig()
-
-	// Setup
-	bareRepo := env.CreateBareRepo("web")
-	env.CreateWorktree(bareRepo, "main")
-	env.AddToConfig("frontend", "web", "web")
-
-	// Create group directory
-	groupDir := filepath.Join(env.RootDir, "frontend")
-	os.MkdirAll(groupDir, 0755)
-
-	env.Chdir()
-
-	// Checkout with branch
-	rootCmd.SetArgs([]string{"add", "web", "feature-test"})
-
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Checkout with symlink failed: %v", err)
-	}
-
-	// Verify symlink exists
-	symlinkPath := filepath.Join(groupDir, "web-feature-test")
-	if _, err := os.Lstat(symlinkPath); err != nil {
-		t.Error("Symlink should exist")
-	}
-}
-
-func TestSwitch_SlashBranchWorktreeName(t *testing.T) {
-	env := testutil.NewTestEnv(t)
-	env.InitConfig()
-
-	bareRepo := env.CreateBareRepo("backend-v2")
-	env.CreateWorktree(bareRepo, "main")
-	env.CreateWorktree(bareRepo, "marcus/feat-onboarding")
-	env.AddToConfig("mykids", "backend-v2", "backend-v2")
-
-	groupDir := filepath.Join(env.RootDir, "mykids")
-	if err := os.MkdirAll(groupDir, 0755); err != nil {
-		t.Fatalf("failed to create group dir: %v", err)
-	}
-	symlinkPath := filepath.Join(groupDir, "backend-v2-marcus-feat-onboarding")
-	if err := os.Symlink(filepath.Join("..", ".bare", "backend-v2.git", "marcus-feat-onboarding"), symlinkPath); err != nil {
-		t.Fatalf("failed to create symlink: %v", err)
-	}
-
-	env.Chdir()
-	rootCmd.SetArgs([]string{"switch", "backend-v2-marcus-feat-onboarding"})
-
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"remove", "api", "stage", "--yes"})
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Fatal("expected shell helper error after successful worktree lookup")
+		t.Fatal("removing a dirty worktree without --force must fail")
 	}
-	if err.Error() != "shell helper not initialized" {
-		t.Fatalf("unexpected error: %v", err)
+	e := output.Classify(err)
+	if e.Code != output.CodeWorktreeDirty {
+		t.Fatalf("error code = %q, want %q", e.Code, output.CodeWorktreeDirty)
+	}
+	if e.Exit != 5 {
+		t.Errorf("exit = %d, want 5", e.Exit)
+	}
+	if !env.DirExists(worktree) {
+		t.Error("the worktree must survive a refused removal")
+	}
+}
+
+// TestRemove_DeleteBranchIsAtomic guards the gap dogfooding exposed: `remove
+// --delete-branch` used to remove the worktree and only then discover the branch
+// was unmerged, leaving an orphaned branch with no worktree — and therefore no way
+// to reach it through hydra, since remove resolves its target via the worktree list.
+func TestRemove_DeleteBranchIsAtomic(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
+	env.Chdir()
+
+	worktree := env.CreateWorktree("backend", "api", "feat/unmerged", "api-feat-unmerged")
+	env.CreateCommit(worktree, "unmerged-work")
+	bare := env.GetBarePath("api")
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"remove", "api", "feat/unmerged", "--yes", "--delete-branch"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("deleting an unmerged branch without --force must fail")
+	}
+	if code := output.Classify(err).Code; code != output.CodeGitFailed {
+		t.Errorf("error code = %q, want %q", code, output.CodeGitFailed)
+	}
+
+	// Neither half may have happened.
+	if !env.DirExists(worktree) {
+		t.Error("the worktree must survive a refused branch deletion")
+	}
+	if !git.RefExists(bare, "refs/heads/feat/unmerged") {
+		t.Error("the branch must survive a refused deletion")
+	}
+
+	// --force does both.
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"remove", "api", "feat/unmerged", "--yes", "--delete-branch", "--force"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("forced remove: %v", err)
+	}
+	if env.DirExists(worktree) {
+		t.Error("worktree must be gone after a forced remove")
+	}
+	if git.RefExists(bare, "refs/heads/feat/unmerged") {
+		t.Error("branch must be gone after a forced remove")
+	}
+}
+
+// TestRemove_DeleteMergedBranchNeedsNoForce proves the pre-check does not
+// over-refuse: a branch already merged into its base deletes cleanly.
+func TestRemove_DeleteMergedBranchNeedsNoForce(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
+	env.Chdir()
+
+	// A brand-new branch with no commits of its own is merged into main by definition.
+	worktree := env.CreateWorktree("backend", "api", "feat/empty", "api-feat-empty")
+	bare := env.GetBarePath("api")
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"remove", "api", "feat/empty", "--yes", "--delete-branch"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("removing a merged branch must not need --force, got: %v", err)
+	}
+	if env.DirExists(worktree) {
+		t.Error("worktree should be gone")
+	}
+	if git.RefExists(bare, "refs/heads/feat/empty") {
+		t.Error("merged branch should be deleted")
+	}
+}
+
+// TestRemove_PushedButUnmergedBranchIsRefused is the guard against the most
+// dangerous possible shortcut here: judging deletability against
+// origin/<same-branch>. That only proves the branch was pushed, so a live feature
+// branch fully present on the remote would be hard-deleted as "safe". The safety
+// target must be the repo's DEFAULT branch.
+func TestRemove_PushedButUnmergedBranchIsRefused(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	// `feature` exists on origin and is identical to its remote tip, but carries a
+	// commit that main does not have.
+	_, remote, _ := env.SetupRepo("backend", "api", "main", "feature")
+	env.Chdir()
+
+	// Advance origin/feature past origin/main, then refresh the bare repo's view so
+	// the local branch really is pushed AND unmerged.
+	env.CommitToRemote(remote, "feature", "real feature work")
+	bare := env.GetBarePath("api")
+	if err := git.FetchBareRepo(bare); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	worktree := env.CreateWorktree("backend", "api", "feature", "api-feature")
+
+	if git.IsBranchMerged(bare, "feature", "refs/remotes/origin/main") {
+		t.Fatal("fixture must leave feature unmerged into main")
+	}
+
+	if !git.RefExists(bare, "refs/remotes/origin/feature") {
+		t.Fatal("fixture must have the branch on origin")
+	}
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"remove", "api", "feature", "--yes", "--delete-branch"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("a pushed but unmerged branch must NOT be treated as deletable")
+	}
+	e := output.Classify(err)
+	if e.Code != output.CodeGitFailed {
+		t.Fatalf("error code = %q, want %q", e.Code, output.CodeGitFailed)
+	}
+	if target, _ := e.Details["merge_target"].(string); target != "refs/remotes/origin/main" {
+		t.Errorf("merge target = %q, want refs/remotes/origin/main (never origin/<same-branch>)", target)
+	}
+	if !git.RefExists(bare, "refs/heads/feature") {
+		t.Fatal("the unmerged branch must still exist")
+	}
+	if !env.DirExists(worktree) {
+		t.Error("the worktree must survive a refused removal")
+	}
+}
+
+// TestRemove_RefusesDefaultBranch: deleting the mainline is never what the user
+// meant, and it would strand every other worktree's base.
+func TestRemove_RefusesDefaultBranch(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
+	env.Chdir()
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"remove", "api", "main", "--yes", "--delete-branch"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("deleting the default branch must be refused")
+	}
+	if code := output.Classify(err).Code; code != output.CodeGitFailed {
+		t.Errorf("error code = %q, want %q", code, output.CodeGitFailed)
+	}
+	if !git.RefExists(env.GetBarePath("api"), "refs/heads/main") {
+		t.Error("the default branch must survive")
 	}
 }

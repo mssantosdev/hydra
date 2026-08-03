@@ -2,76 +2,129 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mssantosdev/hydra/internal/config"
-	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
 
+var statusAll bool
+
 var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show worktree status overview",
+	Annotations: map[string]string{annotationRegistryFanout: "all"},
+	Use:         "status",
+	Short:       "Show worktree status overview",
 	Long: `Display a compact overview of all worktrees and their status.
 
-DESCRIPTION
-  Shows summary statistics and quick navigation paths.
-  Faster than 'hydra list' for a quick health check.
-
-  Displays:
-    • Total worktree count
-    • Clean vs modified counts
-    • Quick cd commands for common worktrees
-
-WHEN TO USE
-  • Quick daily status check
-  • Before running sync to see what's modified
-  • Finding navigation paths without listing everything
-
-EXAMPLES
-  # Show status overview
-  $ hydra status
-
-  # Typical output:
-  # [ TOTAL 5 ]  [ CLEAN 3 ]  [ MODIFIED 2 ]
-  # Quick navigation:
-  #   cd backend/api
-  #   cd backend/api-stage
+JSON DATA
+  Single project: {project, root, summary: {total, clean, dirty, ahead, behind, local_only, detached}, worktrees: [...]}
+  --all: {projects: [{project, root, summary, worktrees}], total}
 
 EXIT CODES
   0  Success
-  1  General error
-  2  Config file (.hydra.yaml) not found
-
-SEE ALSO
-  • hydra list - Detailed worktree listing
-  • hydra sync - Pull updates for worktrees
-  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
+  2  not_in_project, config_version_unsupported, project_unknown
+  4  partial_failure`,
 	RunE: runStatus,
 }
 
 func init() {
+	statusCmd.Flags().BoolVar(&statusAll, "all", false, "Show status across every registered project")
 	rootCmd.AddCommand(statusCmd)
 }
 
+type statusSummaryJSON struct {
+	Total     int `json:"total"`
+	Clean     int `json:"clean"`
+	Dirty     int `json:"dirty"`
+	Ahead     int `json:"ahead"`
+	Behind    int `json:"behind"`
+	LocalOnly int `json:"local_only"`
+	Detached  int `json:"detached"`
+}
+
+type statusProjectPayload struct {
+	Project   string            `json:"project"`
+	Root      string            `json:"root"`
+	Summary   statusSummaryJSON `json:"summary"`
+	Worktrees []worktreeJSON    `json:"worktrees"`
+}
+
+type statusAllPayload struct {
+	Projects []statusProjectPayload `json:"projects"`
+	Total    int                    `json:"total"`
+}
+
 func runStatus(cmd *cobra.Command, args []string) error {
-	wd, err := os.Getwd()
+	targets, targetWarnings, err := projectTargets(statusAll)
 	if err != nil {
 		return err
 	}
 
-	configPath, cfg, err := config.FindConfig(wd)
-	if err != nil {
+	projects, warnings, attempted, succeeded := collectProjectWorktrees(targets)
+	warnings = append(warnings, targetWarnings...)
+
+	if err := checkWorktreePartialFailure(targets, targetWarnings, attempted, succeeded); err != nil {
 		return err
 	}
 
-	projectRoot := filepath.Dir(configPath)
+	payloads := make([]statusProjectPayload, 0, len(projects))
+	grandTotal := 0
+	for _, project := range projects {
+		summary := summarizeStatus(project.Worktrees)
+		grandTotal += summary.Total
+		payloads = append(payloads, statusProjectPayload{
+			Project:   project.Project,
+			Root:      project.Root,
+			Summary:   summary,
+			Worktrees: project.Worktrees,
+		})
+	}
 
-	// Print header - centered with better styling
-	fmt.Println()
+	var data any
+	if statusAll {
+		data = statusAllPayload{Projects: payloads, Total: grandTotal}
+	} else if len(payloads) > 0 {
+		data = payloads[0]
+	} else {
+		data = statusProjectPayload{Summary: statusSummaryJSON{}, Worktrees: []worktreeJSON{}}
+	}
+
+	return emit(cmd, data, warnings, func() {
+		renderStatusText(cmd, statusAll, payloads)
+	})
+}
+
+func summarizeStatus(items []worktreeJSON) statusSummaryJSON {
+	var summary statusSummaryJSON
+	summary.Total = len(items)
+	for _, item := range items {
+		if item.Detached {
+			summary.Detached++
+		}
+		if item.Upstream == nil && !item.Detached {
+			summary.LocalOnly++
+		}
+		if item.Dirty {
+			summary.Dirty++
+		}
+		if item.Ahead > 0 {
+			summary.Ahead++
+		}
+		if item.Behind > 0 {
+			summary.Behind++
+		}
+		if !item.Dirty && item.Ahead == 0 && item.Behind == 0 && !item.Detached && item.Upstream != nil {
+			summary.Clean++
+		}
+	}
+	return summary
+}
+
+func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayload) {
+	out := cmd.OutOrStdout()
+
+	fmt.Fprintln(out)
 	headerBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Blue).
@@ -79,76 +132,58 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		Padding(0, 4).
 		Align(lipgloss.Center).
 		Width(styles.GetTerminalWidth() - 4)
+	fmt.Fprintln(out, headerBox.Render(
+		lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Render("HYDRA")+"\n"+
+			lipgloss.NewStyle().Foreground(styles.FgComment).Render("Status Overview")))
+	fmt.Fprintln(out)
 
-	fmt.Println(headerBox.Render(
-		lipgloss.NewStyle().
-			Bold(true).
-			Foreground(styles.Blue).
-			Render("HYDRA") + "\n" +
-			lipgloss.NewStyle().
-				Foreground(styles.FgComment).
-				Render("Status Overview")))
-	fmt.Println()
-
-	totalWorktrees := 0
-	cleanCount := 0
-	modifiedCount := 0
-
-	// Count worktrees
-	for _, ecosystem := range cfg.Ecosystems {
-		for _, repoName := range ecosystem {
-			bareRepo := filepath.Join(projectRoot, cfg.Paths.BareDir, repoName+".git")
-
-			if _, err := os.Stat(bareRepo); os.IsNotExist(err) {
-				continue
-			}
-
-			worktrees, err := git.ListWorktrees(bareRepo)
-			if err != nil {
-				continue
-			}
-
-			for _, wt := range worktrees {
-				if wt.IsBare {
-					continue
-				}
-				totalWorktrees++
-
-				hasMod, _, _ := git.HasUncommittedChanges(wt.Path)
-				if hasMod {
-					modifiedCount++
-				} else {
-					cleanCount++
-				}
-			}
+	for _, project := range projects {
+		if all {
+			fmt.Fprintf(out, "%s\n\n", styles.Label.Render(project.Project))
 		}
-	}
 
-	// Modern stat boxes
-	totalBox := styles.TotalBadge.Render(fmt.Sprintf("TOTAL %d", totalWorktrees))
-	cleanBox := styles.CleanBadge.Render(fmt.Sprintf("CLEAN %d", cleanCount))
-	modifiedBox := styles.ModifiedBadge.Render(fmt.Sprintf("MODIFIED %d", modifiedCount))
+		s := project.Summary
+		stats := strings.Join([]string{
+			styles.TotalBadge.Render(fmt.Sprintf("TOTAL %d", s.Total)),
+			styles.CleanBadge.Render(fmt.Sprintf("CLEAN %d", s.Clean)),
+			styles.ModifiedBadge.Render(fmt.Sprintf("DIRTY %d", s.Dirty)),
+			styles.Label.Render(fmt.Sprintf("AHEAD %d", s.Ahead)),
+			styles.Label.Render(fmt.Sprintf("BEHIND %d", s.Behind)),
+			styles.Label.Render(fmt.Sprintf("LOCAL %d", s.LocalOnly)),
+			styles.Label.Render(fmt.Sprintf("DETACHED %d", s.Detached)),
+		}, "  ")
+		fmt.Fprintln(out, styles.StatBox.Render(stats))
+		fmt.Fprintln(out)
 
-	fmt.Println(styles.StatBox.Render(totalBox + "  " + cleanBox + "  " + modifiedBox))
-	fmt.Println()
-
-	// Show quick navigation paths
-	fmt.Println(styles.Label.Render("Quick navigation:"))
-
-	for ecoName, ecosystem := range cfg.Ecosystems {
-		for alias := range ecosystem {
-			symlinkDir := filepath.Join(projectRoot, ecoName)
-
-			// Check common worktree names
-			for _, suffix := range []string{"", "-stage", "-prod"} {
-				linkPath := filepath.Join(symlinkDir, alias+suffix)
-				if _, err := os.Stat(linkPath); err == nil {
-					relPath, _ := filepath.Rel(wd, linkPath)
-					fmt.Printf("  cd %s\n", relPath)
-				}
-			}
+		if len(project.Worktrees) == 0 {
+			fmt.Fprintln(out, styles.Dimmed.Render("  No worktrees found."))
+			fmt.Fprintln(out)
+			continue
 		}
-	}
 
-	return nil
+		fmt.Fprintln(out, styles.Label.Render("Worktrees:"))
+		for _, item := range project.Worktrees {
+			line := fmt.Sprintf("  %s  %s  %s  %s",
+				item.Name,
+				styles.Branch.Render(branchLabelJSON(item)),
+				upstreamLabelJSON(item),
+				styles.StatusBadge(!item.Dirty, item.Changes),
+			)
+			fmt.Fprintln(out, line)
+		}
+		fmt.Fprintln(out)
+	}
+}
+
+func upstreamLabelJSON(item worktreeJSON) string {
+	if item.Detached {
+		return "(detached)"
+	}
+	if item.Upstream == nil {
+		return "local-only"
+	}
+	if item.Ahead > 0 || item.Behind > 0 {
+		return fmt.Sprintf("%s +%d/-%d", *item.Upstream, item.Ahead, item.Behind)
+	}
+	return *item.Upstream
 }

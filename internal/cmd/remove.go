@@ -7,276 +7,318 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/mssantosdev/hydra/internal/config"
-	"github.com/mssantosdev/hydra/internal/git"
-	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
+
+	"github.com/mssantosdev/hydra/internal/git"
+	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/ui/styles"
 )
-
-var removeCmd = &cobra.Command{
-	Use:   "remove [<repo-alias> <branch-name>]",
-	Short: "Remove a worktree",
-	Long: `Remove a worktree for the specified repository and branch.
-
-DESCRIPTION
-  Removes a Git worktree directory and cleans up associated symlinks.
-  By default, protects against removing worktrees with uncommitted changes.
-
-  When you run this command:
-  1. Checks for uncommitted changes (unless --force)
-  2. Removes the worktree directory
-  3. Removes the symlink from <ecosystem>/<alias>-<branch>
-  4. Optionally deletes the git branch (--delete-branch)
-
-WHEN TO USE
-  • Cleaning up merged feature branches
-  • Removing old or abandoned worktrees
-  • Switching to a different approach on a feature
-  • Housekeeping to free disk space
-
-EXAMPLES
-  # Interactive mode - select from list
-  $ hydra remove
-
-  # Direct removal
-  $ hydra remove api old-feature
-
-  # Force remove (ignore uncommitted changes)
-  $ hydra remove api feature-x --force
-
-  # Remove and delete the branch
-  $ hydra remove api merged-feature --delete-branch
-
-FLAGS
-  -f, --force           Force remove (ignore uncommitted changes)
-  -d, --delete-branch   Also delete the git branch
-  -y, --yes             Skip confirmation prompt
-  -h, --help            Show help
-
-EXIT CODES
-  0  Success (worktree removed)
-  1  General error (invalid args, repo not found)
-  2  Config file (.hydra.yaml) not found
-  3  Worktree has uncommitted changes (use --force)
-
-SEE ALSO
-  • hydra add - Create a worktree
-  • hydra list - View all worktrees
-  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
-	RunE: runRemove,
-}
 
 var (
 	removeForce        bool
-	removeDeleteBranch bool
 	removeYes          bool
+	removeDeleteBranch bool
 )
 
+type removeResult struct {
+	Group         string `json:"group"`
+	Repo          string `json:"repo"`
+	Branch        string `json:"branch"`
+	Path          string `json:"path"`
+	BranchDeleted bool   `json:"branch_deleted"`
+}
+
+var removeCmd = &cobra.Command{
+	Use:     "remove [<alias> <branch>] | [<worktree>]",
+	Aliases: []string{"rm"},
+	Short:   "Delete a worktree",
+	Long: `Remove a worktree, and optionally its branch.
+
+DESCRIPTION
+  The worktree is located through "git worktree list", never by rebuilding a path
+  from the branch name, so a directory renamed with --as is still found.
+
+  Uncommitted changes block removal (exit 5) unless --force is passed.
+
+  --delete-branch deletes the branch from the bare repository after the worktree is
+  gone. Without --force this uses "git branch -d", so an unmerged branch is refused
+  and reported as git_failed rather than silently discarded. hydra never claims to
+  have deleted a branch it did not delete.
+
+WHEN TO USE
+  • The work on a branch is merged or abandoned
+  • Reclaiming disk space from a worktree you no longer need
+
+EXAMPLES
+  # By repo and branch
+  $ hydra remove api stage
+
+  # By worktree directory name
+  $ hydra remove api-stage
+
+  # Remove and delete the branch, no prompts
+  $ hydra remove api stage --yes --delete-branch
+
+  # Discard uncommitted changes too
+  $ hydra remove api stage --force --yes
+
+FLAGS
+  --force           remove even with uncommitted changes; force branch deletion
+  --yes             skip the confirmation prompt
+  --delete-branch   delete the branch after removing the worktree
+
+HOOKS
+  Runs pre_remove with cwd set to the worktree, then post_remove with cwd set to
+  the project root (the worktree no longer exists by then).
+
+EXIT CODES
+  0  Success
+  1  repo_unknown, bare_missing, worktree_unknown, git_failed, hook_failed
+  2  not_in_project, config_version_unsupported, project_unknown
+  5  worktree_dirty (uncommitted changes and no --force)
+
+SEE ALSO
+  • hydra add   - create a worktree
+  • hydra prune - drop stale registrations and empty groups
+  • hydra list  - list worktrees`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: runRemove,
+}
+
 func init() {
+	removeCmd.Flags().BoolVar(&removeForce, "force", false, "remove even with uncommitted changes")
+	removeCmd.Flags().BoolVar(&removeYes, "yes", false, "skip the confirmation prompt")
+	removeCmd.Flags().BoolVar(&removeDeleteBranch, "delete-branch", false, "delete the branch after removing the worktree")
 	rootCmd.AddCommand(removeCmd)
-	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force remove (ignore uncommitted changes)")
-	removeCmd.Flags().BoolVarP(&removeDeleteBranch, "delete-branch", "d", false, "Also delete the git branch")
-	removeCmd.Flags().BoolVarP(&removeYes, "yes", "y", false, "Skip confirmation")
 }
 
 func runRemove(cmd *cobra.Command, args []string) error {
-	wd, err := os.Getwd()
+	wt, err := resolveRemoveTarget(args)
 	if err != nil {
 		return err
 	}
+	repo := wt.RepoContext
 
-	configPath, cfg, err := config.FindConfig(wd)
+	hasChanges, changeCount, err := git.HasUncommittedChanges(wt.Path)
 	if err != nil {
-		return err
+		return output.Wrap(output.CodeGitFailed, err, "failed to inspect %s", wt.Path)
+	}
+	if hasChanges && !removeForce {
+		return output.Errorf(output.CodeWorktreeDirty,
+			"%s has %d uncommitted change(s); commit, stash, or pass --force", wt.Path, changeCount).
+			WithDetail("path", wt.Path).
+			WithDetail("changes", changeCount).
+			WithDetail("branch", wt.Branch)
 	}
 
-	projectRoot := filepath.Dir(configPath)
-
-	var alias, branch string
-
-	// Interactive mode if no args
-	if len(args) == 0 {
-		var err error
-		alias, branch, err = interactiveRemove(cfg, projectRoot)
+	// Verify branch deletion is possible BEFORE removing the worktree. Removing the
+	// worktree first and only then discovering the branch is unmerged left an
+	// orphaned branch with no worktree — and no way to reach it through hydra, since
+	// remove resolves its target through the worktree list.
+	//
+	// mergeVerified records that hydra positively confirmed the branch is merged, in
+	// which case it deletes forcibly: `git branch -d` in a BARE repo judges only
+	// against HEAD and the upstream, so it refuses branches that are demonstrably
+	// merged into origin. hydra can see the remote-tracking refs, so it decides.
+	mergeVerified := false
+	if removeDeleteBranch && !removeForce && wt.Branch != "" {
+		verified, err := ensureBranchDeletable(repo, wt.Branch)
 		if err != nil {
 			return err
 		}
-	} else if len(args) >= 2 {
-		alias = args[0]
-		branch = args[1]
-	} else {
-		return fmt.Errorf("usage: hydra remove <repo-alias> <branch-name>")
+		mergeVerified = verified
 	}
 
-	// Find the repo for this alias
-	var repoName, ecosystem string
-	for ecoName, eco := range cfg.Ecosystems {
-		if r, ok := eco[alias]; ok {
-			repoName = r
-			ecosystem = ecoName
-			break
+	if !removeYes && interactive() {
+		confirm := false
+		title := fmt.Sprintf("Remove %s (%s)?", wt.Qualified(), wt.BranchLabel())
+		if err := huh.NewConfirm().Title(title).Value(&confirm).Run(); err != nil {
+			return output.Wrap(output.CodeInternal, err, "cancelled")
 		}
-	}
-
-	if repoName == "" {
-		return fmt.Errorf("unknown alias: %s", alias)
-	}
-
-	bareRepo := filepath.Join(projectRoot, cfg.Paths.BareDir, repoName+".git")
-
-	// Check if bare repo exists
-	if _, err := os.Stat(bareRepo); os.IsNotExist(err) {
-		return fmt.Errorf("bare repository not found: %s", bareRepo)
-	}
-
-	// Normalize branch name
-	safeBranch := strings.ReplaceAll(branch, "/", "-")
-	worktreePath := filepath.Join(bareRepo, safeBranch)
-
-	// Check if worktree exists
-	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		return fmt.Errorf("worktree does not exist: %s", worktreePath)
-	}
-
-	// Check for uncommitted changes
-	hasChanges, changeCount, err := git.HasUncommittedChanges(worktreePath)
-	if err != nil {
-		return fmt.Errorf("failed to check worktree status: %w", err)
-	}
-
-	if hasChanges && !removeForce {
-		fmt.Println(styles.WarningBadge.Render("⚠ Warning: Worktree has uncommitted changes"))
-		fmt.Printf("  %d modified file(s)\n", changeCount)
-		fmt.Println()
-		fmt.Println("Options:")
-		fmt.Println("  1. Commit or stash changes first")
-		fmt.Println("  2. Use --force to remove anyway (changes will be lost)")
-		fmt.Println()
-		return fmt.Errorf("worktree has uncommitted changes")
-	}
-
-	// Confirmation
-	if !removeYes {
-		var confirm bool
-		warning := ""
-		if hasChanges {
-			warning = "\n\n⚠ WARNING: This will delete uncommitted changes!"
-		}
-
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title(fmt.Sprintf("Remove worktree %s:%s?%s", alias, branch, warning)).
-					Value(&confirm).
-					Affirmative("Yes, remove").
-					Negative("Cancel"),
-			),
-		)
-
-		if err := form.Run(); err != nil {
-			return err
-		}
-
 		if !confirm {
-			fmt.Println("Cancelled")
-			return nil
+			return output.Errorf(output.CodeInternal, "cancelled")
 		}
 	}
 
-	// Remove worktree
-	fmt.Printf("Removing worktree %s:%s...\n", alias, branch)
-
-	if err := git.RemoveWorktree(bareRepo, worktreePath, removeForce); err != nil {
-		return fmt.Errorf("failed to remove worktree: %w", err)
+	var warnings []string
+	preResult, preErr := runHookEvent("pre_remove", hooksContextFor(repo, wt.Branch, wt.Path), wt.Path)
+	warnings = append(warnings, preResult.Warnings...)
+	if preErr != nil {
+		return preErr
 	}
 
-	fmt.Println(styles.Success.Render("✓ Worktree removed"))
+	if err := git.RemoveWorktree(repo.BareRepo, wt.Path, removeForce); err != nil {
+		return output.Wrap(output.CodeGitFailed, err, "failed to remove worktree %s", wt.Path)
+	}
 
-	// Remove symlink
-	symlinkDir := filepath.Join(projectRoot, ecosystem)
-	symlinkName := alias + "-" + safeBranch
-	symlinkPath := filepath.Join(symlinkDir, symlinkName)
-	os.Remove(symlinkPath)
+	result := removeResult{
+		Group:  repo.Group,
+		Repo:   repo.Alias,
+		Branch: wt.Branch,
+		Path:   wt.Path,
+	}
 
-	// Optionally delete branch
 	if removeDeleteBranch {
-		fmt.Printf("Deleting branch %s...\n", branch)
-		// TODO: Implement branch deletion
-		fmt.Println(styles.Success.Render("✓ Branch deleted"))
-	}
-
-	return nil
-}
-
-func interactiveRemove(cfg *config.Config, projectRoot string) (string, string, error) {
-	// Build list of existing worktrees
-	var worktreeOptions []huh.Option[worktreeInfo]
-
-	for ecoName, eco := range cfg.Ecosystems {
-		for alias, repoName := range eco {
-			bareRepo := filepath.Join(projectRoot, cfg.Paths.BareDir, repoName+".git")
-
-			// Check if bare repo exists
-			if _, err := os.Stat(bareRepo); os.IsNotExist(err) {
-				continue
-			}
-
-			// List worktrees
-			worktrees, err := git.ListWorktrees(bareRepo)
-			if err != nil {
-				continue
-			}
-
-			for _, wt := range worktrees {
-				if wt.IsBare {
-					continue
-				}
-
-				branch := wt.Branch
-				if branch == "" {
-					continue
-				}
-
-				label := fmt.Sprintf("%s/%s:%s", ecoName, alias, branch)
-
-				// Check if dirty
-				hasChanges, _, _ := git.HasUncommittedChanges(wt.Path)
-				if hasChanges {
-					label += " ⚠"
-				}
-
-				worktreeOptions = append(worktreeOptions, huh.NewOption(label, worktreeInfo{
-					alias:  alias,
-					branch: branch,
-				}))
-			}
+		if wt.Branch == "" {
+			warnings = append(warnings, "worktree was detached; there is no branch to delete")
+		} else if err := git.DeleteBranch(repo.BareRepo, wt.Branch, removeForce || mergeVerified); err != nil {
+			// Report the real failure. Never print success for work not done.
+			return output.Wrap(output.CodeGitFailed, err,
+				"worktree removed, but branch %q was not deleted (pass --force to delete an unmerged branch)", wt.Branch).
+				WithDetail("branch", wt.Branch).
+				WithDetail("worktree_removed", true)
+		} else {
+			result.BranchDeleted = true
 		}
 	}
 
-	if len(worktreeOptions) == 0 {
-		return "", "", fmt.Errorf("no worktrees found")
+	if removed, err := removeGroupDirIfEmpty(projectRoot, repo.Group); err != nil {
+		warnings = append(warnings, err.Error())
+	} else if removed {
+		warnings = append(warnings, fmt.Sprintf("removed empty group directory %s", repo.Group))
 	}
 
-	var selected worktreeInfo
+	postResult, postErr := runHookEvent("post_remove", hooksContextFor(repo, wt.Branch, wt.Path), projectRoot)
+	warnings = append(warnings, postResult.Warnings...)
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[worktreeInfo]().
-				Title("Select Worktree to Remove").
-				Description("⚠ = has uncommitted changes").
-				Options(worktreeOptions...).
-				Value(&selected),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return "", "", err
+	emitErr := emit(cmd, result, warnings, func() {
+		fmt.Println()
+		fmt.Println(styles.Success.Render("✓ Worktree removed"))
+		fmt.Printf("  Path:   %s\n", result.Path)
+		fmt.Printf("  Branch: %s\n", wt.BranchLabel())
+		if removeDeleteBranch {
+			if result.BranchDeleted {
+				fmt.Printf("  Branch %s deleted\n", result.Branch)
+			} else {
+				fmt.Println("  Branch not deleted")
+			}
+		}
+	})
+	if emitErr != nil {
+		return emitErr
 	}
-
-	return selected.alias, selected.branch, nil
+	return postErr
 }
 
-type worktreeInfo struct {
-	alias  string
-	branch string
+// resolveRemoveTarget accepts "<alias> <branch>", a worktree handle, or prompts.
+func resolveRemoveTarget(args []string) (worktreeContext, error) {
+	switch len(args) {
+	case 2:
+		alias, branch := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
+		repo, err := resolveRepoByAlias(cfg, projectRoot, alias)
+		if err != nil {
+			return worktreeContext{}, err
+		}
+		wt, ok := findRepoWorktreeByBranch(repo, branch)
+		if !ok {
+			return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
+				"no worktree for branch %q in %q", branch, alias).
+				WithDetail("branch", branch).
+				WithDetail("repo", alias).
+				WithDetail("did_you_mean", findSimilarWorktreesByName(cfg, projectRoot, branch))
+		}
+		return wt, nil
+
+	case 1:
+		name := strings.TrimSpace(args[0])
+		wt, ok := findWorktreeByName(cfg, projectRoot, name)
+		if !ok {
+			return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
+				"no worktree named %q", name).
+				WithDetail("name", name).
+				WithDetail("did_you_mean", findSimilarWorktreesByName(cfg, projectRoot, name))
+		}
+		return wt, nil
+	}
+
+	if !interactive() {
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
+			"a worktree is required: hydra remove <alias> <branch> or hydra remove <worktree>")
+	}
+
+	items, _ := collectWorktrees(cfg, projectRoot)
+	if len(items) == 0 {
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown, "this project has no worktrees")
+	}
+	options := make([]huh.Option[string], 0, len(items))
+	for _, item := range items {
+		options = append(options, huh.NewOption(
+			fmt.Sprintf("%s (%s)", item.Qualified(), item.BranchLabel()), item.Qualified()))
+	}
+	selected := items[0].Qualified()
+	if err := huh.NewSelect[string]().Title("Worktree to remove").Options(options...).Value(&selected).Run(); err != nil {
+		return worktreeContext{}, output.Wrap(output.CodeInternal, err, "cancelled")
+	}
+	wt, ok := findWorktreeInList(items, selected)
+	if !ok {
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown, "no worktree named %q", selected)
+	}
+	return wt, nil
+}
+
+// removeGroupDirIfEmpty drops a group directory that has no entries left.
+func removeGroupDirIfEmpty(root, group string) (bool, error) {
+	dir := filepath.Join(root, group)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to inspect group directory %s: %w", group, err)
+	}
+	if len(entries) > 0 {
+		return false, nil
+	}
+	if err := os.Remove(dir); err != nil {
+		return false, fmt.Errorf("failed to remove empty group directory %s: %w", group, err)
+	}
+	return true, nil
+}
+
+// ensureBranchDeletable decides whether a branch's work is already integrated, and
+// reports whether that was positively verified.
+//
+// The safety target is the repo's DEFAULT branch — never origin/<same-branch>.
+// Comparing a branch against its own remote tip only proves it was pushed, not that
+// the work landed; treating that as "safe to delete" would hard-delete live feature
+// branches. The question is "is this work in the mainline", and only the default
+// branch answers it.
+//
+// Checking before the worktree is removed is what keeps `remove --delete-branch`
+// atomic: either both happen, or neither does.
+func ensureBranchDeletable(repo repoContext, branch string) (bool, error) {
+	if repo.DefaultBranch != "" && branch == repo.DefaultBranch {
+		return false, output.Errorf(output.CodeGitFailed,
+			"refusing to delete %q, the default branch of %q; nothing was removed", branch, repo.Alias).
+			WithDetail("branch", branch).
+			WithDetail("worktree_removed", false)
+	}
+
+	into := ""
+	if repo.DefaultBranch != "" {
+		for _, candidate := range []string{
+			"refs/remotes/origin/" + repo.DefaultBranch,
+			"refs/heads/" + repo.DefaultBranch,
+		} {
+			if git.RefExists(repo.BareRepo, candidate) {
+				into = candidate
+				break
+			}
+		}
+	}
+	if into == "" {
+		// No mainline to judge against. Do not claim verification: fall through to
+		// git's own conservative `-d`, which refuses anything it cannot prove safe.
+		return false, nil
+	}
+	if git.IsBranchMerged(repo.BareRepo, branch, into) {
+		return true, nil
+	}
+
+	return false, output.Errorf(output.CodeGitFailed,
+		"branch %q is not merged into %s; nothing was removed. Re-run with --force to delete both the worktree and the branch, or drop --delete-branch to keep the branch",
+		branch, strings.TrimPrefix(strings.TrimPrefix(into, "refs/remotes/"), "refs/heads/")).
+		WithDetail("branch", branch).
+		WithDetail("merge_target", into).
+		WithDetail("worktree_removed", false)
 }

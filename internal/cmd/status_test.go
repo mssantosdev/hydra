@@ -1,101 +1,95 @@
 package cmd
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
 func TestStatus_NoConfig(t *testing.T) {
 	env := testutil.NewTestEnv(t)
-	// Don't create config
+	resetCommandState(t)
+	resetCommandIO()
 	env.Chdir()
-
 	rootCmd.SetArgs([]string{"status"})
-
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Error("Expected error when no config")
+		t.Fatal("expected error")
 	}
-
 	testutil.Contains(t, err.Error(), "no .hydra.yaml")
 }
 
 func TestStatus_EmptyProject(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
+	resetCommandState(t)
 	env.Chdir()
-
-	rootCmd.SetArgs([]string{"status"})
-
-	// Should complete without error, showing zero counts
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Status empty project failed: %v", err)
+	envelope, _, _ := runCommandJSON(t, "status")
+	summary := envelope["data"].(map[string]any)["summary"].(map[string]any)
+	if total, _ := summary["total"].(float64); int(total) != 0 {
+		t.Fatalf("expected total 0, got %v", total)
 	}
 }
 
-func TestStatus_WithCleanWorktrees(t *testing.T) {
+func TestStatus_CountsCleanAndDirty(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
-
-	// Create clean worktrees
-	bareRepo := env.CreateBareRepo("api")
-	env.CreateWorktree(bareRepo, "main")
-	env.CreateWorktree(bareRepo, "develop")
-	env.AddToConfig("backend", "api", "api")
-
+	_, _, mainPath := env.SetupRepo("backend", "api", "main", "develop")
+	env.CreateWorktree("backend", "api", "develop", "api-develop")
+	env.MakeWorktreeDirty(mainPath)
+	resetCommandState(t)
 	env.Chdir()
-
-	rootCmd.SetArgs([]string{"status"})
-
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Status with clean worktrees failed: %v", err)
+	envelope, _, _ := runCommandJSON(t, "status")
+	summary := envelope["data"].(map[string]any)["summary"].(map[string]any)
+	if dirty, _ := summary["dirty"].(float64); int(dirty) != 1 {
+		t.Fatalf("expected dirty 1, got %v", dirty)
+	}
+	if clean, _ := summary["clean"].(float64); int(clean) != 1 {
+		t.Fatalf("expected clean 1, got %v", clean)
 	}
 }
 
-func TestStatus_Counts(t *testing.T) {
-	env := testutil.NewTestEnv(t)
-	env.InitConfig()
-
-	// Create clean worktree
-	cleanRepo := env.CreateBareRepo("clean-api")
-	env.CreateWorktree(cleanRepo, "main")
-	env.AddToConfig("backend", "clean-api", "clean-api")
-
-	// Create dirty worktree
-	dirtyRepo := env.CreateBareRepo("dirty-api")
-	dirtyWt := env.CreateWorktree(dirtyRepo, "main")
-	env.AddToConfig("backend", "dirty-api", "dirty-api")
-	env.MakeWorktreeDirty(dirtyWt)
-
-	env.Chdir()
-
-	rootCmd.SetArgs([]string{"status"})
-
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Status counts failed: %v", err)
+func TestStatus_HasAllFlag(t *testing.T) {
+	if statusCmd.Flags().Lookup("all") == nil {
+		t.Fatal("expected --all flag")
 	}
 }
 
-func TestStatus_NavigationPaths(t *testing.T) {
+func TestStatus_AllReposFailedPartialFailure(t *testing.T) {
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
-
-	// Create worktrees with different suffixes
-	bareRepo := env.CreateBareRepo("api")
-	env.CreateWorktree(bareRepo, "main")
-	env.CreateWorktree(bareRepo, "stage")
-	env.AddToConfig("backend", "api", "api")
-
+	barePath, _, _ := env.SetupRepo("backend", "api", "main")
+	_ = os.RemoveAll(barePath)
+	resetCommandState(t)
 	env.Chdir()
-
-	rootCmd.SetArgs([]string{"status"})
-
+	rootCmd.SetArgs([]string{"status", "--output", "json"})
 	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Status navigation paths failed: %v", err)
+	if err == nil {
+		t.Fatal("expected partial_failure")
 	}
+	if output.Classify(err).Code != output.CodePartialFailure {
+		t.Fatalf("expected partial_failure")
+	}
+}
+
+func TestStatus_JSONShape(t *testing.T) {
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
+	resetCommandState(t)
+	env.Chdir()
+	envelope, _, _ := runCommandJSON(t, "status")
+	if got, _ := envelope["schema"].(float64); int(got) != output.Schema {
+		t.Fatalf("expected schema %d", output.Schema)
+	}
+	data := envelope["data"].(map[string]any)
+	for _, key := range []string{"project", "root", "summary", "worktrees"} {
+		if _, ok := data[key]; !ok {
+			t.Fatalf("missing data.%s", key)
+		}
+	}
+	_, _ = json.Marshal(data)
 }

@@ -2,128 +2,143 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/mssantosdev/hydra/internal/git"
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
-func TestClone_DryRun(t *testing.T) {
+func TestClone_LocalRemoteSiblingLayout(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
 	env.InitConfig()
+	remote := env.CreateRemoteRepo("api-origin", "main", "develop")
 	env.Chdir()
 
-	// Execute clone with dry-run
 	rootCmd.SetArgs([]string{
-		"clone",
-		"https://github.com/mssantosdev/hydra.git",
-		"--dry-run",
-		"--interactive=false",
-		"--alias=test-repo",
-		"--group=backend",
+		"clone", remote,
+		"--alias", "api",
+		"--group", "tools",
+		"--branches", "main",
 	})
-
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Errorf("Clone dry-run failed: %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("clone failed: %v", err)
 	}
 
-	// Verify no actual clone happened
-	barePath := env.GetBarePath("test-repo")
-	if env.DirExists(barePath) {
-		t.Error("Dry-run should not create bare repo")
+	barePath := env.GetBarePath("api")
+	if !env.DirExists(barePath) {
+		t.Fatalf("expected bare repo at %s", barePath)
+	}
+
+	worktreePath := env.GetWorktreePath("tools", "api")
+	info, err := os.Stat(worktreePath)
+	if err != nil {
+		t.Fatalf("expected worktree at %s: %v", worktreePath, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("worktree must be a real directory")
+	}
+	if env.IsSymlink(worktreePath) {
+		t.Fatal("worktree must not be a symlink")
+	}
+	if strings.Contains(worktreePath, ".bare") {
+		t.Fatal("worktree must not live under .bare")
+	}
+	if upstream := env.Upstream(worktreePath); upstream != "origin/main" {
+		t.Fatalf("expected origin/main upstream, got %q", upstream)
 	}
 }
 
-func TestClone_RequiresConfigOrInteractive(t *testing.T) {
+// TestClone_ResumesInterruptedClone is the regression guard for the real-world
+// cause of "repos got disconnected": InitBareWithRemote performs a full network
+// fetch, and an interruption during it used to leave <bare_dir>/<alias>.git on disk
+// with nothing in .hydra.yaml referencing it. Every command then ignored the repo
+// while the user saw a directory that looked cloned.
+//
+// This simulates that exact half-built state and asserts a re-run converges.
+func TestClone_ResumesInterruptedClone(t *testing.T) {
+	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
-	// Don't init config
+	env.InitConfig()
+	remote := env.CreateRemoteRepo("api-origin", "main", "stage")
 	env.Chdir()
 
-	// Without config and without interactive, should fail
-	rootCmd.SetArgs([]string{
-		"clone",
-		"https://github.com/mssantosdev/hydra.git",
-		"--interactive=false",
-	})
+	// Simulate the interruption: a bare repo exists with neither the fetch refspec
+	// nor origin/HEAD, and the config knows nothing about it.
+	barePath := env.GetBarePath("api")
+	if err := os.MkdirAll(filepath.Dir(barePath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := exec.Command("git", "init", "--bare", barePath).Run(); err != nil {
+		t.Fatalf("git init --bare: %v", err)
+	}
+	if git.GetConfig(barePath, "remote.origin.fetch") != "" {
+		t.Fatal("fixture should start with no fetch refspec")
+	}
+	if _, ok := env.LoadConfig().FindRepo("api"); ok {
+		t.Fatal("fixture should start unregistered")
+	}
 
+	rootCmd.SetArgs([]string{
+		"clone", remote,
+		"--alias", "api", "--group", "backend", "--branches", "main", "--yes",
+	})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("clone must resume an interrupted clone, got: %v", err)
+	}
+
+	// The half-built repo is now complete rather than orphaned or re-cloned.
+	if got := git.GetConfig(barePath, "remote.origin.fetch"); got != "+refs/heads/*:refs/remotes/origin/*" {
+		t.Errorf("fetch refspec = %q, want the standard refspec", got)
+	}
+	if !git.HasOriginHead(barePath) {
+		t.Error("origin/HEAD must be set after resuming")
+	}
+	ref, ok := env.LoadConfig().FindRepo("api")
+	if !ok {
+		t.Fatal("api must be registered after resuming")
+	}
+	if ref.Group != "backend" || ref.Repo.Remote != remote || ref.Repo.DefaultBranch != "main" {
+		t.Errorf("registration = %+v, want group backend, the remote, default_branch main", ref)
+	}
+	worktree := env.GetWorktreePath("backend", "api")
+	if !env.DirExists(worktree) {
+		t.Fatalf("expected worktree at %s", worktree)
+	}
+	if upstream := env.Upstream(worktree); upstream != "origin/main" {
+		t.Errorf("upstream = %q, want origin/main", upstream)
+	}
+}
+
+// TestClone_RefusesConflictingRemote proves resume never silently repoints an
+// existing repo at a different remote.
+func TestClone_RefusesConflictingRemote(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	first := env.CreateRemoteRepo("api-origin", "main")
+	second := env.CreateRemoteRepo("other-origin", "main")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"clone", first, "--alias", "api", "--group", "backend", "--branches", "main", "--yes"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("first clone: %v", err)
+	}
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"clone", second, "--alias", "api", "--group", "backend", "--branches", "main", "--yes"})
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Error("Expected error when no config and non-interactive")
+		t.Fatal("cloning a different remote over a registered alias must fail")
 	}
-
-	testutil.Contains(t, err.Error(), "no .hydra.yaml found")
-}
-
-func TestClone_ExtractRepoName(t *testing.T) {
-	tests := []struct {
-		url      string
-		expected string
-	}{
-		{"https://github.com/user/repo.git", "repo"},
-		{"https://github.com/user/repo", "repo"},
-		{"git@github.com:user/repo.git", "repo"},
-		{"github.com/user/repo", "repo"},
+	if code := output.Classify(err).Code; code != output.CodeWorktreeExists {
+		t.Errorf("error code = %q, want %q", code, output.CodeWorktreeExists)
 	}
-
-	for _, tt := range tests {
-		result := extractRepoName(tt.url)
-		if result != tt.expected {
-			t.Errorf("extractRepoName(%q) = %q, want %q", tt.url, result, tt.expected)
-		}
-	}
-}
-
-func TestClone_RealRepo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping real clone test in short mode")
-	}
-
-	env := testutil.NewTestEnv(t)
-	env.InitConfig()
-	env.Chdir()
-
-	// Execute real clone (non-interactive)
-	rootCmd.SetArgs([]string{
-		"clone",
-		"https://github.com/mssantosdev/hydra.git",
-		"--interactive=false",
-		"--alias=hydra-test",
-		"--group=tools",
-		"--branches=main",
-	})
-
-	err := rootCmd.Execute()
-	if err != nil {
-		t.Fatalf("Clone failed: %v", err)
-	}
-
-	// Verify bare repo was created
-	barePath := env.GetBarePath("hydra-test")
-	if !env.DirExists(barePath) {
-		t.Error("Bare repo should exist")
-	}
-
-	// Verify worktree was created
-	worktreePath := env.GetWorktreePath("hydra-test", "main")
-	if !env.DirExists(worktreePath) {
-		t.Error("Worktree should exist")
-	}
-
-	// Verify config was updated
-	configPath := filepath.Join(env.RootDir, ".hydra.yaml")
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("Failed to read config: %v", err)
-	}
-
-	configStr := string(content)
-	testutil.Contains(t, configStr, "tools")
-	testutil.Contains(t, configStr, "hydra-test")
-
-	// Verify symlink exists
-	symlinkPath := filepath.Join(env.RootDir, "tools", "hydra-test")
-	if _, err := os.Lstat(symlinkPath); err != nil {
-		t.Error("Symlink should exist")
+	if ref, _ := env.LoadConfig().FindRepo("api"); ref.Repo.Remote != first {
+		t.Errorf("remote was repointed to %q; it must stay %q", ref.Repo.Remote, first)
 	}
 }

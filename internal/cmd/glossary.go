@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
@@ -17,51 +18,47 @@ var glossaryCmd = &cobra.Command{
 	Long: `Interactive glossary of Hydra terminology and concepts.
 
 DESCRIPTION
-  Opens an interactive TUI explaining Hydra-specific terms:
-    • Group       - Category organizing related repositories
-    • Alias       - Short name for a repository
-    • Worktree    - Git feature for multiple working directories
-    • Bare Repo   - Git repository without working directory
-    • Hydra Project - Directory with .hydra.yaml configuration
+  Explains Hydra-specific terms for the workspace model:
+    - Project    - Root directory with .hydra.yaml
+    - Group      - Category organizing related repositories
+    - Repo       - Registered repository (alias) within a group
+    - Worktree   - Real sibling directory checked out from a repo
+    - Bare repo  - Git data store under .bare/ (no working tree)
+    - Upstream   - Remote tracking branch for ahead/behind status
+    - JSON output - Machine-readable envelope with --output json
 
-  Navigate with arrow keys or vim bindings (j/k).
-  Press Enter or Space to select terms.
-  Press q or Esc to quit.
+  In an interactive terminal, opens a TUI. Otherwise emits the glossary as data.
 
 WHEN TO USE
-  • New to Hydra - learn the terminology
-  • Understanding the architecture
-  • Before running other commands
-  • When docs reference unfamiliar terms
+  - New to Hydra - learn the terminology
+  - Understanding the project -> group -> repo -> worktree model
+  - Before running other commands
+  - When docs reference unfamiliar terms
 
 EXAMPLES
-  # Open interactive glossary
+  # Open interactive glossary (TTY)
   $ hydra glossary
 
-  # Navigate: ↑/↓ or j/k
-  # Select: Enter or Space
-  # Quit: q or Esc
+  # Emit glossary as JSON (non-TTY or --output json)
+  $ hydra glossary --output json
 
-NAVIGATION
-  ↑/↓ or j/k     Navigate terms
-  Enter/Space    View term details
+NAVIGATION (interactive)
+  Up/Down or j/k     Navigate terms
+  Enter/Space        View term details
   q / Esc / Ctrl+c   Quit
 
 EXIT CODES
-  0  Success (user quit)
-  1  Error (terminal error)
-
-TERMS COVERED
-  Group, Alias, Worktree, Bare Repository, Hydra Project
+  0  Success
+  1  General error (terminal error)
 
 SEE ALSO
-  • hydra init - Create your first Hydra project
-  • hydra clone - Add your first repository
-  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/README.md`,
+  - hydra init - Create your first Hydra project
+  - hydra clone - Add your first repository
+  - hydra skill - Agent contract and JSON envelope
+  - Docs: https://github.com/mssantosdev/hydra/blob/main/docs/README.md`,
 	RunE: runGlossary,
 }
 
-// GlossaryEntry represents a single glossary entry
 type GlossaryEntry struct {
 	Term       string
 	Definition string
@@ -72,31 +69,72 @@ func (e GlossaryEntry) Title() string       { return e.Term }
 func (e GlossaryEntry) Description() string { return "" }
 func (e GlossaryEntry) FilterValue() string { return e.Term }
 
+type glossaryTerm struct {
+	Term       string `json:"term"`
+	Definition string `json:"definition"`
+}
+
+type glossaryPayload struct {
+	Terms []glossaryTerm `json:"terms"`
+}
+
 var glossaryEntries = []GlossaryEntry{
 	{
-		Term:       "Group",
-		Definition: "A category that organizes related repositories. Groups help you navigate between different parts of your project.",
-		Examples:   []string{"backend (APIs, services)", "frontend (web apps)", "infra (Terraform, Docker configs)"},
+		Term:       "Project",
+		Definition: "The root directory that contains a .hydra.yaml file. Hydra walks up from your current directory to find it and treats everything under that root as one workspace.",
+		Examples: []string{
+			"my-app/ with .hydra.yaml at the root",
+			"Registered in ~/.config/hydra/projects.yaml for --project lookups",
+		},
 	},
 	{
-		Term:       "Alias",
-		Definition: "A short name for a repository within its group. This is how you refer to and navigate to the repository.",
-		Examples:   []string{"cd backend/api", "hydra sync worker"},
+		Term:       "Group",
+		Definition: "A named category that organizes related repositories inside a project. Groups become top-level folders next to .bare/, and every repo alias lives under exactly one group.",
+		Examples: []string{
+			"backend (APIs and services)",
+			"frontend (web apps)",
+			"infra (Terraform, Docker configs)",
+		},
+	},
+	{
+		Term:       "Repo",
+		Definition: "A repository registered in .hydra.yaml under a group. The map key is the alias — Hydra's short handle for the repo in commands like add, remove, and sync.",
+		Examples: []string{
+			"hydra add api feature/login",
+			"hydra sync worker",
+		},
 	},
 	{
 		Term:       "Worktree",
-		Definition: "A Git feature that allows multiple working directories from a single repository. Each branch can have its own worktree.",
-		Examples:   []string{"main/ - production code", "develop/ - active development", "feature/login/ - new feature"},
+		Definition: "A real sibling directory checked out from a repo's bare repository. Each worktree maps to one branch (or detached HEAD) and is how you work on multiple branches at once.",
+		Examples: []string{
+			"backend/api/ for the default branch",
+			"backend/api-feature-login/ for a feature branch",
+		},
 	},
 	{
 		Term:       "Bare Repository",
-		Definition: "A Git repository without a working directory. It stores all Git history and is kept in .bare/. All worktrees share this single source.",
-		Examples:   []string{"Stored in: .bare/my-repo.git/"},
+		Definition: "The git object store under .bare/<alias>.git/. It holds history and refs only — never a working tree. Every worktree for that repo shares this single bare repo.",
+		Examples: []string{
+			".bare/api.git/ stores all git data for alias api",
+			"Worktrees live as real directories under their group",
+		},
 	},
 	{
-		Term:       "Hydra Project",
-		Definition: "A directory containing a .hydra.yaml configuration file. This is the root where Hydra manages all your repositories.",
-		Examples:   []string{"Contains: .hydra.yaml, .bare/, group folders"},
+		Term:       "Upstream Tracking",
+		Definition: "The remote branch a local branch tracks (for example origin/main). Hydra reports ahead/behind counts and dirty status per worktree using this tracking information.",
+		Examples: []string{
+			"status shows ~3 when three files changed",
+			"JSON worktree objects include upstream, ahead, and behind",
+		},
+	},
+	{
+		Term:       "JSON Output",
+		Definition: "Hydra's machine-readable contract. With --output json (or when stdout is not a terminal), commands emit a versioned JSON envelope instead of styled text so scripts never scrape prose.",
+		Examples: []string{
+			"hydra list --output json",
+			"hydra glossary --output json -> {terms: [{term, definition}]}",
+		},
 	},
 }
 
@@ -104,7 +142,6 @@ func init() {
 	rootCmd.AddCommand(glossaryCmd)
 }
 
-// glossaryModel represents the state of the glossary TUI
 type glossaryModel struct {
 	list     list.Model
 	detail   GlossaryEntry
@@ -114,27 +151,18 @@ type glossaryModel struct {
 }
 
 func newGlossaryModel() glossaryModel {
-	// Convert entries to list items
 	items := make([]list.Item, len(glossaryEntries))
 	for i, entry := range glossaryEntries {
 		items[i] = entry
 	}
 
-	// Create list with initial size
 	l := list.New(items, list.NewDefaultDelegate(), 20, 10)
 	l.Title = "Terms"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
-	l.Styles.Title = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7aa2f7"))
-	l.Styles.PaginationStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#565f89"))
-	l.Styles.HelpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#565f89"))
-
-	// Use default keymap (includes all navigation: arrows, vim keys, etc.)
-	// Default keys: up/k, down/j, left/h/pgup, right/l/pgdown, g/home, G/end, /, esc, q, ?
+	l.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(styles.Blue)
+	l.Styles.PaginationStyle = lipgloss.NewStyle().Foreground(styles.FgComment)
+	l.Styles.HelpStyle = lipgloss.NewStyle().Foreground(styles.FgComment)
 	l.KeyMap = list.DefaultKeyMap()
 
 	return glossaryModel{
@@ -143,16 +171,13 @@ func newGlossaryModel() glossaryModel {
 	}
 }
 
-func (m glossaryModel) Init() tea.Cmd {
-	return nil
-}
+func (m glossaryModel) Init() tea.Cmd { return nil }
 
 func (m glossaryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Set list width to 30% of screen, min 20, max 30
 		listWidth := int(float64(msg.Width) * 0.3)
 		if listWidth < 20 {
 			listWidth = 20
@@ -162,14 +187,12 @@ func (m glossaryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetSize(listWidth, msg.Height-4)
 		return m, nil
-
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
 			m.quitting = true
 			return m, tea.Quit
 		case "enter", " ":
-			// Update detail view when item selected
 			if i, ok := m.list.SelectedItem().(GlossaryEntry); ok {
 				m.detail = i
 			}
@@ -189,15 +212,11 @@ func (m glossaryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update list
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
-
-	// Update detail when selection changes
 	if i, ok := m.list.SelectedItem().(GlossaryEntry); ok {
 		m.detail = i
 	}
-
 	return m, cmd
 }
 
@@ -205,12 +224,10 @@ func (m glossaryModel) View() string {
 	if m.quitting {
 		return ""
 	}
-
 	if m.width == 0 {
 		return "Loading..."
 	}
 
-	// Calculate widths
 	listWidth := int(float64(m.width) * 0.3)
 	if listWidth < 20 {
 		listWidth = 20
@@ -220,30 +237,18 @@ func (m glossaryModel) View() string {
 	}
 	detailWidth := m.width - listWidth - 4
 
-	// Header
 	header := styles.AppHeader.Render(" HYDRA ")
 	title := styles.Title.Render("Glossary")
 
-	// Build detail view
-	termStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7aa2f7")).
-		MarginBottom(1)
+	termStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).MarginBottom(1)
+	descStyle := lipgloss.NewStyle().Foreground(styles.Fg).MarginBottom(1)
+	exampleStyle := lipgloss.NewStyle().Foreground(styles.FgComment).MarginTop(1)
 
-	descStyle := lipgloss.NewStyle().
-		Foreground(styles.Fg).
-		MarginBottom(1)
-
-	exampleStyle := lipgloss.NewStyle().
-		Foreground(styles.FgComment).
-		MarginTop(1)
-
-	// Build examples
 	var examples strings.Builder
 	if len(m.detail.Examples) > 0 {
 		examples.WriteString("\nExamples:\n")
 		for _, ex := range m.detail.Examples {
-			examples.WriteString(fmt.Sprintf("  • %s\n", ex))
+			examples.WriteString(fmt.Sprintf("  - %s\n", ex))
 		}
 	}
 
@@ -255,44 +260,57 @@ func (m glossaryModel) View() string {
 
 	detailBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#24283b")).
+		BorderForeground(styles.BgLight).
 		Width(detailWidth).
 		Height(m.height - 8).
 		Render(detailContent)
 
-	// Help text
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#565f89")).
-		MarginTop(1)
-	help := helpStyle.Render("↑/↓: navigate • enter/space: select • q: quit")
+	help := lipgloss.NewStyle().Foreground(styles.FgComment).MarginTop(1).
+		Render("up/down: navigate - enter/space: select - q: quit")
 
-	// Layout
-	listView := lipgloss.NewStyle().
-		Width(listWidth).
-		Render(m.list.View())
+	listView := lipgloss.NewStyle().Width(listWidth).Render(m.list.View())
+	content := lipgloss.JoinHorizontal(lipgloss.Top, listView, "  ", detailBox)
 
-	content := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		listView,
-		"  ",
-		detailBox,
-	)
+	return fmt.Sprintf("%s\n\n%s\n\n%s\n\n%s", header, title, content, help)
+}
 
-	return fmt.Sprintf("%s\n\n%s\n\n%s\n\n%s",
-		header,
-		title,
-		content,
-		help,
-	)
+func glossaryData() glossaryPayload {
+	terms := make([]glossaryTerm, len(glossaryEntries))
+	for i, entry := range glossaryEntries {
+		terms[i] = glossaryTerm{Term: entry.Term, Definition: entry.Definition}
+	}
+	return glossaryPayload{Terms: terms}
+}
+
+func renderGlossaryText() string {
+	var b strings.Builder
+	for i, entry := range glossaryEntries {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(entry.Term)
+		b.WriteString("\n")
+		b.WriteString(entry.Definition)
+	}
+	return b.String()
 }
 
 func runGlossary(cmd *cobra.Command, args []string) error {
-	model := newGlossaryModel()
-
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		return err
+	if !interactive() {
+		data := glossaryData()
+		text := renderGlossaryText()
+		return emit(cmd, data, nil, func() {
+			fmt.Fprint(cmd.OutOrStdout(), text)
+			if !strings.HasSuffix(text, "\n") {
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
+		})
 	}
 
+	model := newGlossaryModel()
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return output.Wrap(output.CodeInternal, err, "glossary TUI failed")
+	}
 	return nil
 }

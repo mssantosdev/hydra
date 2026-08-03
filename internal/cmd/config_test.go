@@ -1,24 +1,38 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/config/global"
+	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
 
 func TestConfig_NoArgs(t *testing.T) {
-	// Config command should work without project config
-	rootCmd.SetArgs([]string{"config", "--help"})
+	resetCommandState(t)
+	var configCommand *cobra.Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "config" {
+			configCommand = cmd
+			break
+		}
+	}
+	if configCommand == nil {
+		t.Fatal("config command not found")
+	}
 
-	err := rootCmd.Execute()
+	err := configCommand.Help()
 	if err != nil {
 		t.Errorf("Config help should not fail: %v", err)
 	}
 }
 
 func TestConfig_CommandAvailable(t *testing.T) {
-	// Verify config command is registered
+	resetCommandState(t)
 	found := false
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "config" {
@@ -33,7 +47,7 @@ func TestConfig_CommandAvailable(t *testing.T) {
 }
 
 func TestConfig_CommandProperties(t *testing.T) {
-	// Find config command
+	resetCommandState(t)
 	var configCommand *cobra.Command
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "config" {
@@ -55,39 +69,73 @@ func TestConfig_CommandProperties(t *testing.T) {
 	}
 }
 
-func TestAvailableLanguages(t *testing.T) {
-	langs := global.AvailableLanguages()
+func TestConfigNonInteractiveJSON(t *testing.T) {
+	resetCommandState(t)
+	outputFlag = ""
 
-	if len(langs) != 2 {
-		t.Errorf("Expected 2 languages, got %d", len(langs))
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("HYDRA_CONFIG_DIR", filepath.Join(home, ".config", "hydra"))
+
+	cfg, err := global.Load()
+	if err != nil {
+		t.Fatalf("failed to load global config: %v", err)
+	}
+	cfg.Theme.Name = "tokyonight"
+	cfg.Defaults.Editor = "vim"
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("failed to save global config: %v", err)
 	}
 
-	hasEn := false
-	hasPt := false
-	for _, lang := range langs {
-		if lang == "en-US" {
-			hasEn = true
-		}
-		if lang == "pt-BR" {
-			hasPt = true
-		}
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
+	rootCmd.SetArgs([]string{"config", "--output", "json"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("config --output json failed: %v", err)
 	}
 
-	if !hasEn {
-		t.Error("Should have en-US")
+	var envelope struct {
+		Data struct {
+			Theme  string `json:"theme"`
+			Editor string `json:"editor"`
+		} `json:"data"`
 	}
-	if !hasPt {
-		t.Error("Should have pt-BR")
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse config JSON: %v\noutput: %s", err, out.String())
+	}
+	if envelope.Data.Theme != "tokyonight" {
+		t.Fatalf("expected theme tokyonight, got %q", envelope.Data.Theme)
+	}
+	if envelope.Data.Editor != "vim" {
+		t.Fatalf("expected editor vim, got %q", envelope.Data.Editor)
 	}
 }
 
-func TestAvailableThemes(t *testing.T) {
-	themes := []string{"tokyonight", "catppuccin", "dracula", "nord", "onedark"}
+func TestConfigReloadsThemeAfterChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("HYDRA_CONFIG_DIR", filepath.Join(home, ".config", "hydra"))
 
-	for _, name := range themes {
-		if !global.IsValidLanguage(name) {
-			// Note: This tests theme names, not language - the function name is misleading
-			// Actually, we should test themes.IsValid
-		}
+	cfg, err := global.Load()
+	if err != nil {
+		t.Fatalf("failed to load global config: %v", err)
 	}
+
+	styles.ReloadTheme()
+	before := styles.Green
+
+	cfg.Theme.Name = "dracula"
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("failed to save global config: %v", err)
+	}
+	styles.ReloadTheme()
+	after := styles.Green
+
+	if before == after {
+		t.Fatalf("expected theme colors to change after ReloadTheme, green stayed %v", before)
+	}
+
+	_ = os.Getenv("HOME") // keep os import used when build tags vary
 }

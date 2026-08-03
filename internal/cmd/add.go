@@ -3,456 +3,224 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/mssantosdev/hydra/internal/config"
-	"github.com/mssantosdev/hydra/internal/git"
-	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
+
+	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/ui/styles"
+)
+
+var (
+	addFrom string
+	addAs   string
 )
 
 var addCmd = &cobra.Command{
-	Use:   "add [<repo-alias> <branch-name>]",
-	Short: "Add a new worktree",
-	Long: `Create a new worktree for a repository branch.
+	Use:   "add [<alias> <branch>]",
+	Short: "Create a worktree for a branch",
+	Long: `Create a worktree as a real sibling directory under its group.
 
 DESCRIPTION
-  Creates a Git worktree - a separate working directory for a specific branch.
-  Worktrees allow you to work on multiple branches simultaneously without
-  stashing or committing incomplete work.
+  The worktree directory is <group>/<alias> for the repo's default branch, and
+  <group>/<alias>-<slug> otherwise, where slug replaces "/" with "-". Pass --as to
+  choose the directory name outright, which is how a long branch name gets a short
+  directory.
 
-  When you run this command:
-  1. Creates worktree directory: .bare/<repo>/<branch>/
-  2. Creates symlink: <ecosystem>/<repo>-<branch>
-  3. Checks out the specified branch (creating it if needed)
+  Upstream tracking is decided by where the branch actually exists:
+    • on origin        -> a local branch WITH upstream origin/<branch>
+    • locally only     -> attached as-is; no upstream is invented
+    • nowhere yet      -> a new branch cut from the resolved base, no upstream
+                          until you push (reported as local-only)
+
+  The base for a brand-new branch resolves in this order:
+    --from  ->  defaults.base_branch  ->  the repo's default_branch  ->  origin/HEAD
 
 WHEN TO USE
-  • Starting work on a new feature
-  • Creating hotfix branches from production
-  • Setting up staging or production worktrees
-  • Working on multiple features in parallel
+  • Starting work on a new branch
+  • Checking out an existing remote branch alongside your current work
 
 EXAMPLES
-  # Interactive mode - prompts for repo and branch
-  $ hydra add
+  # Existing remote branch
+  $ hydra add api stage
 
-  # Create worktree for a branch
-  $ hydra add api feature-x
+  # New branch from the resolved base
+  $ hydra add api feat/login
 
-  # Create branch from specific base branch
-  $ hydra add api feature-y --from=develop
+  # New branch from an explicit base
+  $ hydra add api hotfix/x --from prod
+
+  # Short directory name for a long branch
+  $ hydra add gileadeweb marcus/feat-2072958-excel-xlsx --as gileadeweb-excel-xlsx
 
 FLAGS
-  -f, --from string    Create branch from this branch
-  -h, --help           Show help
+  --from <branch>  base branch for a brand-new branch
+  --as <name>      worktree directory name (overrides the derived name)
+
+HOOKS
+  Runs the post_add chain with cwd set to the new worktree. A failing hook does NOT
+  remove the worktree: it was created correctly. Fix the hook and run
+  "hydra hooks run post_add".
 
 EXIT CODES
-  0  Success (worktree created or already exists)
-  1  General error (invalid args, repo not found)
-  2  Config file (.hydra.yaml) not found
+  0  Success
+  1  repo_unknown, bare_missing, branch_unknown, worktree_exists,
+     worktree_name_conflict, git_failed, hook_failed
+  2  not_in_project, config_version_unsupported, project_unknown
 
 SEE ALSO
-  • hydra remove - Remove a worktree
-  • hydra switch - Switch to a worktree
-  • Docs: https://github.com/mssantosdev/hydra/blob/main/docs/commands/worktree-management.md`,
+  • hydra remove - delete a worktree
+  • hydra path   - print a worktree's path
+  • hydra list   - list worktrees`,
+	Args: cobra.MaximumNArgs(2),
 	RunE: runAdd,
 }
 
-var (
-	addFromBranch string
-)
-
-type addSelection struct {
-	Alias  string
-	Branch string
-	From   string
-}
-
 func init() {
+	addCmd.Flags().StringVar(&addFrom, "from", "", "base branch for a brand-new branch")
+	addCmd.Flags().StringVar(&addAs, "as", "", "worktree directory name")
 	rootCmd.AddCommand(addCmd)
-	addCmd.Flags().StringVarP(&addFromBranch, "from", "f", "", "Create branch from this branch")
-	addCmd.ValidArgsFunction = completeRepoAliases
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	wd, err := os.Getwd()
+	alias, branch, err := resolveAddTarget(args)
 	if err != nil {
 		return err
 	}
 
-	configPath, cfg, err := config.FindConfig(wd)
+	repo, err := resolveRepoByAlias(cfg, projectRoot, alias)
 	if err != nil {
 		return err
 	}
 
-	projectRoot := filepath.Dir(configPath)
-	currentCtx, _ := resolveCurrentHydraContext(wd, cfg, projectRoot)
-
-	var selection addSelection
-	if len(args) == 0 {
-		selection, err = interactiveAdd(cfg, projectRoot, currentCtx)
-		if err != nil {
-			return err
-		}
-	} else if len(args) >= 2 {
-		selection = addSelection{Alias: args[0], Branch: args[1]}
-	} else {
-		return fmt.Errorf("usage: hydra add <repo-alias> <branch-name>")
+	dirName := strings.TrimSpace(addAs)
+	if dirName == "" {
+		dirName = worktreeDirName(repo, branch)
+	} else if err := validatePathSegment("--as", dirName); err != nil {
+		return output.Wrap(output.CodeInternal, err, "invalid --as value")
 	}
 
-	repo, err := resolveRepoByAlias(cfg, projectRoot, selection.Alias)
-	if err != nil {
+	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, branch); err != nil {
 		return err
 	}
-	if _, err := os.Stat(repo.BareRepo); os.IsNotExist(err) {
-		return fmt.Errorf("bare repository not found: %s", repo.BareRepo)
+
+	target := worktreePath(projectRoot, repo.Group, dirName)
+	if err := createWorktreeForBranch(cfg, repo, target, branch, addFrom); err != nil {
+		return err
 	}
 
-	wt := buildWorktreeContext(repo, projectRoot, selection.Branch)
-	if _, err := os.Stat(wt.WorktreePath); err == nil {
-		_ = ensureSymlink(wt)
-		printAddSummary(wd, wt, selection.Branch, "", true)
-		return nil
+	wt, ok := findRepoWorktreeByBranch(repo, branch)
+	if !ok {
+		return output.Errorf(output.CodeGitFailed,
+			"worktree for %q was created at %s but git does not report it", branch, target).
+			WithDetail("branch", branch).
+			WithDetail("path", target)
 	}
 
-	fmt.Printf("Creating worktree for %s:%s...\n", repo.RepoName, selection.Branch)
-
-	branchExists, err := git.BranchExists(repo.BareRepo, selection.Branch)
-	if err != nil {
-		return fmt.Errorf("failed to resolve branch: %w", err)
+	item, trackErr := wt.withTracking()
+	var warnings []string
+	if trackErr != nil {
+		warnings = append(warnings, fmt.Sprintf("%s: %v", branch, trackErr))
 	}
 
-	fromBranch := selection.From
-	if branchExists {
-		err = git.CreateWorktreeForBranch(repo.BareRepo, wt.WorktreePath, selection.Branch)
-	} else {
-		fromBranch, err = resolveAddBaseBranch(repo, currentCtx, addFromBranch, selection.From)
-		if err != nil {
-			err = git.CreateWorktreeNewBranch(repo.BareRepo, wt.WorktreePath, selection.Branch)
-			fromBranch = ""
+	hookResult, hookErr := runHookEvent("post_add", hooksContextFor(repo, branch, wt.Path), wt.Path)
+	warnings = append(warnings, hookResult.Warnings...)
+
+	emitErr := emit(cmd, item, warnings, func() {
+		wd, _ := os.Getwd()
+		cdHint, switchHint := navigationHints(wd, wt)
+		fmt.Println()
+		fmt.Println(styles.Success.Render("✓ Worktree created"))
+		fmt.Printf("  Repo:   %s/%s\n", repo.Group, repo.Alias)
+		fmt.Printf("  Branch: %s\n", wt.BranchLabel())
+		fmt.Printf("  Path:   %s\n", wt.Path)
+		if item.Upstream != nil {
+			fmt.Printf("  Upstream: %s\n", *item.Upstream)
 		} else {
-			err = git.CreateWorktreeFromBase(repo.BareRepo, wt.WorktreePath, selection.Branch, fromBranch)
+			fmt.Println("  Upstream: local-only (push to create it)")
+		}
+		fmt.Println()
+		fmt.Println(cdHint)
+		fmt.Println(switchHint)
+	})
+	if emitErr != nil {
+		return emitErr
+	}
+	// The worktree is real and reported; only the hook failed.
+	return hookErr
+}
+
+// resolveAddTarget determines the repo alias and branch, prompting only when a
+// terminal is genuinely attached.
+func resolveAddTarget(args []string) (string, string, error) {
+	if len(args) == 2 {
+		return strings.TrimSpace(args[0]), strings.TrimSpace(args[1]), nil
+	}
+
+	if !interactive() {
+		if len(args) == 0 {
+			return "", "", output.Errorf(output.CodeRepoUnknown,
+				"a repo alias and a branch are required: hydra add <alias> <branch>")
+		}
+		return "", "", output.Errorf(output.CodeBranchUnknown,
+			"a branch is required: hydra add %s <branch>", args[0])
+	}
+
+	alias := ""
+	if len(args) == 1 {
+		alias = strings.TrimSpace(args[0])
+	} else {
+		repos := cfg.Repos()
+		if len(repos) == 0 {
+			return "", "", output.Errorf(output.CodeRepoUnknown,
+				"no repos registered; run \"hydra clone <url>\" first")
+		}
+		options := make([]huh.Option[string], 0, len(repos))
+		for _, ref := range repos {
+			options = append(options, huh.NewOption(ref.Group+"/"+ref.Alias, ref.Alias))
+		}
+		alias = repos[0].Alias
+		if err := huh.NewSelect[string]().Title("Repo").Options(options...).Value(&alias).Run(); err != nil {
+			return "", "", output.Wrap(output.CodeInternal, err, "cancelled")
 		}
 	}
-	if err != nil {
-		return fmt.Errorf("failed to create worktree: %w", err)
-	}
 
-	if err := ensureSymlink(wt); err != nil {
-		return fmt.Errorf("failed to create symlink: %w", err)
-	}
-
-	printAddSummary(wd, wt, selection.Branch, fromBranch, false)
-	return nil
-}
-
-func interactiveAdd(cfg *config.Config, projectRoot string, currentCtx *currentHydraContext) (addSelection, error) {
-	selectedAlias, err := promptForRepo(cfg, currentCtx)
-	if err != nil {
-		return addSelection{}, err
-	}
-
-	var mode string
-	modeForm := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Branch Mode").
-				Description("Choose an existing branch or create a new one").
-				Options(
-					huh.NewOption("Existing branch", "existing"),
-					huh.NewOption("New branch", "new"),
-				).
-				Value(&mode),
-		),
-	)
-	if err := modeForm.Run(); err != nil {
-		return addSelection{}, err
-	}
-
-	repo, err := resolveRepoByAlias(cfg, projectRoot, selectedAlias)
-	if err != nil {
-		return addSelection{}, err
-	}
-
-	branches, defaultBranch, err := branchChoicesForRepo(repo, projectRoot)
-	if err != nil {
-		return addSelection{}, err
-	}
-
-	if mode == "existing" {
-		branchName, err := promptForExistingBranch(branches)
-		if err != nil {
-			return addSelection{}, err
-		}
-		return addSelection{Alias: selectedAlias, Branch: branchName}, nil
-	}
-
-	fromBranch, err := resolveAddBaseBranch(repo, currentCtx, addFromBranch, "")
-	if err != nil && defaultBranch != "" {
-		fromBranch = defaultBranch
-		err = nil
-	}
-	if err != nil {
-		return addSelection{}, err
-	}
-
-	branchName, selectedFrom, err := promptForNewBranch(branches, fromBranch)
-	if err != nil {
-		return addSelection{}, err
-	}
-
-	return addSelection{Alias: selectedAlias, Branch: branchName, From: selectedFrom}, nil
-}
-
-func promptForRepo(cfg *config.Config, currentCtx *currentHydraContext) (string, error) {
-	var repoOptions []huh.Option[string]
-	selectedAlias := ""
-	if currentCtx != nil {
-		selectedAlias = currentCtx.RepoContext.Alias
-	}
-
-	for ecoName, eco := range cfg.Ecosystems {
-		for alias := range eco {
-			repoOptions = append(repoOptions, huh.NewOption(fmt.Sprintf("%s (%s)", alias, ecoName), alias))
-		}
-	}
-	if len(repoOptions) == 0 {
-		return "", fmt.Errorf("no repositories found in config")
-	}
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select Repository").
-				Description("Choose which repository to add a worktree for").
-				Options(repoOptions...).
-				Value(&selectedAlias),
-		),
-	)
-	if err := form.Run(); err != nil {
-		return "", err
-	}
-	return selectedAlias, nil
-}
-
-func promptForExistingBranch(branches []branchChoice) (string, error) {
-	options := make([]huh.Option[string], 0, len(branches))
-	for _, branch := range branches {
-		options = append(options, huh.NewOption(branch.DisplayName, branch.Name))
-	}
-
-	var branchName string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select Branch").
-				Description("Choose an existing branch to use for the worktree").
-				Options(options...).
-				Value(&branchName),
-		),
-	)
-	if err := form.Run(); err != nil {
-		return "", err
-	}
-	return branchName, nil
-}
-
-func promptForNewBranch(branches []branchChoice, initialFrom string) (string, string, error) {
-	branchName := ""
-	fromBranch := initialFrom
-
-	updatedBranch, err := promptForNewBranchName(branchName, branches)
+	repo, err := resolveRepoByAlias(cfg, projectRoot, alias)
 	if err != nil {
 		return "", "", err
 	}
-	branchName = updatedBranch
 
-	for {
-		action, err := promptForNewBranchAction(branchName, fromBranch)
-		if err != nil {
-			return "", "", err
-		}
-
-		switch action {
-		case "branch":
-			updatedBranch, err := promptForNewBranchName(branchName, branches)
-			if err != nil {
-				return "", "", err
-			}
-			branchName = updatedBranch
-		case "from":
-			updatedFrom, err := promptForBaseBranchSelection(fromBranch, branches)
-			if err != nil {
-				continue
-			}
-			fromBranch = updatedFrom
-		case "create":
-			if err := validateNewBranchName(branchName, branches); err != nil {
-				fmt.Println(styles.Error.Render(err.Error()))
-				continue
-			}
-			return branchName, fromBranch, nil
-		}
-	}
-}
-
-func promptForNewBranchAction(branchName, fromBranch string) (string, error) {
-	var action string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("New Branch").
-				Description("Select a row to edit. Choosing 'From' opens the branch picker and cancel keeps the current selection.").
-				Options(
-					huh.NewOption("Branch Name: "+branchName, "branch"),
-					huh.NewOption("From: "+fromBranch, "from"),
-					huh.NewOption("Create worktree", "create"),
-				).
-				Value(&action),
-		),
-	)
-	if err := form.Run(); err != nil {
-		return "", err
-	}
-	return action, nil
-}
-
-func promptForNewBranchName(current string, branches []branchChoice) (string, error) {
-	branchName := current
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Branch Name").
-				Description("Enter the new branch name for the worktree").
-				Placeholder("feature/my-feature").
-				Value(&branchName).
-				Validate(func(s string) error {
-					return validateNewBranchName(s, branches)
-				}),
-		),
-	)
-	if err := form.Run(); err != nil {
-		return "", err
-	}
-	return branchName, nil
-}
-
-func promptForBaseBranchSelection(current string, branches []branchChoice) (string, error) {
-	fromBranch := current
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("From").
-				Description("Choose the base branch for the new branch.").
-				Options(baseBranchOptions(branches, current)...).
-				Value(&fromBranch),
-		),
-	)
-	if err := form.Run(); err != nil {
-		return "", err
-	}
-	return fromBranch, nil
-}
-
-func validateNewBranchName(branchName string, branches []branchChoice) error {
-	if branchName == "" {
-		return fmt.Errorf("branch name cannot be empty")
-	}
-	for _, branch := range branches {
-		if branch.Name == branchName {
-			return fmt.Errorf("branch already exists, use Existing branch mode")
-		}
-	}
-	return nil
-}
-
-func baseBranchOptions(branches []branchChoice, current string) []huh.Option[string] {
-	options := make([]huh.Option[string], 0, len(branches))
-	seen := make(map[string]struct{}, len(branches))
-
-	appendOption := func(branch branchChoice) {
-		if _, ok := seen[branch.Name]; ok {
-			return
-		}
-		seen[branch.Name] = struct{}{}
-		label := branch.DisplayName
-		if branch.Name == current {
-			label = branch.Name + " (current selection)"
-		}
-		options = append(options, huh.NewOption(label, branch.Name))
-	}
-
-	for _, branch := range branches {
-		if branch.Name == current {
-			appendOption(branch)
-		}
-	}
-	for _, branch := range branches {
-		appendOption(branch)
-	}
-
-	return options
-}
-
-func printAddSummary(wd string, wt worktreeContext, branch, fromBranch string, alreadyExists bool) {
-	cdHint, switchHint := navigationHints(wd, wt)
-	if alreadyExists {
-		fmt.Println(styles.Success.Render("✓ Worktree already exists"))
-	} else {
-		fmt.Println(styles.Success.Render("✓ Worktree created"))
-	}
-	fmt.Printf("  Path: %s\n", wt.WorktreePath)
-	fmt.Printf("  Branch: %s\n", branch)
-	if !alreadyExists && fromBranch != "" {
-		fmt.Printf("  From: %s\n", fromBranch)
-	}
-	fmt.Printf("  Symlink: %s\n", filepath.Join(wt.RepoContext.Ecosystem, wt.SymlinkName))
-	fmt.Println()
-	fmt.Println(cdHint)
-	fmt.Println(switchHint)
-}
-
-func resolveAddBaseBranch(repo repoContext, currentCtx *currentHydraContext, explicitFrom, selectedFrom string) (string, error) {
-	if explicitFrom != "" {
-		return explicitFrom, nil
-	}
-	if selectedFrom != "" {
-		return selectedFrom, nil
-	}
-	if currentCtx != nil && currentCtx.RepoContext.Alias == repo.Alias && currentCtx.Branch != "" && currentCtx.Branch != "HEAD" && currentCtx.Branch != "detached" {
-		return currentCtx.Branch, nil
-	}
-	locals, localErr := git.ListLocalBranches(repo.BareRepo)
-	if localErr == nil && len(locals) > 0 {
-		for _, branch := range []string{"main", "master"} {
-			for _, local := range locals {
-				if local == branch {
-					return local, nil
-				}
-			}
-		}
-		return locals[0], nil
-	}
-	defaultBranch, err := git.GetRemoteDefaultBranch(repo.BareRepo)
-	if err == nil && defaultBranch != "" {
-		return defaultBranch, nil
-	}
-	branches, branchErr := git.GetRemoteBranchesFromBare(repo.BareRepo)
-	if branchErr == nil && len(branches) > 0 {
-		return git.GetDefaultBranch(branches), nil
-	}
+	choices, defaultBranch, err := branchChoicesForRepo(repo)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if branchErr != nil {
-		return "", branchErr
+
+	const newBranchSentinel = "\x00new"
+	options := make([]huh.Option[string], 0, len(choices)+1)
+	options = append(options, huh.NewOption("+ new branch…", newBranchSentinel))
+	for _, choice := range choices {
+		if choice.HasWorktree {
+			continue
+		}
+		options = append(options, huh.NewOption(choice.DisplayName, choice.Name))
 	}
-	if localErr != nil {
-		return "", localErr
+
+	branch := defaultBranch
+	if err := huh.NewSelect[string]().Title("Branch").Options(options...).Value(&branch).Run(); err != nil {
+		return "", "", output.Wrap(output.CodeInternal, err, "cancelled")
 	}
-	if git.RefExists(repo.BareRepo, "HEAD") {
-		return "HEAD", nil
+
+	if branch == newBranchSentinel {
+		branch = ""
+		if err := huh.NewInput().Title("New branch name").Value(&branch).Run(); err != nil {
+			return "", "", output.Wrap(output.CodeInternal, err, "cancelled")
+		}
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			return "", "", output.Errorf(output.CodeBranchUnknown, "a branch name is required")
+		}
 	}
-	return "", fmt.Errorf("could not determine base branch for %s", repo.Alias)
+
+	return alias, branch, nil
 }
