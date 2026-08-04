@@ -80,7 +80,7 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 		entries = append(entries, hooksEventEntry{Event: event, Count: len(hs)})
 	}
 
-	return emit(cmd, hooksLsPayload{Events: entries}, nil, func() {
+	return emit(cmd, fmt.Sprintf("%d hook event(s) configured", len(entries)), hooksLsPayload{Events: entries}, nil, func() {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %s\n",
 			styles.Label.Render("EVENT"),
 			styles.Label.Render("HOOKS"))
@@ -130,7 +130,7 @@ func runHooksRun(cmd *cobra.Command, args []string) error {
 		Cwd:      cwd,
 		Result:   result,
 	}
-	return emit(cmd, payload, result.Warnings, func() {
+	return emit(cmd, fmt.Sprintf("ran %d hook(s) for %s", result.Ran, event), payload, result.Warnings, func() {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Ran %d hook(s) for %s in %s\n", result.Ran, event, cwd)
 	})
 }

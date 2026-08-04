@@ -149,7 +149,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	if cloneDryRun {
-		return emit(cmd, map[string]any{
+		return emit(cmd, fmt.Sprintf("dry run: would clone %s as %s/%s", opts.URL, opts.Group, opts.Alias), map[string]any{
 			"project":   cfg.Project,
 			"root":      projectRoot,
 			"group":     opts.Group,
@@ -173,7 +173,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	emitErr := emit(cmd, result, warnings, func() {
+	emitErr := emit(cmd, fmt.Sprintf("cloned %s/%s with %d worktree(s)", result.Group, result.Repo, len(result.Worktrees)), result, warnings, func() {
 		fmt.Println()
 		fmt.Println(styles.Success.Render("✓ Repository cloned"))
 		fmt.Printf("  Repo: %s/%s\n", result.Group, result.Repo)

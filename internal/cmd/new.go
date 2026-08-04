@@ -141,7 +141,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		Path:    worktreeFullPath,
 	}
 
-	return emit(cmd, result, nil, func() {
+	return emit(cmd, fmt.Sprintf("workspace %q created", result.Project), result, nil, func() {
 		relPath, relErr := filepath.Rel(wd, projectRoot)
 		if relErr != nil || relPath == "" {
 			relPath = projectRoot

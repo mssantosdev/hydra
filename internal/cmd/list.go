@@ -111,7 +111,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		data = listProjectPayload{Worktrees: []worktreeJSON{}, Total: 0}
 	}
 
-	return emit(cmd, data, warnings, func() {
+	return emit(cmd, fmt.Sprintf("%d worktree(s)", total), data, warnings, func() {
 		renderListText(cmd, listAll, projects)
 	})
 }

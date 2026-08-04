@@ -130,7 +130,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	hookResult, hookErr := runHookEvent("post_add", hooksContextFor(repo, branch, wt.Path), wt.Path)
 	warnings = append(warnings, hookResult.Warnings...)
 
-	emitErr := emit(cmd, item, warnings, func() {
+	emitErr := emit(cmd, fmt.Sprintf("worktree %s created for %s", wt.Qualified(), wt.BranchLabel()), item, warnings, func() {
 		wd, _ := os.Getwd()
 		cdHint, switchHint := navigationHints(wd, wt)
 		fmt.Println()

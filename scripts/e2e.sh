@@ -81,7 +81,7 @@ check "a failing post_sync hook warns instead of aborting" \
   '"$HYDRA" sync api --yes --output json 2>/dev/null | jq -e ".data.summary.pulled==1 and .data.summary.failed==0 and (.warnings|length)>0" >/dev/null'
 cp "$T/config.before-hook" .hydra/config.yaml
 check "the manifest is restored and still parses" \
-  '"$HYDRA" list --output json | jq -e ".schema==1" >/dev/null && ! grep -q post_sync .hydra/config.yaml'
+  '"$HYDRA" list --output json | jq -e ".schema==2" >/dev/null && ! grep -q post_sync .hydra/config.yaml'
 
 # ------------------------------------------------ 3b. clone converges (step 5)
 echo "== 3b. re-cloning a complete repository is a no-op =="
@@ -95,10 +95,24 @@ check "the re-clone destroyed nothing" 'test -d backend/api && test -d .bare/api
 
 # ------------------------------------------------ 4. machine contract (step 5)
 echo "== 4. machine contract and exit codes =="
-check "list envelope has schema 1 and 2 worktrees" \
-  '"$HYDRA" list --output json | jq -e ".schema==1 and (.data.worktrees|length)==2" >/dev/null'
+check "list envelope has schema 2 and 2 worktrees" \
+  '"$HYDRA" list --output json | jq -e ".schema==2 and (.data.worktrees|length)==2" >/dev/null'
 check "non-TTY stdout auto-selects JSON" \
-  '"$HYDRA" list | jq -e ".schema==1" >/dev/null'
+  '"$HYDRA" list | jq -e ".schema==2" >/dev/null'
+# The schema-2 fields (step 6): every envelope carries them, so a consumer never has
+# to reconstruct "what happened" from data or interpret an exit status.
+check "every success envelope carries outcome and summary" \
+  '"$HYDRA" list --output json | jq -e ".outcome==\"success\" and (.summary|type==\"string\" and length>0)" >/dev/null'
+check "next is omitted rather than null when empty" \
+  '"$HYDRA" list --output json | jq -e "has(\"next\")|not" >/dev/null'
+check "error envelopes carry outcome failure" \
+  '{ "$HYDRA" list --topic nope --output json 2>&1 >/dev/null || true; } | jq -e ".outcome==\"failure\"" >/dev/null'
+check "a terminal error is retryable:false, never absent" \
+  '{ "$HYDRA" list --topic nope --output json 2>&1 >/dev/null || true; } | jq -e ".error|has(\"retryable\") and .retryable==false" >/dev/null'
+check "exit is still absent from the error envelope" \
+  '{ "$HYDRA" list --topic nope --output json 2>&1 >/dev/null || true; } | jq -e ".error|has(\"exit\")|not" >/dev/null'
+check "summary states the actual count" \
+  '[ "$("$HYDRA" list --output json | jq -r .summary)" = "2 worktree(s)" ]'
 check "HYDRA_OUTPUT=text forces text" \
   '! (HYDRA_OUTPUT=text "$HYDRA" list | jq -e . >/dev/null 2>&1)'
 check "text output carries no ANSI" \
@@ -324,7 +338,7 @@ echo "== 10. project registry =="
 check "the workspace registered itself" \
   '"$HYDRA" project ls --output json | jq -e ".data.projects[]|select(.name==\"demo\")|.exists" >/dev/null'
 check "--project resolves from the registry" \
-  '(cd "$T" && "$HYDRA" --project demo list --output json | jq -e ".schema==1" >/dev/null)'
+  '(cd "$T" && "$HYDRA" --project demo list --output json | jq -e ".schema==2" >/dev/null)'
 
 # ------------------------------------------------ 11. agent skill (step 9)
 echo "== 11. agent skill: emitted, installable, thin =="

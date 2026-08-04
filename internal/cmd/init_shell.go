@@ -95,7 +95,7 @@ func runInitShell(cmd *cobra.Command, args []string) error {
 	loader := renderLoaderBlock(shell, helperPath)
 
 	if printFlag || !installFlag {
-		return emit(cmd, map[string]any{
+		return emit(cmd, fmt.Sprintf("shell helper for %s", shell), map[string]any{
 			"shell":  shell,
 			"loader": loader,
 			"helper": helperPath,
@@ -183,7 +183,7 @@ func renderInitShellSummary(cmd *cobra.Command, shell, helperPath, completionPat
 		payload["completion_path"] = completionPath
 	}
 
-	return emit(cmd, payload, nil, func() {
+	return emit(cmd, fmt.Sprintf("shell helper installed for %s", shell), payload, nil, func() {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout())
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), styles.Success.Render(fmt.Sprintf("✓ Shell helper installed for %s", shell)))
 		_, _ = fmt.Fprintln(cmd.OutOrStdout())

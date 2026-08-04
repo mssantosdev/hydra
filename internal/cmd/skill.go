@@ -83,7 +83,7 @@ func runSkill(cmd *cobra.Command, args []string) error {
 		return output.Wrap(output.CodeInternal, err, "failed to install the hydra skill")
 	}
 
-	return emit(cmd, map[string]any{"path": path, "skill": skill.Name}, nil, func() {
+	return emit(cmd, fmt.Sprintf("skill %q installed at %s", skill.Name, path), map[string]any{"path": path, "skill": skill.Name}, nil, func() {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), path)
 	})
 }

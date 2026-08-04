@@ -91,14 +91,17 @@ func TestEmitJSONEnvelope(t *testing.T) {
 	var buf bytes.Buffer
 	data := map[string]any{"total": 2}
 
-	if err := EmitJSON(&buf, "list", data, nil); err != nil {
+	if err := EmitJSON(&buf, "list", Result{Summary: "2 worktree(s)", Data: data}); err != nil {
 		t.Fatalf("EmitJSON: %v", err)
 	}
 
 	var envelope struct {
 		Schema   int            `json:"schema"`
 		Command  string         `json:"command"`
+		Outcome  string         `json:"outcome"`
+		Summary  string         `json:"summary"`
 		Data     map[string]any `json:"data"`
+		Next     []Next         `json:"next"`
 		Warnings []string       `json:"warnings"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
@@ -110,9 +113,49 @@ func TestEmitJSONEnvelope(t *testing.T) {
 	if envelope.Command != "list" {
 		t.Errorf("command = %q, want list", envelope.Command)
 	}
+	// outcome defaults to success so no caller has to special-case its absence.
+	if envelope.Outcome != string(OutcomeSuccess) {
+		t.Errorf("outcome = %q, want %q", envelope.Outcome, OutcomeSuccess)
+	}
+	if envelope.Summary != "2 worktree(s)" {
+		t.Errorf("summary = %q, want the caller's line", envelope.Summary)
+	}
 	// warnings must always be present as an array so consumers can index it.
 	if envelope.Warnings == nil {
 		t.Error("warnings must serialize as [] rather than null")
+	}
+	// next is omitted rather than null when there is nothing to suggest.
+	if envelope.Next != nil {
+		t.Errorf("next = %v, want omitted", envelope.Next)
+	}
+}
+
+// A partial outcome travels on the SUCCESS envelope: the data is real and must not
+// be discarded merely because the process will also exit non-zero.
+func TestEmitJSONCarriesPartialOutcomeAndNext(t *testing.T) {
+	var buf bytes.Buffer
+	err := EmitJSON(&buf, "sync", Result{
+		Outcome: OutcomePartial,
+		Summary: "1 pulled, 1 failed",
+		Data:    map[string]any{"total": 2},
+		Next:    []Next{{Action: "status", Cmd: "hydra status"}},
+	})
+	if err != nil {
+		t.Fatalf("EmitJSON: %v", err)
+	}
+
+	var envelope struct {
+		Outcome string `json:"outcome"`
+		Next    []Next `json:"next"`
+	}
+	if jsonErr := json.Unmarshal(buf.Bytes(), &envelope); jsonErr != nil {
+		t.Fatalf("envelope is not valid JSON: %v\n%s", jsonErr, buf.String())
+	}
+	if envelope.Outcome != string(OutcomePartial) {
+		t.Errorf("outcome = %q, want %q", envelope.Outcome, OutcomePartial)
+	}
+	if len(envelope.Next) != 1 || envelope.Next[0].Cmd != "hydra status" {
+		t.Errorf("next = %v, want the suggested command", envelope.Next)
 	}
 }
 
@@ -127,11 +170,13 @@ func TestEmitErrorEnvelope(t *testing.T) {
 	var envelope struct {
 		Schema  int    `json:"schema"`
 		Command string `json:"command"`
+		Outcome string `json:"outcome"`
 		Error   struct {
-			Code    string         `json:"code"`
-			Message string         `json:"message"`
-			Details map[string]any `json:"details"`
-			Exit    *int           `json:"exit"`
+			Code      string         `json:"code"`
+			Message   string         `json:"message"`
+			Details   map[string]any `json:"details"`
+			Retryable *bool          `json:"retryable"`
+			Exit      *int           `json:"exit"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
@@ -140,12 +185,50 @@ func TestEmitErrorEnvelope(t *testing.T) {
 	if envelope.Error.Code != CodeWorktreeNameConflict {
 		t.Errorf("code = %q, want %q", envelope.Error.Code, CodeWorktreeNameConflict)
 	}
+	if envelope.Outcome != string(OutcomeFailure) {
+		t.Errorf("outcome = %q, want %q", envelope.Outcome, OutcomeFailure)
+	}
 	if envelope.Error.Details["path"] != "/ws/backend/api" {
 		t.Errorf("details = %v, want the path detail", envelope.Error.Details)
+	}
+	// retryable must always be present: its absence is not the same as false, and a
+	// caller decides whether to retry from this field alone.
+	if envelope.Error.Retryable == nil {
+		t.Fatal("retryable must be serialized even when false")
+	}
+	if *envelope.Error.Retryable {
+		t.Error("worktree_name_conflict is terminal, not retryable")
 	}
 	// Exit is transport-internal: the process status carries it, not the payload.
 	if envelope.Error.Exit != nil {
 		t.Error("exit must not be serialized into the envelope")
+	}
+}
+
+// busy is the only retryable code, and the flag is derived from the code so a call
+// site cannot set one without the other.
+func TestRetryableIsDerivedFromCode(t *testing.T) {
+	if got := RetryableCodes(); len(got) != 1 || got[0] != CodeBusy {
+		t.Fatalf("RetryableCodes() = %v, want exactly [busy]", got)
+	}
+
+	if !Errorf(CodeBusy, "locked").Retryable {
+		t.Error("busy must be retryable")
+	}
+	for _, code := range Codes() {
+		if code == CodeBusy {
+			continue
+		}
+		if Errorf(code, "x").Retryable {
+			t.Errorf("%s must be terminal", code)
+		}
+	}
+
+	// A hand-built Error that set neither field is repaired by Classify.
+	classified := Classify(&Error{Code: CodeBusy, Message: "locked"})
+	if !classified.Retryable || classified.Exit != ExitFor(CodeBusy) {
+		t.Errorf("Classify must derive both fields, got retryable=%v exit=%d",
+			classified.Retryable, classified.Exit)
 	}
 }
 

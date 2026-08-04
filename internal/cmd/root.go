@@ -259,9 +259,10 @@ func explicitJSON() bool {
 // emitValue is the funnel for commands whose payload IS a single value the shell
 // consumes (`hydra path`). Auto mode stays text so `cd "$(hydra path api)"` works;
 // only an explicit --output json (or HYDRA_OUTPUT=json) produces an envelope.
-func emitValue(cmd *cobra.Command, data any, warnings []string, text func()) error {
+func emitValue(cmd *cobra.Command, summary string, data any, warnings []string, text func()) error {
 	if explicitJSON() {
-		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), data, warnings)
+		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd),
+			output.Result{Summary: summary, Data: data, Warnings: warnings})
 	}
 	for _, warning := range warnings {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
@@ -273,11 +274,22 @@ func emitValue(cmd *cobra.Command, data any, warnings []string, text func()) err
 }
 
 // emit is the single success funnel: JSON envelope, or the command's text renderer.
-func emit(cmd *cobra.Command, data any, warnings []string, text func()) error {
+//
+// summary is a required argument rather than an optional field, so the compiler —
+// not a reviewer — makes every command state its one-line answer. That is the whole
+// point of the field: a caller should never have to reconstruct "what happened" by
+// walking data.
+func emit(cmd *cobra.Command, summary string, data any, warnings []string, text func()) error {
+	return emitResult(cmd, output.Result{Summary: summary, Data: data, Warnings: warnings}, text)
+}
+
+// emitResult is for commands that carry more than a summary — a partial outcome, or
+// a next suggestion.
+func emitResult(cmd *cobra.Command, result output.Result, text func()) error {
 	if jsonMode() {
-		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), data, warnings)
+		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), result)
 	}
-	for _, warning := range warnings {
+	for _, warning := range result.Warnings {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
 	if text != nil {

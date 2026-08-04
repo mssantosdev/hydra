@@ -64,7 +64,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	}
 
 	if !interactive() {
-		return emit(cmd, configPayload{
+		return emit(cmd, "global configuration", configPayload{
 			Theme:      cfg.Theme.Name,
 			Editor:     cfg.Defaults.Editor,
 			ConfigPath: global.GetConfigPath(),
@@ -138,7 +138,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		Changed:    hasChanges,
 	}
 
-	return emit(cmd, payload, nil, func() {
+	return emit(cmd, "global configuration", payload, nil, func() {
 		fmt.Println(styles.AppHeader.Render(" HYDRA "))
 		fmt.Println()
 		fmt.Println(styles.Title.Render("Configuration"))

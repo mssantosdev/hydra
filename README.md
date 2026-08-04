@@ -262,18 +262,30 @@ Global flags also include `--project <name>`, `--config <path>`, `--verbose`, `-
 On success, stdout contains:
 
 ```json
-{"schema":1,"command":"list","data":{},"warnings":[]}
+{"schema":2,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
 ```
+
+- `outcome` is `success` or `partial`. A partial outcome still carries real `data`: the items that
+  succeeded are reported even though the process also exits `4`.
+- `summary` is the one-line answer, so a caller never has to reconstruct it from `data`.
+- `next` appears only when there is a follow-up worth suggesting, and hydra never acts on it. It is
+  named `next` rather than `breadcrumbs` because breadcrumbs mean where you came from.
 
 ### Error envelope
 
 On failure, stderr contains:
 
 ```json
-{"schema":1,"command":"add","error":{"code":"worktree_name_conflict","message":"…","details":{}}}
+{"schema":2,"command":"add","outcome":"failure","error":{"code":"worktree_name_conflict","retryable":false,"message":"…","details":{}}}
 ```
 
 Branch on `error.code`, not message text. Codes are stable; messages are not.
+
+`retryable` is the one fact a caller cannot derive: the code-to-exit map is published, but "is it worth
+trying again" is not inferable from either the code or the exit status. Only `busy` is retryable.
+
+There is no `exit` field. The process exit status already carries it, and duplicating it in the payload
+would create a second place that could disagree.
 
 ### Error codes and exit codes
 
@@ -287,12 +299,18 @@ Branch on `error.code`, not message text. Codes are stable; messages are not.
 | `branch_unknown` | 1 | branch does not exist where an existing branch was required |
 | `worktree_exists` | 1 | target worktree already exists for that branch |
 | `worktree_unknown` | 1 | named worktree not found |
-| `worktree_name_conflict` | 1 | derived directory name taken by a different branch |
+| `worktree_name_conflict` | 1 | a name does not identify exactly one worktree — a derived directory already taken, or an ambiguous handle |
 | `worktree_dirty` | 5 | destructive op blocked by uncommitted changes |
 | `hook_failed` | 1 | a non-`optional` hook exited non-zero |
 | `shell_helper_missing` | 3 | `switch --cd` with no shell helper installed |
 | `partial_failure` | 4 | some items succeeded, some failed |
 | `git_failed` | 1 | an underlying git invocation failed |
+| `topic_unknown` | 1 | `--topic <id>` is not recorded; `details.known` lists valid ids |
+| `topic_conflict` | 1 | that worktree already belongs to another topic |
+| `state_version_unsupported` | 2 | `.hydra/state.yaml` was written by a newer hydra |
+| `branch_provider_failed` | 1 | a configured `branch_provider` failed or timed out |
+| `busy` | 6 | a git or state lock was held — **the only retryable code** |
+| `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names the flag |
 | `internal` | 1 | anything unclassified |
 
 ### Agent onboarding

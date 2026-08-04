@@ -206,7 +206,7 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	postResult, postErr := runHookEvent("post_remove", hooksContextFor(repo, wt.Branch, wt.Path), projectRoot)
 	warnings = append(warnings, postResult.Warnings...)
 
-	emitErr := emit(cmd, result, warnings, func() {
+	emitErr := emit(cmd, removeSummaryLine(result), result, warnings, func() {
 		fmt.Println()
 		fmt.Println(styles.Success.Render("✓ Worktree removed"))
 		fmt.Printf("  Path:   %s\n", result.Path)
@@ -223,6 +223,22 @@ func runRemove(cmd *cobra.Command, args []string) error {
 		return emitErr
 	}
 	return postErr
+}
+
+// removeSummaryLine names what actually happened, including the topic detach, so a
+// caller does not have to diff state to find out.
+func removeSummaryLine(result removeResult) string {
+	summary := fmt.Sprintf("removed %s/%s", result.Group, result.Repo)
+	if result.Branch != "" {
+		summary += " on " + result.Branch
+	}
+	if result.BranchDeleted {
+		summary += ", branch deleted"
+	}
+	if result.Topic != nil {
+		summary += fmt.Sprintf(", detached from topic %q", *result.Topic)
+	}
+	return summary
 }
 
 // resolveRemoveTarget accepts "<alias> <branch>", a worktree handle, or prompts.

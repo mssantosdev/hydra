@@ -140,7 +140,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	entries, collectWarnings := gatherSyncEntries(cfg, projectRoot, targetAlias)
 	if len(entries) == 0 {
 		data := syncJSON{Project: cfg.Project, Root: projectRoot, Worktrees: []syncWorktreeJSON{}, Summary: syncSummaryJSON{}}
-		return emit(cmd, data, collectWarnings, func() { log.Info("No worktrees found to sync") })
+		return emit(cmd, "no worktrees to sync", data, collectWarnings, func() { log.Info("No worktrees found to sync") })
 	}
 	if err := fetchSyncRepos(entries); err != nil {
 		return err
@@ -151,7 +151,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if len(candidates) == 0 {
 		results := buildIdleResults(entries)
 		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
-		return emit(cmd, data, collectWarnings, func() { printSyncText(results, data.Summary) })
+		return emit(cmd, syncSummaryLine(data.Summary), data, collectWarnings, func() { printSyncText(results, data.Summary) })
 	}
 	if !jsonMode() {
 		log.Info(fmt.Sprintf("Found %d worktree(s) with available updates", len(candidates)))
@@ -169,7 +169,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if len(selected) == 0 {
 		results := mergeSyncResults(entries, nil, nil)
 		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
-		return emit(cmd, data, collectWarnings, func() { log.Info("No worktrees selected for sync") })
+		return emit(cmd, "no worktrees selected", data, collectWarnings, func() { log.Info("No worktrees selected for sync") })
 	}
 	if syncForce {
 		applyForceDirty(selected)
@@ -180,13 +180,25 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if len(selected) == 0 {
 		results := mergeSyncResults(entries, nil, nil)
 		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
-		return emit(cmd, data, collectWarnings, func() { log.Info("No worktrees selected for sync") })
+		return emit(cmd, "no worktrees selected", data, collectWarnings, func() { log.Info("No worktrees selected for sync") })
 	}
 	ops, hookWarnings := executeSync(selected)
 	allWarnings := append(collectWarnings, hookWarnings...)
 	results := mergeSyncResults(entries, selected, ops)
 	data, summary := buildSyncOutput(cfg.Project, projectRoot, results)
-	if err := emit(cmd, data, allWarnings, func() { printSyncText(results, summary) }); err != nil {
+	// A partial failure is reported on the SUCCESS envelope as outcome=partial: the
+	// pulls that landed are real data, and a caller reading stdout must be able to
+	// see both what worked and that something did not.
+	outcome := output.OutcomeSuccess
+	if summary.Failed > 0 {
+		outcome = output.OutcomePartial
+	}
+	if err := emitResult(cmd, output.Result{
+		Outcome:  outcome,
+		Summary:  syncSummaryLine(summary),
+		Data:     data,
+		Warnings: allWarnings,
+	}, func() { printSyncText(results, summary) }); err != nil {
 		return err
 	}
 	// A hook failure no longer aborts the command: it is reported as a warning and
@@ -196,6 +208,28 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return output.Errorf(output.CodePartialFailure, "%d worktree(s) failed to sync", len(failed)).WithDetail("worktrees", failed)
 	}
 	return nil
+}
+
+// syncSummaryLine reports only the non-zero states, so "everything is current" is a
+// short sentence rather than five zeroes a reader has to scan.
+func syncSummaryLine(summary syncSummaryJSON) string {
+	var parts []string
+	if summary.Pulled > 0 {
+		parts = append(parts, fmt.Sprintf("%d pulled", summary.Pulled))
+	}
+	if summary.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", summary.Failed))
+	}
+	if summary.Skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", summary.Skipped))
+	}
+	if summary.LocalOnly > 0 {
+		parts = append(parts, fmt.Sprintf("%d local-only", summary.LocalOnly))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("%d worktree(s) already up to date", summary.Total)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func detectSyncAlias(wd string) string {

@@ -116,7 +116,7 @@ func runProjectLs(cmd *cobra.Command, args []string) error {
 		Pruned:   pruned,
 	}
 
-	return emit(cmd, payload, nil, func() {
+	return emit(cmd, fmt.Sprintf("%d registered project(s)", len(entries)), payload, nil, func() {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Registry: %s\n\n", registry.Path())
 		if len(entries) == 0 {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No registered projects.")
@@ -178,7 +178,7 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 		"name": name,
 		"root": root,
 	}
-	return emit(cmd, payload, nil, func() {
+	return emit(cmd, fmt.Sprintf("registered project %q", name), payload, nil, func() {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Registered project %q at %s\n", name, root)
 	})
 }
@@ -203,7 +203,7 @@ func runProjectRm(cmd *cobra.Command, args []string) error {
 	}
 
 	payload := map[string]any{"name": name, "removed": true}
-	return emit(cmd, payload, nil, func() {
+	return emit(cmd, fmt.Sprintf("removed project %q from the registry", name), payload, nil, func() {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Removed project %q from registry\n", name)
 	})
 }

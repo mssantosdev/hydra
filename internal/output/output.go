@@ -13,7 +13,7 @@ import (
 )
 
 // Schema is the envelope schema version.
-const Schema = 1
+const Schema = 2
 
 // Mode selects the rendering of a command's result.
 type Mode int
@@ -87,27 +87,80 @@ func isTTY(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
+// Outcome is the envelope-level verdict, so a consumer reading stdout alone knows
+// how the run went without parsing data or interpreting an exit status.
+type Outcome string
+
+const (
+	// OutcomeSuccess means every item reached its desired state.
+	OutcomeSuccess Outcome = "success"
+	// OutcomePartial means some items succeeded and some failed. It appears on a
+	// SUCCESS envelope: the data is real and must not be thrown away just because
+	// the process will also exit 4 and print an error envelope on stderr.
+	OutcomePartial Outcome = "partial"
+	// OutcomeFailure is carried by error envelopes.
+	OutcomeFailure Outcome = "failure"
+)
+
+// Next is a suggested follow-up command.
+//
+// Named next, not breadcrumbs: breadcrumbs mean where you came from. It may
+// suggest attaching after an unknown topic, but hydra must never act on it.
+type Next struct {
+	Action string `json:"action"`
+	Cmd    string `json:"cmd"`
+}
+
 type successEnvelope struct {
 	Schema   int      `json:"schema"`
 	Command  string   `json:"command"`
+	Outcome  Outcome  `json:"outcome"`
+	Summary  string   `json:"summary"`
 	Data     any      `json:"data"`
+	Next     []Next   `json:"next,omitempty"`
 	Warnings []string `json:"warnings"`
 }
 
 type errorEnvelope struct {
-	Schema  int    `json:"schema"`
-	Command string `json:"command"`
-	Error   *Error `json:"error"`
+	Schema  int     `json:"schema"`
+	Command string  `json:"command"`
+	Outcome Outcome `json:"outcome"`
+	Error   *Error  `json:"error"`
+}
+
+// Result is what a command emits on success.
+//
+// Summary is a required one-line answer. It exists because the alternative — a
+// caller reconstructing "what happened" from data — is the exact cost this envelope
+// is supposed to remove, for a human reading a terminal and an agent alike.
+type Result struct {
+	Outcome  Outcome
+	Summary  string
+	Data     any
+	Next     []Next
+	Warnings []string
 }
 
 // EmitJSON writes a success envelope.
-func EmitJSON(w io.Writer, cmd string, data any, warnings []string) error {
-	if warnings == nil {
-		warnings = []string{}
+func EmitJSON(w io.Writer, cmd string, r Result) error {
+	if r.Outcome == "" {
+		r.Outcome = OutcomeSuccess
+	}
+	if r.Warnings == nil {
+		r.Warnings = []string{}
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(successEnvelope{Schema: Schema, Command: cmd, Data: data, Warnings: warnings}); err != nil {
+	envelope := successEnvelope{
+		Schema:   Schema,
+		Command:  cmd,
+		Outcome:  r.Outcome,
+		Summary:  r.Summary,
+		Data:     r.Data,
+		Next:     r.Next,
+		Warnings: r.Warnings,
+	}
+	if err := enc.Encode(envelope); err != nil {
 		return fmt.Errorf("failed to encode output: %w", err)
 	}
 	return nil
@@ -117,7 +170,8 @@ func EmitJSON(w io.Writer, cmd string, data any, warnings []string) error {
 func EmitError(w io.Writer, cmd string, e *Error) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(errorEnvelope{Schema: Schema, Command: cmd, Error: e}); err != nil {
+	envelope := errorEnvelope{Schema: Schema, Command: cmd, Outcome: OutcomeFailure, Error: e}
+	if err := enc.Encode(envelope); err != nil {
 		return fmt.Errorf("failed to encode error output: %w", err)
 	}
 	return nil

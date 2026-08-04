@@ -116,7 +116,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return emit(cmd, result, nil, func() {
+	return emit(cmd, fmt.Sprintf("switched to %s", wt.Qualified()), result, nil, func() {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), wt.Path)
 		if !helperActive {
 			_, _ = fmt.Fprintln(os.Stderr, "hint: run \"hydra init-shell\" to have switch change directory for you; \"hydra path\" is the scriptable form")

@@ -100,9 +100,41 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		data = statusProjectPayload{Summary: statusSummaryJSON{}, Worktrees: []worktreeJSON{}}
 	}
 
-	return emit(cmd, data, warnings, func() {
+	return emit(cmd, statusSummaryLine(payloads, grandTotal), data, warnings, func() {
 		renderStatusText(cmd, statusAll, payloads)
 	})
+}
+
+// statusSummaryLine renders the one-line answer for the envelope.
+//
+// It reports only the states that are actionable: a caller wants to know whether
+// anything needs attention, and "12 clean" says that better than six zero counts.
+func statusSummaryLine(payloads []statusProjectPayload, total int) string {
+	var dirty, behind, ahead, detached int
+	for _, project := range payloads {
+		dirty += project.Summary.Dirty
+		behind += project.Summary.Behind
+		ahead += project.Summary.Ahead
+		detached += project.Summary.Detached
+	}
+
+	var parts []string
+	if dirty > 0 {
+		parts = append(parts, fmt.Sprintf("%d dirty", dirty))
+	}
+	if behind > 0 {
+		parts = append(parts, fmt.Sprintf("%d behind", behind))
+	}
+	if ahead > 0 {
+		parts = append(parts, fmt.Sprintf("%d ahead", ahead))
+	}
+	if detached > 0 {
+		parts = append(parts, fmt.Sprintf("%d detached", detached))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("%d worktree(s), all clean", total)
+	}
+	return fmt.Sprintf("%d worktree(s): %s", total, strings.Join(parts, ", "))
 }
 
 func summarizeStatus(items []worktreeJSON) statusSummaryJSON {

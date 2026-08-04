@@ -177,7 +177,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 		Worktrees: worktrees,
 	}
 
-	return emit(cmd, payload, nil, func() {
+	return emit(cmd, fmt.Sprintf("adopted %s with %d worktree(s)", alias, len(worktrees)), payload, nil, func() {
 		fmt.Printf("Adopted %s into %s/%s (%d worktree(s))\n", alias, adoptGroup, alias, len(worktrees))
 	})
 }

@@ -170,7 +170,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	failures := countDoctorFailures(reports)
-	if err := emit(cmd, payload, warnings, func() { printDoctorText(reports) }); err != nil {
+	if err := emit(cmd, doctorSummaryLine(reports, failures), payload, warnings, func() { printDoctorText(reports) }); err != nil {
 		return err
 	}
 	if failures > 0 {
@@ -178,6 +178,35 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			"%d health check(s) failed; re-run with --output json for details", failures)
 	}
 	return nil
+}
+
+// doctorSummaryLine states whether the workspace needs attention and whether hydra
+// can fix it, which is the only thing a caller does next.
+func doctorSummaryLine(reports []doctorReport, failures int) string {
+	var checks, fixable, fixed int
+	for _, report := range reports {
+		for _, check := range report.Checks {
+			checks++
+			if check.Fixed {
+				fixed++
+				continue
+			}
+			if check.Status == "fail" && check.Fixable {
+				fixable++
+			}
+		}
+	}
+
+	switch {
+	case fixed > 0 && failures == 0:
+		return fmt.Sprintf("%d check(s), %d fixed, healthy", checks, fixed)
+	case failures == 0:
+		return fmt.Sprintf("%d check(s), healthy", checks)
+	case fixable > 0:
+		return fmt.Sprintf("%d check(s), %d failing (%d fixable with --fix)", checks, failures, fixable)
+	default:
+		return fmt.Sprintf("%d check(s), %d failing, none auto-fixable", checks, failures)
+	}
 }
 
 func diagnoseProject(cfg *config.Config, projectRoot, projectName string) doctorReport {

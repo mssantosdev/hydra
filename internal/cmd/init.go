@@ -100,7 +100,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	result := initResult{Project: created.Project, Root: root, ConfigPath: configPath}
 
-	return emit(cmd, result, nil, func() {
+	return emit(cmd, fmt.Sprintf("workspace %q initialised", result.Project), result, nil, func() {
 		fmt.Println()
 		fmt.Println(styles.Success.Render("✓ Hydra workspace initialized"))
 		fmt.Printf("  Project: %s\n", result.Project)

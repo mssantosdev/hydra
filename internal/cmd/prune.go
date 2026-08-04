@@ -136,7 +136,18 @@ func runPrune(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return emit(cmd, result, nil, func() { printPruneText(result) })
+	return emit(cmd, prunePayloadSummary(result), result, nil, func() { printPruneText(result) })
+}
+
+// prunePayloadSummary distinguishes a dry run from a real one, because "3 removed"
+// and "3 would be removed" are not the same answer.
+func prunePayloadSummary(result pruneJSON) string {
+	verb := "removed"
+	if pruneDryRun {
+		verb = "would remove"
+	}
+	return fmt.Sprintf("%s %d worktree registration(s), %d group dir(s), %d project(s)",
+		verb, len(result.PrunedWorktrees), len(result.RemovedGroups), len(result.PrunedProjects))
 }
 
 func printPruneText(result pruneJSON) {

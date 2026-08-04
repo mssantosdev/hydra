@@ -299,7 +299,7 @@ func runGlossary(cmd *cobra.Command, args []string) error {
 	if !interactive() {
 		data := glossaryData()
 		text := renderGlossaryText()
-		return emit(cmd, data, nil, func() {
+		return emit(cmd, fmt.Sprintf("%d glossary terms", len(data.Terms)), data, nil, func() {
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), text)
 			if !strings.HasSuffix(text, "\n") {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout())

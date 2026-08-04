@@ -67,19 +67,21 @@ Global flags: `--output auto|text|json`, `--project <name>`, `--config <path>`, 
 
 ## Contract
 
-Success, on stdout:
+Success, on stdout. `outcome` is `success` or `partial`; `summary` is the one-line answer;
+`next` is present only when there is a suggestion, and hydra never acts on it:
 
 ```json
-{"schema":1,"command":"list","data":{},"warnings":[]}
+{"schema":2,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
 ```
 
-Failure, on stderr:
+Failure, on stderr. `retryable` is the one fact you cannot derive — only `busy` is `true`:
 
 ```json
-{"schema":1,"command":"add","error":{"code":"worktree_name_conflict","message":"…","details":{}}}
+{"schema":2,"command":"add","outcome":"failure","error":{"code":"worktree_name_conflict","retryable":false,"message":"…","details":{}}}
 ```
 
-`--output auto` (the default) emits JSON whenever stdout is not a terminal.
+`--output auto` (the default) emits JSON whenever stdout is not a terminal. There is no `exit` field:
+the process exit status carries it.
 
 | code | exit | raised when |
 |---|---|---|
@@ -110,11 +112,8 @@ Failure, on stderr:
 - Building `<group>/<repo>-<branch>` yourself instead of reading `data[].path` — `--as` may have
   overridden the directory name, and `/` in a branch becomes `-`.
 - Treating `upstream: null` as a failure; it is a branch with no upstream yet.
-- Assuming exit 1 for every failure: `not_in_project` 2, `shell_helper_missing` 3, `partial_failure` 4, `worktree_dirty` 5, `busy` 6 (retry this one), `needs_input` 7.
+- Branching on the exit status instead of `error.code` and `error.retryable`; only `busy` is retryable.
 - Calling `hydra switch` from a script to find a path; use `hydra path`.
-- Reacting to a `hook_failed` from `add` by deleting the worktree — the worktree was created
-  correctly. Fix the hook and run `hydra hooks run post_add`.
-- Retrying `remove --delete-branch` with `--force` after a `git_failed` refusal: the refusal means
-  the branch is NOT merged into the default branch, and nothing was removed. Confirm with the user.
-- Deleting `.bare/<alias>.git` after an interrupted clone; re-run the same `hydra clone` and it
-  completes. `hydra doctor` reports the half-built state as `bare_unregistered`.
+- Deleting the worktree after `hook_failed` from `add` — it was created correctly; fix the hook and run `hydra hooks run post_add`.
+- Retrying `remove --delete-branch --force` after a `git_failed` refusal: the branch is NOT merged and nothing was removed. Ask the user.
+- Deleting `.bare/<alias>.git` after an interrupted clone; re-run the same `hydra clone` — it is convergent and completes.

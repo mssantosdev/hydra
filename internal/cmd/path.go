@@ -152,7 +152,7 @@ func runPath(cmd *cobra.Command, args []string) error {
 		Repo:   wt.RepoContext.Alias,
 		Branch: wt.Branch,
 	}
-	return emitValue(cmd, result, nil, func() {
+	return emitValue(cmd, wt.Path, result, nil, func() {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), wt.Path)
 	})
 }
