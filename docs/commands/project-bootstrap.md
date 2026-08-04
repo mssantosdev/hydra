@@ -14,7 +14,7 @@ Initialize Hydra in the current directory.
 
 ### Description
 
-Creates `.hydra.yaml` (schema v2) and `.bare/` in the current directory, then registers the project in the global registry (`<config-dir>/projects.yaml`).
+Creates `.hydra/config.yaml` (schema v2) and `.bare/` in the current directory, then registers the project in the global registry (`<config-dir>/projects.yaml`).
 
 ### Usage
 
@@ -26,11 +26,11 @@ hydra init --project-name my-project
 ### Creates
 
 ```text
-./.hydra.yaml
+./.hydra/config.yaml
 ./.bare/
 ```
 
-Add repositories with `hydra clone`, `hydra new`, or by editing `.hydra.yaml` and running `hydra doctor`.
+Add repositories with `hydra clone`, `hydra new`, or by editing `.hydra/config.yaml` and running `hydra doctor`.
 
 ---
 
@@ -40,7 +40,7 @@ Create a new Hydra project and bootstrap the first repository.
 
 ### Description
 
-Interactive flow that creates a project root, `.hydra.yaml`, `.bare/`, and the first worktree. Modes:
+Interactive flow that creates a project root, `.hydra/config.yaml`, `.bare/`, and the first worktree. Modes:
 
 1. **Create local repo** — initialize a new Git repository
 2. **Clone remote repo** — clone from a URL
@@ -81,7 +81,7 @@ Local Repository Directory: api-repo
 On disk (schema v2):
 
 ```text
-./client-a/api-platform/.hydra.yaml
+./client-a/api-platform/.hydra/config.yaml
 ./client-a/api-platform/.bare/api.git/
 ./client-a/api-platform/backend/api/    # real worktree, not a symlink
 ```
@@ -111,7 +111,7 @@ hydra clone <url> --branches main,develop
 | Flag | Description |
 |------|-------------|
 | `--group` | Group name for the repository |
-| `--alias` | Repo alias (map key in `.hydra.yaml`) |
+| `--alias` | Repo alias (map key in `.hydra/config.yaml`) |
 | `--branches` | Comma-separated branches to check out as worktrees |
 | `--all` | Create a worktree for every branch on origin |
 | `--yes` | Skip confirmation prompts |
@@ -119,7 +119,7 @@ hydra clone <url> --branches main,develop
 
 ### Behavior
 
-1. Registers the repo under `groups.<group>.<alias>` in `.hydra.yaml`
+1. Registers the repo under `groups.<group>.<alias>` in `.hydra/config.yaml`
 2. Creates bare git data at `.bare/<alias>.git` with an explicit
    `remote.origin.fetch` refspec, then fetches
 3. Records the resolved `default_branch`
@@ -132,7 +132,7 @@ Default-branch worktrees use `<group>/<alias>/`. Other branches use `<group>/<al
 
 Registration happens in step 1, **before** the network fetch in step 2. Cloning a
 large repository takes minutes, and an interrupted fetch used to leave
-`.bare/<alias>.git` on disk with nothing in `.hydra.yaml` referencing it — an orphan
+`.bare/<alias>.git` on disk with nothing in `.hydra/config.yaml` referencing it — an orphan
 every command ignored, while the directory looked cloned. Registering first means an
 interruption always leaves a repo hydra can see:
 
@@ -159,7 +159,7 @@ hydra adopt --group backend --alias api /path/to/existing/checkout
 
 ### Description
 
-Converts a standalone repository into a Hydra-managed repo: bare storage under `.bare/<alias>.git`, worktree at the expected group path, and an updated `.hydra.yaml` entry.
+Converts a standalone repository into a Hydra-managed repo: bare storage under `.bare/<alias>.git`, worktree at the expected group path, and an updated `.hydra/config.yaml` entry.
 
 Use when you already have a checkout and want to bring it under Hydra without re-cloning.
 
@@ -186,6 +186,6 @@ Use `hydra --project <name>` from any directory to target a registered workspace
 
 ## See Also
 
-- [Configuration](../configuration.md) — `.hydra.yaml` fields
+- [Configuration](../configuration.md) — `.hydra/config.yaml` fields
 - [Worktree Management](./worktree-management.md) — `add` / `remove` after bootstrap
 - [Commands index](./README.md) — full command list

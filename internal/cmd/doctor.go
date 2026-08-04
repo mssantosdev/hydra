@@ -54,7 +54,7 @@ DESCRIPTION
   subset marked fixable.
 
 WHEN TO USE
-  • After upgrading hydra or hand-editing .hydra.yaml
+  • After upgrading hydra or hand-editing .hydra/config.yaml
   • When worktrees behave oddly (missing upstream, stale registrations)
   • Before prune/adopt to understand what will be touched
   • In CI to assert workspace invariants with --output json
@@ -549,7 +549,7 @@ func diagnoseRegistry() []doctorCheck {
 	if len(dangling) > 0 {
 		return []doctorCheck{{
 			ID: checkRegistryDangling, Status: "fail",
-			Message: "registry entries without .hydra.yaml: " + strings.Join(dangling, ", "),
+			Message: "registry entries without .hydra/config.yaml: " + strings.Join(dangling, ", "),
 			Fixable: true,
 		}}
 	}

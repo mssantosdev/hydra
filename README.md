@@ -49,7 +49,7 @@ cd ~/projects/my-project
 hydra init
 ```
 
-This creates `.hydra.yaml` configuration file.
+This creates `.hydra/config.yaml` configuration file.
 
 ### 2. Setup Shell Integration (Recommended)
 
@@ -108,7 +108,7 @@ Hydra keeps bare git data separate from real working directories. Worktrees are 
 
 ```text
 <project-root>/
-  .hydra.yaml
+  .hydra/config.yaml     # shared manifest
   .bare/
     api.git/              # git data only — never cd into or write here
     web.git/
@@ -130,7 +130,7 @@ Complete documentation is in [`docs/`](docs/):
 - **[Commands](docs/commands/README.md)** — Complete command reference
   - [Worktree Management](docs/commands/worktree-management.md) — `add`, `remove`
   - [Project Bootstrap](docs/commands/project-bootstrap.md) — `new`, `init`, `clone`, `adopt`
-- **[Configuration](docs/configuration.md)** — `.hydra.yaml` schema v2
+- **[Configuration](docs/configuration.md)** — `.hydra/config.yaml` schema v2
 
 For AI agents and automation, use the embedded skill contract:
 
@@ -140,7 +140,7 @@ For AI agents and automation, use the embedded skill contract:
 
 ## Example Configuration
 
-`.hydra.yaml` (schema v2):
+`.hydra/config.yaml` (schema v2):
 
 ```yaml
 version: "2"
@@ -279,8 +279,8 @@ Branch on `error.code`, not message text. Codes are stable; messages are not.
 
 | code | exit | raised when |
 |------|------|-------------|
-| `not_in_project` | 2 | no `.hydra.yaml` found walking up, and no `--project` |
-| `config_version_unsupported` | 2 | `.hydra.yaml` `version` is not `"2"` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` found walking up, and no `--project` |
+| `config_version_unsupported` | 2 | `.hydra/config.yaml` `version` is not `"2"` |
 | `project_unknown` | 2 | `--project <name>` not in the registry |
 | `repo_unknown` | 1 | alias not present in any group |
 | `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |
@@ -334,7 +334,7 @@ Without the helper, `hydra switch` still prints the worktree path and exits 0. O
 
 ## Configuration
 
-Project configuration lives in `.hydra.yaml` at the workspace root. Global user settings (theme, editor) are stored in:
+Project configuration lives in `.hydra/config.yaml` at the workspace root. Global user settings (theme, editor) are stored in:
 
 - Linux: `~/.config/hydra/config.yaml`
 - macOS: `~/Library/Application Support/hydra/config.yaml`

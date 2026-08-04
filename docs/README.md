@@ -27,7 +27,7 @@ Hydra helps you work with multiple Git branches simultaneously by creating separ
 
 ```text
 <project-root>/
-  .hydra.yaml
+  .hydra/config.yaml     # shared manifest
   .bare/api.git/          # git data only
   backend/
     api/                  # default-branch worktree
@@ -106,7 +106,7 @@ Detailed pages:
 
 ### [Configuration](./configuration.md)
 
-- `.hydra.yaml` schema v2
+- `.hydra/config.yaml` schema v2
 - Group and alias layout
 - Hooks and environment variables
 - Global project registry
@@ -147,8 +147,8 @@ Hydra uses stable `error.code` values in JSON output. Full table:
 
 | code | exit | raised when |
 |------|------|-------------|
-| `not_in_project` | 2 | no `.hydra.yaml` found walking up, and no `--project` |
-| `config_version_unsupported` | 2 | `.hydra.yaml` `version` is not `"2"` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` found walking up, and no `--project` |
+| `config_version_unsupported` | 2 | `.hydra/config.yaml` `version` is not `"2"` |
 | `project_unknown` | 2 | `--project <name>` not in the registry |
 | `repo_unknown` | 1 | alias not present in any group |
 | `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |

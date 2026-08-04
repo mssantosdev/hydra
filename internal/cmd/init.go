@@ -27,10 +27,10 @@ type initResult struct {
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Create a hydra workspace in the current directory",
-	Long: `Create a .hydra.yaml workspace configuration.
+	Long: `Create a .hydra/config.yaml workspace configuration.
 
 DESCRIPTION
-  Writes a schema v2 .hydra.yaml into the current directory (or --path) and
+  Writes a schema v2 .hydra/config.yaml into the current directory (or --path) and
   registers the workspace in hydra's global project registry, so it can later be
   addressed by name with --project.
 

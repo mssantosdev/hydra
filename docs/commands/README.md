@@ -12,7 +12,7 @@ Complete reference for all Hydra commands. Global flags on every command:
 |------|-------------|
 | `--output auto\|text\|json` | Output mode (`HYDRA_OUTPUT` env override; `auto` → JSON when stdout is not a TTY) |
 | `--project <name>` | Target a registered project by name |
-| `--config <path>` | Path to `.hydra.yaml` |
+| `--config <path>` | Path to `.hydra/config.yaml` |
 | `--verbose` | Verbose logging |
 | `--yes` | Skip confirmation prompts |
 | `--no-hooks` | Skip all configured hooks |
@@ -136,7 +136,7 @@ Run this first when anything looks wrong. Each check reports a stable `id` plus
 | `missing_fetch_refspec` | `remote.origin.fetch` absent, so no remote-tracking refs exist | yes |
 | `missing_origin_head` | `refs/remotes/origin/HEAD` unset | yes |
 | `branch_no_upstream` | branch exists on origin but the worktree has no upstream | yes |
-| `bare_unregistered` | a bare repo on disk that `.hydra.yaml` does not claim, typically left by an interrupted clone | no — re-run the clone to finish it, or delete the directory |
+| `bare_unregistered` | a bare repo on disk that `.hydra/config.yaml` does not claim, typically left by an interrupted clone | no — re-run the clone to finish it, or delete the directory |
 | `worktree_inside_gitdir` | worktree path under `<bare_dir>/` (legacy layout) | no — re-create the worktree |
 | `legacy_symlink` | a symlink in a group dir pointing into `<bare_dir>` | yes (deleted) |
 | `worktree_missing_on_disk` | registered in git but the directory is gone | yes |
@@ -144,7 +144,7 @@ Run this first when anything looks wrong. Each check reports a stable `id` plus
 | `stale_git_state` | an in-progress rebase/merge/cherry-pick | no — reported only, never touched |
 | `worktree_detached` | worktree is on a detached HEAD | no |
 | `worktree_dirty` | uncommitted changes | no |
-| `registry_dangling` | a registry entry whose root has no `.hydra.yaml` | yes |
+| `registry_dangling` | a registry entry whose root has no `.hydra/config.yaml` | yes |
 
 A repository with no `origin` at all (created by `hydra new` without a remote) is a
 valid local-only state, not damage: the two remote checks report `ok` for it.
@@ -174,7 +174,7 @@ hydra project ls --prune    # drop entries whose roots no longer exist
 
 ## hydra hooks
 
-Inspect or manually run hook chains from `.hydra.yaml`.
+Inspect or manually run hook chains from `.hydra/config.yaml`.
 
 ```bash
 hydra hooks ls
@@ -259,8 +259,8 @@ Need cleanup?
 
 | code | exit | raised when |
 |------|------|-------------|
-| `not_in_project` | 2 | no `.hydra.yaml` found walking up, and no `--project` |
-| `config_version_unsupported` | 2 | `.hydra.yaml` `version` is not `"2"` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` found walking up, and no `--project` |
+| `config_version_unsupported` | 2 | `.hydra/config.yaml` `version` is not `"2"` |
 | `project_unknown` | 2 | `--project <name>` not in the registry |
 | `repo_unknown` | 1 | alias not present in any group |
 | `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |
@@ -279,7 +279,7 @@ In JSON mode, branch on `error.code` — never on message text.
 
 ## See Also
 
-- [Configuration](../configuration.md) — `.hydra.yaml` schema v2
+- [Configuration](../configuration.md) — `.hydra/config.yaml` schema v2
 - [skills/hydra/SKILL.md](../../skills/hydra/SKILL.md) — Agent contract
 - [Worktree Management](./worktree-management.md) — `add` / `remove` details
 - [Project Bootstrap](./project-bootstrap.md) — `new` / `init` / `clone` / `adopt`

@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SchemaVersion is the only .hydra.yaml schema version this binary understands.
+// SchemaVersion is the only .hydra/config.yaml schema version this binary understands.
 // It is the CONFIG schema version and is unrelated to hydra's release version.
 // There is no compatibility layer: older workspaces are re-created by hand.
 const SchemaVersion = "2"
@@ -98,7 +98,7 @@ func (c *Config) Save(path string) error {
 	return nil
 }
 
-// ErrUnsupportedVersion reports a .hydra.yaml whose schema version this binary
+// ErrUnsupportedVersion reports a .hydra/config.yaml whose schema version this binary
 // cannot read. It is mapped to the config_version_unsupported error code.
 type ErrUnsupportedVersion struct {
 	Path    string

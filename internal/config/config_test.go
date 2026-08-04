@@ -156,7 +156,7 @@ func TestFindConfigWalksUp(t *testing.T) {
 	}
 
 	if _, _, err := FindConfig(t.TempDir()); err == nil {
-		t.Error("FindConfig must fail when no .hydra.yaml exists anywhere above")
+		t.Error("FindConfig must fail when no .hydra/config.yaml exists anywhere above")
 	}
 }
 

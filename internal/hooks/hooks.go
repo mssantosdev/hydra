@@ -1,5 +1,5 @@
 // Package hooks runs the declarative per-event shell commands configured in
-// .hydra.yaml.
+// .hydra/config.yaml.
 package hooks
 
 import (

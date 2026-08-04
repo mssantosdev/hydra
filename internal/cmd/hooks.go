@@ -17,7 +17,7 @@ var hooksWorktree string
 var hooksCmd = &cobra.Command{
 	Use:   "hooks",
 	Short: "Inspect and run lifecycle hooks",
-	Long: `Inspect and manually run the declarative shell hooks configured in .hydra.yaml.
+	Long: `Inspect and manually run the declarative shell hooks configured in .hydra/config.yaml.
 
 DESCRIPTION
   Hooks run via sh -c in a chosen working directory. Each hook receives HYDRA_*

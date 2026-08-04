@@ -56,7 +56,7 @@ func TestClone_LocalRemoteSiblingLayout(t *testing.T) {
 // TestClone_ResumesInterruptedClone is the regression guard for the real-world
 // cause of "repos got disconnected": InitBareWithRemote performs a full network
 // fetch, and an interruption during it used to leave <bare_dir>/<alias>.git on disk
-// with nothing in .hydra.yaml referencing it. Every command then ignored the repo
+// with nothing in .hydra/config.yaml referencing it. Every command then ignored the repo
 // while the user saw a directory that looked cloned.
 //
 // This simulates that exact half-built state and asserts a re-run converges.

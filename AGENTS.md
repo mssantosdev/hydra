@@ -8,7 +8,7 @@ projects → groups → repos → git worktrees.
 
 The four levels are the whole model:
 
-- **project** — a workspace root holding `.hydra.yaml`, registered by name in a global registry.
+- **project** — a workspace root holding `.hydra/config.yaml`, registered by name in a global registry.
 - **group** — a directory under the project root grouping related repos (`backend`, `core`, …).
 - **repo** — an alias registered under a group; the alias is the single source of both the bare
   path (`<bare_dir>/<alias>.git`) and the worktree directory base name.
@@ -41,7 +41,7 @@ Documentation ships in the same change as the code and describes the current sys
 
 - Command behavior, flags, and exit codes → the command's `Long` help **and** `README.md`. The
   `EXIT CODES` block of every command must match the `internal/output` error-code table exactly.
-- Config schema → `docs/configuration.md` and `.hydra.yaml.example`, together.
+- Config schema → `docs/configuration.md` and `hydra.config.yaml.example`, together.
 - The agent-facing contract → `skills/hydra/SKILL.md` only (see below). Never add a second
   agent-facing document; a hand-maintained duplicate rots, which this repo has already proven.
 - Never leave a dead link. Either write the file or drop the link; there is no third option.

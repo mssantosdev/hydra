@@ -268,7 +268,7 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 
 	// Register the repo BEFORE any network work. InitBareWithRemote performs a full
 	// fetch, and an interruption during it used to leave <bare_dir>/<alias>.git on
-	// disk with nothing in .hydra.yaml referencing it — an orphan that every command
+	// disk with nothing in .hydra/config.yaml referencing it — an orphan that every command
 	// ignored while the user saw a directory that looked cloned. Registering first
 	// means an interrupted clone always leaves a repo hydra can see, `hydra doctor`
 	// can diagnose, and re-running this command can finish.

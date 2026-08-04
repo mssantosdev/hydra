@@ -16,7 +16,7 @@ import (
 	"github.com/mssantosdev/hydra/internal/topic"
 )
 
-// repoContext is a repo registered in .hydra.yaml, resolved against a project root.
+// repoContext is a repo registered in .hydra/config.yaml, resolved against a project root.
 type repoContext struct {
 	Group         string
 	Alias         string

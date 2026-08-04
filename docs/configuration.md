@@ -1,12 +1,12 @@
 ---
 title: "Configuration"
-description: "Hydra .hydra.yaml schema v2 specification"
-ai_context: "Complete .hydra.yaml specification for schema version 2"
+description: "Hydra .hydra/config.yaml schema v2 specification"
+ai_context: "Complete .hydra/config.yaml specification for schema version 2"
 ---
 
 # Configuration
 
-Hydra uses a `.hydra.yaml` file in your project root (schema version `"2"`). Hydra walks up from the current directory until it finds one; there is no migration path from older schemas — re-create the workspace with `hydra init` if needed.
+Hydra uses a `.hydra/config.yaml` file in your project root (schema version `"2"`). Hydra walks up from the current directory until it finds one; there is no migration path from older schemas — re-create the workspace with `hydra init` if needed.
 
 ## Schema overview
 
@@ -254,7 +254,7 @@ Hydra validates configuration on load. Common failures:
 | Error code | Cause | Fix |
 |------------|-------|-----|
 | `config_version_unsupported` | `version` is not `"2"` | Re-create with `hydra init` |
-| `not_in_project` | No `.hydra.yaml` in tree | Run `hydra init` or `cd` to project root |
+| `not_in_project` | No `.hydra/config.yaml` in tree | Run `hydra init` or `cd` to project root |
 
 ```bash
 hydra doctor --output json
@@ -263,5 +263,5 @@ hydra doctor --output json
 ## See Also
 
 - [Commands](./commands/README.md) — Command reference
-- [Configuration example](../.hydra.yaml.example) — Annotated template
+- [Configuration example](../hydra.config.yaml.example) — Annotated template
 - [skills/hydra/SKILL.md](../skills/hydra/SKILL.md) — Agent contract and error codes

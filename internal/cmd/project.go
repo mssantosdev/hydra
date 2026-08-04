@@ -24,7 +24,7 @@ var projectCmd = &cobra.Command{
 
 DESCRIPTION
   Projects are registered in the global registry (~/.config/hydra/projects.yaml).
-  Each entry points at a workspace root that must contain a schema v2 .hydra.yaml.
+  Each entry points at a workspace root that must contain a schema v2 .hydra/config.yaml.
 
   These commands work outside any hydra workspace.
 
@@ -68,7 +68,7 @@ var projectRmCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectLsCmd, projectAddCmd, projectRmCmd)
-	projectLsCmd.Flags().BoolVar(&projectPrune, "prune", false, "Drop registry entries whose workspace no longer has .hydra.yaml")
+	projectLsCmd.Flags().BoolVar(&projectPrune, "prune", false, "Drop registry entries whose workspace no longer has .hydra/config.yaml")
 }
 
 type projectEntry struct {
@@ -213,7 +213,7 @@ func verifyWorkspaceRoot(root string) (*config.Config, error) {
 	if _, err := os.Stat(configPath); err != nil {
 		if os.IsNotExist(err) {
 			return nil, output.Errorf(output.CodeNotInProject,
-				"no .hydra.yaml found at %s", root)
+				"no .hydra/config.yaml found at %s", root)
 		}
 		return nil, output.Wrap(output.CodeInternal, err, "failed to stat workspace config")
 	}

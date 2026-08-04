@@ -19,7 +19,7 @@ var glossaryCmd = &cobra.Command{
 
 DESCRIPTION
   Explains Hydra-specific terms for the workspace model:
-    - Project    - Root directory with .hydra.yaml
+    - Project    - Root directory with .hydra/config.yaml
     - Group      - Category organizing related repositories
     - Repo       - Registered repository (alias) within a group
     - Worktree   - Real sibling directory checked out from a repo
@@ -81,9 +81,9 @@ type glossaryPayload struct {
 var glossaryEntries = []GlossaryEntry{
 	{
 		Term:       "Project",
-		Definition: "The root directory that contains a .hydra.yaml file. Hydra walks up from your current directory to find it and treats everything under that root as one workspace.",
+		Definition: "The root directory that contains a .hydra/config.yaml file. Hydra walks up from your current directory to find it and treats everything under that root as one workspace.",
 		Examples: []string{
-			"my-app/ with .hydra.yaml at the root",
+			"my-app/ with .hydra/config.yaml at the root",
 			"Registered in ~/.config/hydra/projects.yaml for --project lookups",
 		},
 	},
@@ -98,7 +98,7 @@ var glossaryEntries = []GlossaryEntry{
 	},
 	{
 		Term:       "Repo",
-		Definition: "A repository registered in .hydra.yaml under a group. The map key is the alias — Hydra's short handle for the repo in commands like add, remove, and sync.",
+		Definition: "A repository registered in .hydra/config.yaml under a group. The map key is the alias — Hydra's short handle for the repo in commands like add, remove, and sync.",
 		Examples: []string{
 			"hydra add api feature/login",
 			"hydra sync worker",

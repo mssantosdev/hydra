@@ -51,7 +51,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	return &TestEnv{RootDir: rootDir, OriginalDir: originalDir, T: t}
 }
 
-// InitConfig writes a schema v2 .hydra.yaml at the workspace root.
+// InitConfig writes a schema v2 .hydra/config.yaml at the workspace root.
 func (e *TestEnv) InitConfig() string {
 	e.T.Helper()
 

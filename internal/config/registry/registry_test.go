@@ -86,7 +86,7 @@ func TestRemoveUnknownIsAnError(t *testing.T) {
 	}
 }
 
-// Prune drops entries whose root no longer holds a .hydra.yaml, which is what
+// Prune drops entries whose root no longer holds a .hydra/config.yaml, which is what
 // `hydra doctor` reports as registry_dangling.
 func TestPruneDropsDanglingRoots(t *testing.T) {
 	base := sandbox(t)
@@ -112,7 +112,7 @@ func TestPruneDropsDanglingRoots(t *testing.T) {
 		t.Fatalf("Prune removed %v, want [dead]", removed)
 	}
 	if _, ok := reg.Resolve("alive"); !ok {
-		t.Error("Prune must keep a project whose root still has a .hydra.yaml")
+		t.Error("Prune must keep a project whose root still has a .hydra/config.yaml")
 	}
 	if _, ok := reg.Resolve("dead"); ok {
 		t.Error("Prune must drop the dangling project")

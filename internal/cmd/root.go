@@ -201,7 +201,7 @@ func ErrorsAsJSON() bool {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "path to a .hydra.yaml (default: nearest one walking up)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "path to a .hydra/config.yaml (default: nearest one walking up)")
 	rootCmd.PersistentFlags().StringVar(&projectFlag, "project", "", "registered project name to operate on")
 	rootCmd.PersistentFlags().StringVar(&outputFlag, "output", "", "output mode: auto|text|json (auto emits JSON when stdout is not a terminal)")
 	rootCmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "verbose logging on stderr")

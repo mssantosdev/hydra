@@ -42,7 +42,7 @@ EXIT CODES
   1  General error (load/save failed, form cancelled)
 
 SEE ALSO
-  • hydra init - Project-level configuration (.hydra.yaml)`,
+  • hydra init - Project-level configuration (.hydra/config.yaml)`,
 	RunE: runConfig,
 }
 

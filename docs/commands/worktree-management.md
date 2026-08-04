@@ -20,7 +20,7 @@ Create a new worktree for a repository branch.
 
 When you run `hydra add`:
 
-1. Resolves the repo alias from `.hydra.yaml`
+1. Resolves the repo alias from `.hydra/config.yaml`
 2. Derives the directory name (`<alias>` for the default branch, `<alias>-<slug>` otherwise, or `--as` override)
 3. Creates the worktree at `<group>/<dirName>/`
 4. Bare git data stays in `.bare/<alias>.git` only
@@ -47,7 +47,7 @@ hydra add [<repo-alias> <branch-name>] [flags]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `repo-alias` | No* | Alias from `.hydra.yaml` |
+| `repo-alias` | No* | Alias from `.hydra/config.yaml` |
 | `branch-name` | No* | Branch to check out or create |
 
 \*Both required together for direct mode. Omit both for interactive mode.
@@ -103,7 +103,7 @@ Returns `worktree_exists` (exit 1) or reports the existing worktree in JSON outp
 | `worktree_name_conflict` | 1 | directory name taken by another branch |
 | `hook_failed` | 1 | required `post_add` hook failed |
 | `git_failed` | 1 | underlying git error |
-| `not_in_project` | 2 | no `.hydra.yaml` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` |
 
 ---
 
@@ -139,7 +139,7 @@ hydra remove [<repo-alias> <branch-name>] [flags]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `repo-alias` | No* | Alias from `.hydra.yaml` |
+| `repo-alias` | No* | Alias from `.hydra/config.yaml` |
 | `branch-name` | No* | Branch whose worktree to remove |
 
 ### Examples
@@ -185,7 +185,7 @@ hydra also refuses to delete the repo's default branch outright.
 | `worktree_dirty` | 5 | uncommitted changes and no `--force` |
 | `hook_failed` | 1 | required hook failed |
 | `git_failed` | 1 | underlying git error |
-| `not_in_project` | 2 | no `.hydra.yaml` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` |
 
 ---
 

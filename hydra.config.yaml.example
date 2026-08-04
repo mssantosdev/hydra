@@ -1,6 +1,6 @@
 # Hydra Configuration Example (schema v2)
 #
-# Copy this to your project root as .hydra.yaml and customize it.
+# Copy this to your project root as .hydra/config.yaml and customize it.
 
 version: "2"
 project: my-project
