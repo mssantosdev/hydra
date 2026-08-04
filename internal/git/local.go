@@ -95,6 +95,19 @@ func InProgressGitState(worktreePath string) ([]string, error) {
 	return found, nil
 }
 
+// ConfigUserName reads git's user.name, resolved from dir so a repo-local value wins
+// over the global one — the same precedence git itself applies.
+//
+// An unset user.name is not an error here: whether the value is required depends on
+// whether a branch pattern asks for {user}, so that decision belongs to the caller.
+func ConfigUserName(dir string) (string, error) {
+	out, err := runGitOutput("-C", dir, "config", "--get", "user.name")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 func runGitIn(repoPath string, args ...string) error {
 	return runGit(append([]string{"-C", repoPath}, args...)...)
 }

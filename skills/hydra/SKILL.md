@@ -27,10 +27,9 @@ The map key under a group **is** the repo alias, and it is the single source of 
 
 - Always pass `--output json` and parse the envelope. Never scrape text output.
 - Branch on `error.code`, never on message wording. Codes are stable; messages are not.
-- Use `hydra path <worktree>` to locate a worktree; `hydra switch` is for interactive
-  shells. `path` prints a bare path even when captured, so `cd "$(hydra path api)"`
-  works; add `--output json` when you want its group/repo/branch too.
-- Read a worktree's location from `data[].path`. Never reconstruct it from a branch name.
+- Use `hydra path <worktree>` to locate a worktree (`switch` is for interactive shells). It prints a
+  bare path even when captured, so `cd "$(hydra path api)"` works; read `data[].path` from any
+  envelope rather than reconstructing a path from a branch name.
 - Never `cd` into or write under `.bare/`.
 - Never call `git worktree add` directly in a hydra workspace: it bypasses upstream setup and hooks.
 - Pass `--yes` to skip confirmations and expect a prompt-free run. `--no-hooks` skips every hook.
@@ -45,7 +44,8 @@ The map key under a group **is** the repo alias, and it is the single source of 
 | `new` | bootstrap a new project and its first repo | `--group` |
 | `clone` | clone a remote into a project, one worktree per branch | `--branches` |
 | `adopt` | import an existing checkout into the current project | `--group` |
-| `add` | create a worktree for a branch | `--as`, `--from` |
+| `add` | create one worktree for a branch | `--as`, `--from` |
+| `start` | one branch across many repos, convergent; records a topic | `--repos`, `--topic`, `--slug` |
 | `remove` | delete a worktree | `--delete-branch`, `--force` |
 | `path` | print a worktree's absolute path | — |
 | `switch` | change directory to a worktree (interactive shells) | `--cd` |

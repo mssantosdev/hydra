@@ -391,6 +391,55 @@ check "both worktrees are gone from disk" \
 check "doctor is clean after a topic removal" \
   '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e "[.data.checks[]|select(.status==\"fail\")]|length==0" >/dev/null'
 
+# ------------------------------------------------ 9e. hydra start (step 7c)
+echo "== 9e. start: two axes, convergent, no guessing =="
+# A second repo, so "which repos" is a real question.
+"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --yes --output json >/dev/null 2>&1 || true
+
+check "start with no selector asks which repos" \
+  '{ "$HYDRA" start feat/x --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.one_of|index(\"--repos\")!=null)" >/dev/null'
+check "start with a selector but nothing to name a branch asks for --branch" \
+  '{ "$HYDRA" start --repos api --topic 5001 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--branch\")!=null)" >/dev/null'
+check "the refused start recorded no topic" \
+  '"$HYDRA" topic list --output json | jq -e "[.data.topics[].id]|index(\"5001\")==null" >/dev/null'
+
+check "start creates one branch across two repos and records the topic" \
+  '"$HYDRA" start marcus/feat-login --repos api,web --topic 5002 --output json 2>/dev/null | jq -e ".outcome==\"success\" and (.data.created|length)==2 and .data.branch_source==\"positional\"" >/dev/null'
+check "the topic has both members" \
+  '"$HYDRA" topic show 5002 --output json | jq -e ".data.members|length==2" >/dev/null'
+check "start suggests status for the topic" \
+  '"$HYDRA" start marcus/feat-login --repos api --topic 5002 --output json 2>/dev/null | jq -e "[.next[].cmd]|index(\"hydra status --topic 5002\")!=null" >/dev/null'
+check "re-running an identical start is convergent" \
+  '"$HYDRA" start marcus/feat-login --repos api,web --topic 5002 --output json 2>/dev/null | jq -e "(.data.created|length)==0 and (.data.skipped|length)==2" >/dev/null'
+check "extending to a repo needs no branch flag" \
+  '"$HYDRA" start --topic 5002 --output json 2>/dev/null | jq -e ".data.branch==\"marcus/feat-login\" and .data.branch_source==\"topic_members\"" >/dev/null'
+
+# The pattern, and the documented surprise.
+cp .hydra/config.yaml "$T/config.before-pattern"
+printf '\ndefaults:\n  branch_pattern: "{user}/{kind}-{slug}"\n' >> .hydra/config.yaml
+check "a pattern generates the branch" \
+  '"$HYDRA" start --topic 5003 --repos api --slug "Login Page" --kind feat --user marcus --output json 2>/dev/null | jq -e ".data.branch==\"marcus/feat-login-page\" and .data.branch_source==\"branch_pattern\"" >/dev/null'
+check "a pattern missing a value names its flag" \
+  '{ "$HYDRA" start --topic 5004 --repos api --kind feat --user marcus --output json 2>&1 >/dev/null || true; } | jq -e "(.error.details.missing|index(\"--slug\")!=null)" >/dev/null'
+check "a positional branch is literal and the pattern never runs" \
+  '"$HYDRA" start 5005 --repos api --slug login --kind feat --user marcus --output json 2>/dev/null | jq -e ".data.branch==\"5005\" and .data.branch_source==\"positional\"" >/dev/null'
+check "an unknown placeholder is a config error, not a literal branch" \
+  'printf "\ndefaults:\n  branch_pattern: \"{ticket}/x\"\n" > "$T/bad.yaml" &&
+   cp "$T/config.before-pattern" .hydra/config.yaml &&
+   cat "$T/bad.yaml" >> .hydra/config.yaml &&
+   { "$HYDRA" start --topic 5006 --repos api --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"branch_unknown\"" >/dev/null'
+cp "$T/config.before-pattern" .hydra/config.yaml
+
+check "--dry-run creates nothing" \
+  '"$HYDRA" start feat/dry --repos api --dry-run --output json 2>/dev/null | jq -e ".data.dry_run==true" >/dev/null &&
+   ! test -d backend/api-feat-dry'
+check "start without --topic records nothing" \
+  '"$HYDRA" start feat/loose --repos api --output json >/dev/null 2>&1 &&
+   "$HYDRA" list --output json | jq -e ".data.worktrees[]|select(.branch==\"feat/loose\")|.topic==null" >/dev/null'
+
+"$HYDRA" topic remove 5002 --with-worktrees --yes --output json >/dev/null 2>&1 || true
+"$HYDRA" topic remove 5003 --with-worktrees --yes --output json >/dev/null 2>&1 || true
+
 # ------------------------------------------------ 10. registry (step 2)
 echo "== 10. project registry =="
 check "the workspace registered itself" \
