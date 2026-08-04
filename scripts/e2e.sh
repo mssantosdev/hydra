@@ -440,6 +440,34 @@ check "start without --topic records nothing" \
 "$HYDRA" topic remove 5002 --with-worktrees --yes --output json >/dev/null 2>&1 || true
 "$HYDRA" topic remove 5003 --with-worktrees --yes --output json >/dev/null 2>&1 || true
 
+# ------------------------------------------------ 9f. --against REF (step 8)
+echo "== 9f. --against answers merged-ness without storing an edge =="
+# A release branch at main, plus a worktree carrying a commit release does not have.
+git -C .bare/api.git branch release main
+"$HYDRA" start feat/unmerged --repos api --output json >/dev/null 2>&1
+git -C backend/api-feat-unmerged -c user.email=t@t -c user.name=T commit -q --allow-empty -m "not in release"
+
+check "a branch with unique commits is NOT merged into the ref" \
+  '"$HYDRA" status --repos api --against release --output json 2>/dev/null | jq -e ".data.worktrees[]|select(.branch==\"feat/unmerged\")|.against.merged==false and .against.ahead==1" >/dev/null'
+check "main IS merged into a release branch pointing at it" \
+  '"$HYDRA" status --repos api --against release --output json 2>/dev/null | jq -e ".data.worktrees[]|select(.branch==\"main\")|.against.merged==true and .against.ahead==0" >/dev/null'
+check "merged is exactly ahead==0" \
+  '"$HYDRA" status --repos api --against release --output json 2>/dev/null | jq -e "[.data.worktrees[]|select(.against!=null)|.against|.merged==(.ahead==0)]|all" >/dev/null'
+check "the against block names the ref it compared with" \
+  '"$HYDRA" status --repos api --against release --output json 2>/dev/null | jq -e "[.data.worktrees[]|select(.against!=null)|.against.ref]|all(.==\"release\")" >/dev/null'
+check "an unresolvable ref warns and still lists" \
+  '"$HYDRA" status --repos api --against no-such-ref --output json 2>/dev/null | jq -e "(.data.worktrees|length)>0 and (.warnings|length)>0 and .outcome==\"success\"" >/dev/null'
+check "an unresolvable ref exits 0" \
+  '"$HYDRA" status --repos api --against no-such-ref --output json >/dev/null 2>&1'
+check "the against key is absent without --against" \
+  '"$HYDRA" status --repos api --output json | jq -e "[.data.worktrees[]|has(\"against\")]|all(.==false)" >/dev/null'
+check "list takes --against as well" \
+  '"$HYDRA" list --repos api --against release --output json 2>/dev/null | jq -e "[.data.worktrees[]|.against.ref]|all(.==\"release\")" >/dev/null'
+check "--against combines with a filter" \
+  '"$HYDRA" status --repos api --against release --filter "branch:feat/*" --output json 2>/dev/null | jq -e "[.data.worktrees[]|select(.branch|startswith(\"feat/\")|not)]|length==0" >/dev/null'
+
+"$HYDRA" remove api feat/unmerged --yes --output json >/dev/null 2>&1 || true
+
 # ------------------------------------------------ 10. registry (step 2)
 echo "== 10. project registry =="
 check "the workspace registered itself" \

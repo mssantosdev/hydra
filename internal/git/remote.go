@@ -2,6 +2,7 @@ package git
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -181,6 +182,48 @@ func WorktreeTracking(worktreePath string) (TrackingState, error) {
 		return state, fmt.Errorf("failed to parse behind count for %s: %w", worktreePath, err)
 	}
 	return state, nil
+}
+
+// ErrRefUnknown reports that a ref does not resolve in this repository.
+//
+// Distinguished from a counting failure because the caller's remedy differs: a
+// typo'd ref is the user's to fix, while a broken repository is not.
+var ErrRefUnknown = errors.New("ref does not resolve")
+
+// CountAgainst returns how far a worktree's HEAD is ahead of and behind an arbitrary
+// ref, rather than its configured upstream.
+//
+// This is how hydra answers "is this work merged into the integration branch yet"
+// WITHOUT storing an integration edge anywhere: the relationship is computed at query
+// time from refs git already has, so it cannot go stale and there is no second source
+// of truth to reconcile.
+//
+// The ref is resolved first so an unknown one is reported as such instead of arriving
+// as an opaque rev-list failure.
+func CountAgainst(worktreePath, ref string) (ahead, behind int, err error) {
+	if strings.TrimSpace(ref) == "" {
+		return 0, 0, fmt.Errorf("%w: empty ref", ErrRefUnknown)
+	}
+
+	if _, err := runGitOutput("-C", worktreePath, "rev-parse", "--verify", "--quiet", ref+"^{commit}"); err != nil {
+		return 0, 0, fmt.Errorf("%w: %s", ErrRefUnknown, ref)
+	}
+
+	counts, err := runGitOutput("-C", worktreePath, "rev-list", "--left-right", "--count", "HEAD..."+ref)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to count commits against %s in %s: %w", ref, worktreePath, err)
+	}
+	fields := strings.Fields(counts)
+	if len(fields) != 2 {
+		return 0, 0, fmt.Errorf("unexpected rev-list output for %s: %q", worktreePath, counts)
+	}
+	if _, err := fmt.Sscanf(fields[0], "%d", &ahead); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse ahead count for %s: %w", worktreePath, err)
+	}
+	if _, err := fmt.Sscanf(fields[1], "%d", &behind); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse behind count for %s: %w", worktreePath, err)
+	}
+	return ahead, behind, nil
 }
 
 // WorktreeStatus represents the status of a worktree

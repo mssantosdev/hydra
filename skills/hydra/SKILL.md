@@ -49,8 +49,8 @@ The map key under a group **is** the repo alias, and it is the single source of 
 | `remove` | delete a worktree | `--delete-branch`, `--force` |
 | `path` | print a worktree's absolute path | — |
 | `switch` | change directory to a worktree (interactive shells) | `--cd` |
-| `list` | list worktrees (alias `ls`) | `--all`, `--topic`, `--repos`, `--group`, `--filter` |
-| `status` | per-worktree tracking and dirtiness summary | `--all`, `--topic`, `--filter` |
+| `list` | list worktrees (alias `ls`) | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
+| `status` | tracking, dirtiness, and merged-ness vs any ref | `--topic`, `--filter`, `--against REF` |
 | `topic` | `list`/`show`/`attach`/`detach`/`remove` units of work spanning repos | `--with-worktrees`, `--yes` |
 | `sync` | fast-forward worktrees from their upstreams | `--force`, `--yes` |
 | `doctor` | diagnose workspace/upstream problems | `--fix`, `--all` |

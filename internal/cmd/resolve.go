@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/topic"
 )
@@ -44,13 +45,19 @@ func sessionFor(target projectTarget) Session {
 	}
 }
 
-// Selector narrows which worktrees a command acts on. The zero value selects every
-// worktree in the session's project.
+// Selector describes one query over a project's worktrees. The zero value selects
+// every worktree.
+//
+// Topic, Repos, Group and Filter NARROW the set. Against does not — it annotates each
+// surviving worktree with a comparison. It lives here because it is part of the same
+// query and must reach the tracking phase, and empty() deliberately ignores it: a
+// bare --against still describes every worktree.
 type Selector struct {
-	Topic  string
-	Repos  []string
-	Group  string
-	Filter []string
+	Topic   string
+	Repos   []string
+	Group   string
+	Filter  []string
+	Against string
 }
 
 // empty reports whether the selector narrows anything at all.
@@ -198,7 +205,9 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 		kept = append(kept, resolvedWorktree{Context: ctx, Item: item})
 	}
 
-	if !tracking && !parsed.derived() {
+	// --against forces the expensive phase even with no derived filter: the comparison
+	// is per worktree and needs git.
+	if !tracking && !parsed.derived() && sel.Against == "" {
 		return kept, warnings, nil
 	}
 
@@ -224,9 +233,38 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 		if parsed.behind && item.Behind == 0 {
 			continue
 		}
+		decorateAgainst(&item, target.Context, sel.Against, &warnings)
 		out = append(out, resolvedWorktree{Context: target.Context, Item: item})
 	}
 	return out, warnings, nil
+}
+
+// decorateAgainst annotates one worktree with its position relative to REF.
+//
+// A failure is a per-worktree warning rather than a fatal error: an unresolvable ref
+// in one repository must not make the other repositories unlistable, and that is the
+// normal case — a release branch often exists in some repos and not others.
+//
+// A detached worktree is skipped: there is no branch to compare.
+func decorateAgainst(item *worktreeJSON, ctx worktreeContext, ref string, warnings *[]string) {
+	if ref == "" || item.Detached {
+		return
+	}
+
+	ahead, behind, err := git.CountAgainst(ctx.Path, ref)
+	if err != nil {
+		*warnings = append(*warnings, fmt.Sprintf("%s: %v", ctx.Qualified(), err))
+		return
+	}
+	item.Against = &againstJSON{
+		Ref: ref,
+		// Merged is Ahead == 0: nothing on this branch is missing from REF. That is the
+		// question people actually ask, so it is answered rather than left to be
+		// derived from a count.
+		Merged: ahead == 0,
+		Ahead:  ahead,
+		Behind: behind,
+	}
 }
 
 func lowerSet(values []string) map[string]struct{} {

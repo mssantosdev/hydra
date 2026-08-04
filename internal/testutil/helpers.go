@@ -315,3 +315,12 @@ func NotContains(t *testing.T, s, substr string) {
 		t.Errorf("Expected string to NOT contain %q, but it did.\nString: %s", substr, s)
 	}
 }
+
+// GitInBare runs git against a repo's bare directory.
+//
+// Tests need this to create refs a worktree can be compared against — an integration
+// or release branch, for instance — which no worktree-level helper can express.
+func (e *TestEnv) GitInBare(t *testing.T, alias string, args ...string) {
+	t.Helper()
+	e.git(e.GetBarePath(alias), args...)
+}

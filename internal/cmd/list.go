@@ -34,6 +34,7 @@ EXIT CODES
 func init() {
 	listCmd.Flags().BoolVar(&listAll, "all", false, "List worktrees across every registered project")
 	registerSelectorFlags(listCmd.Flags())
+	registerAgainstFlag(listCmd.Flags())
 	rootCmd.AddCommand(listCmd)
 }
 

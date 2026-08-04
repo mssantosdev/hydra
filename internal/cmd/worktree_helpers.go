@@ -63,6 +63,20 @@ type branchChoice struct {
 	IsRemoteDefault bool
 }
 
+// againstJSON answers "where is this worktree relative to REF".
+//
+// The relationship is computed at query time from refs git already has, which is why
+// hydra stores no integration edge: a stored edge would need reconciling and could go
+// stale, while this cannot.
+type againstJSON struct {
+	Ref string `json:"ref"`
+	// Merged is the question people actually ask. It is true when nothing on this
+	// branch is missing from REF, which is exactly Ahead == 0.
+	Merged bool `json:"merged"`
+	Ahead  int  `json:"ahead"`
+	Behind int  `json:"behind"`
+}
+
 // worktreeJSON is the serialized shape every command emits for a worktree.
 type worktreeJSON struct {
 	Group    string  `json:"group"`
@@ -79,9 +93,14 @@ type worktreeJSON struct {
 	Changes  int     `json:"changes"`
 	// Topic is the recorded topic this worktree belongs to, nil when unassigned.
 	// Unassigned is a permanent, first-class state — not a missing value.
-	Topic    *string `json:"topic"`
-	Locked   bool    `json:"locked,omitempty"`
-	Prunable bool    `json:"prunable,omitempty"`
+	Topic *string `json:"topic"`
+	// Against reports the comparison a caller asked for with --against REF, kept
+	// SEPARATE from ahead/behind rather than overwriting them: "ahead of my upstream"
+	// and "ahead of the release branch" are different questions, and a consumer that
+	// asked one must still be able to see the other.
+	Against  *againstJSON `json:"against,omitempty"`
+	Locked   bool         `json:"locked,omitempty"`
+	Prunable bool         `json:"prunable,omitempty"`
 }
 
 func (w worktreeContext) json() worktreeJSON {
@@ -123,15 +142,21 @@ var (
 	reposFilter []string
 	groupFilter string
 	stateFilter []string
+
+	// againstRef is registered only on the read commands. It is NOT part of
+	// registerSelectorFlags because it does not narrow anything, and offering
+	// "--against" on a creating command like start would be meaningless.
+	againstRef string
 )
 
 // currentSelector snapshots the selector flags as parsed for this invocation.
 func currentSelector() Selector {
 	return Selector{
-		Topic:  topicFilter,
-		Repos:  reposFilter,
-		Group:  groupFilter,
-		Filter: stateFilter,
+		Topic:   topicFilter,
+		Repos:   reposFilter,
+		Group:   groupFilter,
+		Filter:  stateFilter,
+		Against: againstRef,
 	}
 }
 
@@ -143,6 +168,12 @@ func registerSelectorFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&groupFilter, "group", "", "Only worktrees in this group")
 	flags.StringArrayVar(&stateFilter, "filter", nil,
 		"Narrow by state: dirty, behind, or branch:<glob> (repeatable)")
+}
+
+// registerAgainstFlag adds --against to a read-only command.
+func registerAgainstFlag(flags *pflag.FlagSet) {
+	flags.StringVar(&againstRef, "against", "",
+		"Also report ahead/behind against this ref, and whether the branch is merged into it")
 }
 
 // topicIndex is an in-memory (repo, branch) -> topic lookup.

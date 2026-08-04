@@ -31,6 +31,7 @@ EXIT CODES
 func init() {
 	statusCmd.Flags().BoolVar(&statusAll, "all", false, "Show status across every registered project")
 	registerSelectorFlags(statusCmd.Flags())
+	registerAgainstFlag(statusCmd.Flags())
 	rootCmd.AddCommand(statusCmd)
 }
 
