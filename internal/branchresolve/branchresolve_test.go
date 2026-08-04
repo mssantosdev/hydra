@@ -261,6 +261,34 @@ func TestValidateRef(t *testing.T) {
 	}
 }
 
+// slugSegment normalises user-supplied text, so it must terminate on input that is
+// not valid UTF-8.
+//
+// Regression guard for GO-2026-5970: golang.org/x/text before v0.39.0 loops forever
+// inside norm.Form.Transform on invalid input, and govulncheck traced the reachable
+// path straight through this function. --slug and --kind come from a user, so that
+// was a real hang, not a theoretical one.
+func TestSlugSegment_TerminatesOnInvalidUTF8(t *testing.T) {
+	done := make(chan string, 1)
+	go func() {
+		// Lone continuation bytes and a truncated multi-byte sequence.
+		done <- slugSegment("login\xff\xfe\x80page\xc3")
+	}()
+
+	select {
+	case got := <-done:
+		// Any terminating answer is acceptable; hanging is not. What it returns must
+		// still be safe to put in a ref.
+		if got != "" {
+			if err := ValidateRef("x/" + got); err != nil {
+				t.Errorf("slugSegment produced %q, which is not ref-safe: %v", got, err)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("slugSegment did not terminate on invalid UTF-8")
+	}
+}
+
 // Strict mode is opt-in and turns an off-pattern name into a refusal. By default the
 // same name is accepted: branch shape belongs to the team, not to hydra.
 func TestResolve_StrictRefusesOffPatternExplicitBranch(t *testing.T) {
