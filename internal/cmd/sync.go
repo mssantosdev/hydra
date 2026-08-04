@@ -1,15 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/fanout"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/hooks"
 	"github.com/mssantosdev/hydra/internal/log"
@@ -179,16 +182,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
 		return emit(cmd, data, collectWarnings, func() { log.Info("No worktrees selected for sync") })
 	}
-	ops, hookWarnings, execErr := executeSync(selected)
+	ops, hookWarnings := executeSync(selected)
 	allWarnings := append(collectWarnings, hookWarnings...)
 	results := mergeSyncResults(entries, selected, ops)
 	data, summary := buildSyncOutput(cfg.Project, projectRoot, results)
 	if err := emit(cmd, data, allWarnings, func() { printSyncText(results, summary) }); err != nil {
 		return err
 	}
-	if execErr != nil {
-		return execErr
-	}
+	// A hook failure no longer aborts the command: it is reported as a warning and
+	// partial_failure below is derived from the git results alone.
 	failed := failedWorktreeDetails(results)
 	if len(failed) > 0 {
 		return output.Errorf(output.CodePartialFailure, "%d worktree(s) failed to sync", len(failed)).WithDetail("worktrees", failed)
@@ -420,50 +422,96 @@ func selectedSyncEntries(candidates []syncEntry) []syncEntry {
 	return selected
 }
 
-func executeSync(selected []syncEntry) ([]syncOpResult, []string, error) {
-	resultChan := make(chan syncOpResult, len(selected))
-	var wg sync.WaitGroup
+// executeSync converges the selected worktrees through the shared fan-out engine.
+//
+// It used to hand-roll one goroutine per entry, drain a channel (so result order
+// changed between runs), then run every post_sync hook in a second pass and abort
+// the whole command on the first hook failure. All four are fixed by delegating:
+// order is deterministic, hooks fire per item right after that item succeeds, a
+// hook failure is a warning, and cross-repo concurrency is bounded.
+//
+// SerialPerRepo stays FALSE here. Pulling concurrently across worktrees of one repo
+// was measured safe (4/4); only creation contends on config.lock. Serialising sync
+// would cost roughly 2x for nothing.
+func executeSync(selected []syncEntry) ([]syncOpResult, []string) {
+	targets := make([]fanout.Target, 0, len(selected))
+	entryByKey := make(map[string]syncEntry, len(selected))
 	for _, entry := range selected {
-		wg.Add(1)
-		go func(entry syncEntry) {
-			defer wg.Done()
-			resultChan <- syncOne(entry)
-		}(entry)
-	}
-	go func() { wg.Wait(); close(resultChan) }()
-	results := make([]syncOpResult, 0, len(selected))
-	for result := range resultChan {
-		results = append(results, result)
-	}
-	var hookWarnings []string
-	for i, result := range results {
-		if result.err != nil || !result.pulled {
-			continue
+		t := fanout.Target{
+			Group:    entry.group,
+			Repo:     entry.repo,
+			Branch:   entry.branch,
+			Path:     entry.path,
+			BareRepo: entry.barePath,
 		}
-		hctx := hooks.Context{Group: result.entry.group, Repo: result.entry.repo, Branch: result.entry.branch, WorktreePath: result.entry.path, BarePath: result.entry.barePath}
-		hookResult, err := runHookEvent("post_sync", hctx, result.entry.path)
-		hookWarnings = append(hookWarnings, hookResult.Warnings...)
-		if err != nil {
-			results[i].status = "failed"
-			results[i].err = err
-			results[i].pulled = false
-			return results, hookWarnings, err
-		}
+		// One worktree per branch per repo, so the key is unique.
+		entryByKey[t.Key()] = entry
+		targets = append(targets, t)
 	}
-	if !jsonMode() && len(results) > 0 {
-		fmt.Println()
-		fmt.Println(styles.Title.Render("Pulling Updates"))
-		fmt.Println()
-		total := len(selected)
-		for i, result := range results {
-			status := styles.Success.Render("ok")
-			if result.err != nil {
-				status = styles.Error.Render("fail")
+
+	reporter := newSyncReporter(len(targets))
+	results := fanout.Run(context.Background(), targets, fanout.Config{
+		SerialPerRepo: false,
+		Reporter:      reporter,
+		Hook: func(_ context.Context, t fanout.Target) ([]string, error) {
+			entry := entryByKey[t.Key()]
+			hctx := hooks.Context{
+				Group:        entry.group,
+				Repo:         entry.repo,
+				Branch:       entry.branch,
+				WorktreePath: entry.path,
+				BarePath:     entry.barePath,
 			}
-			fmt.Printf("  %s %d/%d %s/%s\n", status, i+1, total, result.entry.repo, result.entry.branch)
+			result, err := runHookEvent("post_sync", hctx, entry.path)
+			return result.Warnings, err
+		},
+	}, func(_ context.Context, t fanout.Target) fanout.ItemResult {
+		return syncOne(entryByKey[t.Key()]).toItemResult()
+	})
+	reporter.finish()
+
+	ops := make([]syncOpResult, 0, len(results))
+	var hookWarnings []string
+	for _, result := range results {
+		entry := entryByKey[result.Target.Key()]
+		ops = append(ops, syncOpResultFrom(entry, result))
+		for _, warning := range result.HookWarnings {
+			hookWarnings = append(hookWarnings, fmt.Sprintf("%s/%s: %s", entry.repo, entry.branch, warning))
 		}
 	}
-	return results, hookWarnings, nil
+
+	// Nothing is returned as a fatal error. runSync derives partial_failure from the
+	// results, and a hook failure is a warning — returning early here is what used to
+	// drop the successful pulls out of the envelope entirely.
+	return ops, hookWarnings
+}
+
+// toItemResult maps sync's own result onto the engine's disposition vocabulary.
+//
+// sync filters up-to-date worktrees out during selection, so an entry that reaches
+// the engine is always meant to change: the outcome is Created or Failed, never
+// Skipped. Convergence lives in filterWithUpdates for this command.
+func (r syncOpResult) toItemResult() fanout.ItemResult {
+	if r.err != nil {
+		return fanout.ItemResult{Disposition: fanout.Failed, Reason: r.status, Err: r.err}
+	}
+	return fanout.ItemResult{Disposition: fanout.Created, Reason: r.status}
+}
+
+// syncOpResultFrom rebuilds sync's result from the engine's, preserving the status
+// string the renderer and the JSON envelope both read.
+func syncOpResultFrom(entry syncEntry, result fanout.ItemResult) syncOpResult {
+	op := syncOpResult{entry: entry, status: result.Reason, err: result.Err}
+	if result.Disposition == fanout.Created {
+		op.pulled = true
+		if op.status == "" {
+			op.status = "pulled"
+		}
+	}
+	if result.Disposition == fanout.Failed {
+		op.status = "failed"
+	}
+	return op
 }
 
 func syncOne(entry syncEntry) syncOpResult {
@@ -551,6 +599,23 @@ func mergeSyncResults(all []syncEntry, selected []syncEntry, ops []syncOpResult)
 		}
 		results = append(results, syncOpResult{entry: entry, status: "up-to-date"})
 	}
+
+	// Sort what is SERIALISED, not just what the engine computed. fanout.Run returns
+	// its own results ordered, but this function reassembles the full list — pulled,
+	// skipped and up-to-date together — in `git worktree list` order, which put the
+	// repo's main worktree first and the rest in checkout order. That leaked an
+	// unstable order into the envelope and the table even after the engine became
+	// deterministic.
+	sort.SliceStable(results, func(i, j int) bool {
+		a, b := results[i].entry, results[j].entry
+		if a.group != b.group {
+			return a.group < b.group
+		}
+		if a.repo != b.repo {
+			return a.repo < b.repo
+		}
+		return a.branch < b.branch
+	})
 	return results
 }
 

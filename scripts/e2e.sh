@@ -67,6 +67,21 @@ check "main is up to date after sync" \
   '"$HYDRA" status --output json | jq -e ".data.worktrees[]|select(.branch==\"main\")|.behind==0" >/dev/null'
 check "a second sync reports nothing to do" \
   '{ "$HYDRA" sync api --yes --output json 2>/dev/null || true; } | jq -e ".data.summary.pulled==0" >/dev/null'
+# The fan-out engine's two user-visible guarantees (step 5).
+check "sync results are sorted by group/repo/branch, not finish order" \
+  '[ "$("$HYDRA" sync --yes --output json 2>/dev/null | jq -r "[.data.worktrees[]|\"\(.group)/\(.repo)/\(.branch)\"]|(. == (.|sort))")" = "true" ]'
+
+# Snapshot and restore the manifest rather than editing the hook back out: section 8
+# appends its own `hooks:` block, and a partial removal leaves a duplicate mapping
+# key that makes every later command fail to parse the config.
+cp .hydra/config.yaml "$T/config.before-hook"
+printf '\nhooks:\n  post_sync:\n    - run: "exit 1"\n' >> .hydra/config.yaml
+git -C "$T/upstream" -c user.email=t@t -c user.name=T commit -q --allow-empty -m hooked
+check "a failing post_sync hook warns instead of aborting" \
+  '"$HYDRA" sync api --yes --output json 2>/dev/null | jq -e ".data.summary.pulled==1 and .data.summary.failed==0 and (.warnings|length)>0" >/dev/null'
+cp "$T/config.before-hook" .hydra/config.yaml
+check "the manifest is restored and still parses" \
+  '"$HYDRA" list --output json | jq -e ".schema==1" >/dev/null && ! grep -q post_sync .hydra/config.yaml'
 
 # ------------------------------------------------ 4. machine contract (step 5)
 echo "== 4. machine contract and exit codes =="
