@@ -324,3 +324,14 @@ func (e *TestEnv) GitInBare(t *testing.T, alias string, args ...string) {
 	t.Helper()
 	e.git(e.GetBarePath(alias), args...)
 }
+
+// ReadFile reads a file a test told a command to write, trimmed of a trailing
+// newline so an assertion compares content rather than formatting.
+func (e *TestEnv) ReadFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path) //nolint:gosec // G304: test-controlled path
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return strings.TrimRight(string(data), "\n")
+}

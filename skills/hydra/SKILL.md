@@ -52,6 +52,7 @@ The map key under a group **is** the repo alias, and it is the single source of 
 | `list` | list worktrees (alias `ls`) | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
 | `status` | tracking, dirtiness, and merged-ness vs any ref | `--topic`, `--filter`, `--against REF` |
 | `topic` | `list`/`show`/`attach`/`detach`/`remove` units of work spanning repos | `--with-worktrees`, `--yes` |
+| `run` | run one command per worktree; argv after `--`, never a shell | `--topic`, `--jobs`, `--timeout` |
 | `sync` | fast-forward worktrees from their upstreams | `--dirty stash\|reset\|skip`, `--yes` |
 | `doctor` | diagnose workspace/upstream problems | `--fix`, `--all` |
 | `prune` | drop stale worktree registrations and empty groups | `--dry-run` |

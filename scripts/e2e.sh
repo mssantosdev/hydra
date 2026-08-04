@@ -491,6 +491,39 @@ check "--against combines with a filter" \
 
 "$HYDRA" remove api feat/unmerged --yes --output json >/dev/null 2>&1 || true
 
+# ------------------------------------------------ 9h. hydra run (step 11)
+echo "== 9h. run: argv after --, never a shell =="
+check "run in one worktree by handle" \
+  '"$HYDRA" run backend/api --output json -- true 2>/dev/null | jq -e ".data.total==1 and .data.failed==0" >/dev/null'
+check "run across a selector" \
+  '[ "$("$HYDRA" run --group backend --output json -- true 2>/dev/null | jq ".data.total")" -ge 1 ]'
+check "an ambiguous handle is refused" \
+  '{ "$HYDRA" run main --output json -- true 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+
+# The safety property: no implicit shell, so a metacharacter is a literal argument.
+check "metacharacters are NOT interpreted by a shell" \
+  '"$HYDRA" run backend/api --output json -- echo "x; touch $T/e2e-shell-escape" >/dev/null 2>&1 &&
+   ! test -f "$T/e2e-shell-escape"'
+check "an explicit sh -c still works" \
+  '"$HYDRA" run backend/api --output json -- sh -c "touch $T/e2e-explicit-shell" >/dev/null 2>&1 &&
+   test -f "$T/e2e-explicit-shell"'
+
+check "the documented environment reaches the command" \
+  '"$HYDRA" run backend/api --output json -- sh -c "printf %s \"\$HYDRA_REPO/\$HYDRA_GROUP\" > $T/e2e-run-env" >/dev/null 2>&1 &&
+   [ "$(cat "$T/e2e-run-env")" = "api/backend" ]'
+check "the command runs inside the worktree" \
+  '"$HYDRA" run backend/api --output json -- sh -c "printf %s \"\$PWD\" > $T/e2e-run-pwd" >/dev/null 2>&1 &&
+   [ "$(cat "$T/e2e-run-pwd")" = "$PWD/backend/api" ]'
+
+check "a failing command exits non-zero" \
+  '"$HYDRA" run backend/api --output json -- false >/dev/null 2>&1; [ "$?" != 0 ]'
+check "no command asks for one" \
+  '{ "$HYDRA" run --group backend --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
+# hydra exits non-zero here (the command failed), so the invocation must be wrapped or
+# pipefail fails the whole assertion.
+check "--timeout kills a hung command and says so" \
+  '{ "$HYDRA" run backend/api --timeout 100ms --output json 2>/dev/null -- sleep 5 || true; } | jq -e ".data.timed_out==1" >/dev/null'
+
 # ------------------------------------------------ 9g. parity holes closed (step 10)
 echo "== 9g. every prompt has a flag, and none of them hang =="
 # A prompt that cannot be shown must name the missing argument. worktree_unknown was
