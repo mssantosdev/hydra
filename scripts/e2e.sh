@@ -83,6 +83,16 @@ cp "$T/config.before-hook" .hydra/config.yaml
 check "the manifest is restored and still parses" \
   '"$HYDRA" list --output json | jq -e ".schema==1" >/dev/null && ! grep -q post_sync .hydra/config.yaml'
 
+# ------------------------------------------------ 3b. clone converges (step 5)
+echo "== 3b. re-cloning a complete repository is a no-op =="
+# Before the fan-out engine every already-present branch counted as a failure, so
+# this exact command returned git_failed "no worktree could be created".
+check "a second identical clone exits 0" \
+  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --yes --output json >/dev/null 2>&1'
+check "the converged clone still reports the worktree" \
+  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --yes --output json 2>/dev/null | jq -e ".data.worktrees|length>=1" >/dev/null'
+check "the re-clone destroyed nothing" 'test -d backend/api && test -d .bare/api.git'
+
 # ------------------------------------------------ 4. machine contract (step 5)
 echo "== 4. machine contract and exit codes =="
 check "list envelope has schema 1 and 2 worktrees" \

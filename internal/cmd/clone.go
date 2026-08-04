@@ -1,16 +1,19 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/config/registry"
+	"github.com/mssantosdev/hydra/internal/fanout"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/log"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -340,56 +343,107 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		return result, warnings, err
 	}
 
+	// Converge each branch through the shared engine.
+	//
+	// SerialPerRepo is TRUE here, unlike sync: `git worktree add` with upstream
+	// config contends on the bare repo's config.lock, and 8 concurrent adds were
+	// measured to leave only 3 successes — the failures producing worktrees with no
+	// upstream at all, a silent partial. Creation must never run concurrently within
+	// one bare repository.
+	targets := make([]fanout.Target, 0, len(branches))
+	for _, branch := range branches {
+		targets = append(targets, fanout.Target{
+			Group:    repo.Group,
+			Repo:     repo.Alias,
+			Branch:   branch,
+			Path:     worktreePath(root, repo.Group, worktreeDirName(repo, branch)),
+			BareRepo: repo.BareRepo,
+		})
+	}
+
+	var hookMu sync.Mutex
+	results := fanout.Run(context.Background(), targets, fanout.Config{
+		SerialPerRepo: true,
+		Hook: func(_ context.Context, t fanout.Target) ([]string, error) {
+			// runHookEventForProject is not documented as concurrency-safe and writes
+			// through shared config; SerialPerRepo already prevents overlap here, and
+			// the lock makes that independent of the engine's scheduling.
+			hookMu.Lock()
+			defer hookMu.Unlock()
+			hookResult, err := runHookEventForProject(c, root, "post_clone",
+				hooksContextFor(repo, t.Branch, t.Path), t.Path)
+			return hookResult.Warnings, err
+		},
+	}, func(_ context.Context, t fanout.Target) fanout.ItemResult {
+		dirName := worktreeDirName(repo, t.Branch)
+
+		// Convergence: a worktree that already exists for THIS branch at THIS path is
+		// the desired state, not a failure. Without this, re-running clone on a
+		// complete repository reported git_failed "no worktree could be created" —
+		// every branch counted as a failure precisely because it was already correct.
+		// A directory taken by a DIFFERENT branch stays a real conflict.
+		if err := checkWorktreeNameConflict(repo, root, dirName, t.Branch); err != nil {
+			if output.Classify(err).Code == output.CodeWorktreeExists {
+				return fanout.ItemResult{Disposition: fanout.Skipped, Reason: "already present"}
+			}
+			return fanout.ItemResult{Disposition: fanout.Failed, Reason: err.Error(), Err: err}
+		}
+		if err := createWorktreeForBranch(c, repo, t.Path, t.Branch, ""); err != nil {
+			return fanout.ItemResult{Disposition: fanout.Failed, Reason: err.Error(), Err: err}
+		}
+		return fanout.ItemResult{Disposition: fanout.Created, Reason: "created"}
+	})
+
 	var failures []map[string]string
 	var created []string
-	for _, branch := range branches {
-		dirName := worktreeDirName(repo, branch)
-		target := worktreePath(root, repo.Group, dirName)
-
-		if err := checkWorktreeNameConflict(repo, root, dirName, branch); err != nil {
-			failures = append(failures, map[string]string{"branch": branch, "error": err.Error()})
+	for _, item := range results {
+		if item.Disposition == fanout.Failed {
+			failures = append(failures, map[string]string{"branch": item.Target.Branch, "error": item.Reason})
 			continue
 		}
-		if err := createWorktreeForBranch(c, repo, target, branch, ""); err != nil {
-			failures = append(failures, map[string]string{"branch": branch, "error": err.Error()})
-			continue
+		if item.Disposition == fanout.Created {
+			created = append(created, item.Target.Path)
 		}
-		created = append(created, target)
+		warnings = append(warnings, item.HookWarnings...)
 
-		wt, ok := findRepoWorktreeByBranch(repo, branch)
+		// Report created AND skipped worktrees: a converged clone still has to say
+		// what is on disk, or a caller cannot tell success from "did nothing".
+		wt, ok := findRepoWorktreeByBranch(repo, item.Target.Branch)
 		if !ok {
-			failures = append(failures, map[string]string{"branch": branch, "error": "worktree was created but git does not report it"})
+			failures = append(failures, map[string]string{
+				"branch": item.Target.Branch,
+				"error":  "worktree was created but git does not report it",
+			})
 			continue
 		}
-		item, trackErr := wt.withTracking()
-		if idx, err := newTopicIndex(projectRoot); err == nil {
-			idx.decorate(&item)
+		entry, trackErr := wt.withTracking()
+		if idx, err := newTopicIndex(root); err == nil {
+			idx.decorate(&entry)
 		}
 		if trackErr != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: %v", branch, trackErr))
+			warnings = append(warnings, fmt.Sprintf("%s: %v", item.Target.Branch, trackErr))
 		}
-		result.Worktrees = append(result.Worktrees, item)
-
-		hookResult, hookErr := runHookEventForProject(c, root, "post_clone", hooksContextFor(repo, branch, target), target)
-		warnings = append(warnings, hookResult.Warnings...)
-		if hookErr != nil {
-			// The worktree is correct; only the hook failed. Do not undo real work.
-			return result, warnings, hookErr
-		}
+		result.Worktrees = append(result.Worktrees, entry)
 	}
 
 	if len(failures) > 0 {
-		if len(result.Worktrees) == 0 {
-			// Undo exactly what THIS call created, and nothing more: on a resume the
-			// bare repo and the registration predate us and must survive so the next
-			// attempt can still finish.
-			for _, path := range created {
+		scope := fanout.RollbackScope{
+			Enabled:            true,
+			CreatedThisCall:    created,
+			BareWasNew:         !bareExisted,
+			RegistrationWasNew: !alreadyRegistered,
+		}
+		// Undo only on TOTAL failure, and only what this call created: on a resume the
+		// bare repo and the registration predate us and must survive so the next
+		// attempt can finish.
+		if scope.ShouldRollback(results) {
+			for _, path := range scope.CreatedThisCall {
 				_ = os.RemoveAll(path)
 			}
-			if !bareExisted {
+			if scope.BareWasNew {
 				_ = os.RemoveAll(result.BarePath)
 			}
-			if !alreadyRegistered && !bareExisted {
+			if scope.RegistrationWasNew && scope.BareWasNew {
 				c.RemoveRepo(opts.Group, opts.Alias)
 				_ = c.Save(configPath)
 			}
