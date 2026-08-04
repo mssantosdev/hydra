@@ -117,6 +117,28 @@ check "HYDRA_OUTPUT=text forces text" \
   '! (HYDRA_OUTPUT=text "$HYDRA" list | jq -e . >/dev/null 2>&1)'
 check "text output carries no ANSI" \
   '! HYDRA_OUTPUT=text "$HYDRA" list | grep -q "$(printf "\033")"'
+# The shared table (step 9). list and status render through ONE renderer, so a column
+# cannot appear in one and silently be missing from the other.
+#
+# Each assertion captures the render ONCE into a variable. Re-running hydra inside a
+# multi-command && chain made the earlier version fail for reasons unrelated to the
+# table, and one invocation is both faster and easier to reason about.
+list_text=$(HYDRA_OUTPUT=text "$HYDRA" list)
+status_text=$(HYDRA_OUTPUT=text "$HYDRA" status)
+status_against=$(HYDRA_OUTPUT=text "$HYDRA" status --against main)
+
+check "list renders a table header" \
+  'case "$list_text" in *WORKTREE*BRANCH*STATUS*) true;; *) false;; esac'
+check "the table draws a header rule" \
+  'case "$list_text" in *"────"*) true;; *) false;; esac'
+check "status shows the UPSTREAM column that list omits" \
+  'case "$status_text" in *UPSTREAM*) true;; *) false;; esac &&
+   case "$list_text" in *UPSTREAM*) false;; *) true;; esac'
+check "--against adds a VS REF column, absent otherwise" \
+  'case "$status_against" in *"VS REF"*) true;; *) false;; esac &&
+   case "$status_text" in *"VS REF"*) false;; *) true;; esac'
+check "every worktree occupies exactly one row" \
+  '[ "$(printf "%s\n" "$list_text" | grep -c "clean\|dirty")" = "$("$HYDRA" list --output json | jq ".data.worktrees|length")" ]'
 check "not_in_project exits 2" \
   '(cd "$T" && "$HYDRA" list >/dev/null 2>&1; test $? -eq 2)'
 # `add <new-branch>` deliberately CREATES the branch, so an unknown branch name is

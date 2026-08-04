@@ -3,9 +3,7 @@ package cmd
 import (
 	"fmt"
 	"sort"
-	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
@@ -176,20 +174,15 @@ func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 	out := cmd.OutOrStdout()
 
 	_, _ = fmt.Fprintln(out)
-	headerBox := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Blue).
-		Background(styles.BgDarker).
-		Padding(0, 4).
-		Align(lipgloss.Center).
-		Width(styles.GetTerminalWidth() - 4)
-	_, _ = fmt.Fprintln(out, headerBox.Render(
-		lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Render("HYDRA")+"\n"+
-			lipgloss.NewStyle().Foreground(styles.FgComment).Render("Worktree Status")))
+	_, _ = fmt.Fprintln(out, hydraHeaderBox("Worktree Status"))
 	_, _ = fmt.Fprintln(out)
 
-	_, nameWidth, branchWidth := styles.WorktreeListLayout()
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Underline(true)
+	// Only show the columns this invocation can populate: a --topic-filtered listing
+	// already knows the topic, and a blank column costs width the branch needs.
+	opts := worktreeTableOpts{
+		IncludeTopic:   topicFilter == "",
+		IncludeAgainst: againstRef != "",
+	}
 
 	hasWorktrees := false
 	for _, project := range projects {
@@ -205,22 +198,10 @@ func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 			}
 			hasWorktrees = true
 
-			_, _ = fmt.Fprintln(out, styles.GroupHeader.Render("▸ "+strings.ToUpper(group)))
-
-			worktreeHeader := styles.PadRight("WORKTREE", nameWidth)
-			branchHeader := styles.PadRight("BRANCH", branchWidth)
-			_, _ = fmt.Fprintf(out, "  %s  %s  %s\n",
-				headerStyle.Render(worktreeHeader),
-				headerStyle.Render(branchHeader),
-				headerStyle.Render("STATUS"))
-
-			sepWidth := nameWidth + branchWidth + 10 + 4
-			_, _ = fmt.Fprintf(out, "  %s\n", strings.Repeat("─", sepWidth))
-
-			for _, item := range items {
-				status := styles.StatusBadge(!item.Dirty, item.Changes)
-				_, _ = fmt.Fprintln(out, styles.FormatTableRow(item.Name, branchLabelJSON(item), status))
-			}
+			// The group header stays outside the table: lipgloss/table has no spanning
+			// row, and a header per section is what makes several tables readable.
+			_, _ = fmt.Fprintln(out, groupLabel(group))
+			_, _ = fmt.Fprintln(out, worktreeTable(tableWidth(), items, opts))
 			_, _ = fmt.Fprintln(out)
 		}
 	}

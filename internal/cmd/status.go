@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
@@ -168,17 +167,16 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 	out := cmd.OutOrStdout()
 
 	_, _ = fmt.Fprintln(out)
-	headerBox := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Blue).
-		Background(styles.BgDarker).
-		Padding(0, 4).
-		Align(lipgloss.Center).
-		Width(styles.GetTerminalWidth() - 4)
-	_, _ = fmt.Fprintln(out, headerBox.Render(
-		lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Render("HYDRA")+"\n"+
-			lipgloss.NewStyle().Foreground(styles.FgComment).Render("Status Overview")))
+	_, _ = fmt.Fprintln(out, hydraHeaderBox("Status Overview"))
 	_, _ = fmt.Fprintln(out)
+
+	// status is the command that exists to show tracking, so the upstream column is
+	// always on here even though list omits it.
+	opts := worktreeTableOpts{
+		IncludeUpstream: true,
+		IncludeTopic:    topicFilter == "",
+		IncludeAgainst:  againstRef != "",
+	}
 
 	for _, project := range projects {
 		if all {
@@ -195,6 +193,7 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 			styles.Label.Render(fmt.Sprintf("LOCAL %d", s.LocalOnly)),
 			styles.Label.Render(fmt.Sprintf("DETACHED %d", s.Detached)),
 		}, "  ")
+		// The stats box is status-specific chrome and stays outside the table.
 		_, _ = fmt.Fprintln(out, styles.StatBox.Render(stats))
 		_, _ = fmt.Fprintln(out)
 
@@ -204,16 +203,7 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 			continue
 		}
 
-		_, _ = fmt.Fprintln(out, styles.Label.Render("Worktrees:"))
-		for _, item := range project.Worktrees {
-			line := fmt.Sprintf("  %s  %s  %s  %s",
-				item.Name,
-				styles.Branch.Render(branchLabelJSON(item)),
-				upstreamLabelJSON(item),
-				styles.StatusBadge(!item.Dirty, item.Changes),
-			)
-			_, _ = fmt.Fprintln(out, line)
-		}
+		_, _ = fmt.Fprintln(out, worktreeTable(tableWidth(), project.Worktrees, opts))
 		_, _ = fmt.Fprintln(out)
 	}
 }
