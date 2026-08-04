@@ -119,6 +119,9 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	item, trackErr := wt.withTracking()
+	if idx, err := newTopicIndex(projectRoot); err == nil {
+		idx.decorate(&item)
+	}
 	var warnings []string
 	if trackErr != nil {
 		warnings = append(warnings, fmt.Sprintf("%s: %v", branch, trackErr))

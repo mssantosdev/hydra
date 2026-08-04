@@ -11,6 +11,7 @@ import (
 	"github.com/mssantosdev/hydra/internal/config/registry"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/topic"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,11 @@ const (
 	checkWorktreeDirty         = "worktree_dirty"
 	checkRegistryDangling      = "registry_dangling"
 	checkBareUnregistered      = "bare_unregistered"
+	// checkTopicDanglingMember covers EVERY way membership can outlive its worktree:
+	// a removal that skipped hydra, an interrupted remove, a branch renamed behind
+	// hydra's back, or a hand-edited state file. One check, because they all reduce
+	// to the same observable fact — a recorded member with no worktree on disk.
+	checkTopicDanglingMember = "topic_dangling_member"
 )
 
 var (
@@ -80,8 +86,13 @@ type doctorCheck struct {
 	Message  string `json:"message"`
 	Repo     string `json:"repo,omitempty"`
 	Worktree string `json:"worktree,omitempty"`
-	Fixable  bool   `json:"fixable"`
-	Fixed    bool   `json:"fixed,omitempty"`
+	// Topic and Branch carry the exact identity a topic fix needs. They are typed
+	// fields rather than substrings of Message or Worktree so --fix never has to
+	// parse a human-readable string to decide what to act on.
+	Topic   string `json:"topic,omitempty"`
+	Branch  string `json:"branch,omitempty"`
+	Fixable bool   `json:"fixable"`
+	Fixed   bool   `json:"fixed,omitempty"`
 }
 
 type doctorSummary struct {
@@ -182,6 +193,7 @@ func diagnoseProject(cfg *config.Config, projectRoot, projectName string) doctor
 	}
 	report.Checks = append(report.Checks, diagnoseGroupDirs(cfg, projectRoot, bareRoot)...)
 	report.Checks = append(report.Checks, diagnoseBareDir(cfg, bareRoot)...)
+	report.Checks = append(report.Checks, diagnoseTopicMembers(cfg, projectRoot)...)
 	sortDoctorChecks(&report)
 	recomputeDoctorSummary(&report)
 	return report
@@ -265,10 +277,76 @@ func diagnoseBareDir(cfg *config.Config, bareRoot string) []doctorCheck {
 			ID:     checkBareUnregistered,
 			Status: "warn",
 			Message: fmt.Sprintf(
-				"%s is not registered in .hydra.yaml (left by an interrupted clone?); run \"hydra adopt\" to register it or delete %s",
+				"%s is not registered in the manifest (left by an interrupted clone?); run \"hydra adopt\" to register it or delete %s",
 				name, filepath.Join(bareRoot, name)),
 			Repo: alias,
 		})
+	}
+	return checks
+}
+
+// diagnoseTopicMembers finds membership that outlived its worktree.
+//
+// The store deliberately records only what git cannot know, so it can drift when
+// a worktree disappears without hydra. Reported per member rather than per topic,
+// because the fix is per member: detach exactly the entries whose worktree is
+// gone, leaving the rest of the topic intact.
+func diagnoseTopicMembers(cfg *config.Config, projectRoot string) []doctorCheck {
+	topics, err := topic.Open(projectRoot).List()
+	if err != nil {
+		// Unreadable state is itself worth reporting, but it is not fixable by
+		// detaching: the file must be repaired or removed by hand.
+		return []doctorCheck{{
+			ID: checkTopicDanglingMember, Status: "fail", Fixable: false,
+			Message: fmt.Sprintf("topic state at %s could not be read: %v", topic.Path(projectRoot), err),
+		}}
+	}
+	if len(topics) == 0 {
+		return nil
+	}
+
+	// Build the live (repo, branch) set once. A repo whose worktrees cannot be
+	// listed is skipped entirely rather than treated as empty — otherwise a
+	// transient git failure would report every member of that repo as dangling.
+	live := make(map[string]struct{})
+	listed := make(map[string]bool)
+	for _, repo := range allRepoContexts(cfg, projectRoot) {
+		worktrees, err := listRepoWorktrees(repo)
+		if err != nil {
+			continue
+		}
+		listed[repo.Alias] = true
+		for _, wt := range worktrees {
+			if wt.Branch != "" {
+				live[topicKey(repo.Alias, wt.Branch)] = struct{}{}
+			}
+		}
+	}
+
+	var checks []doctorCheck
+	for _, t := range topics {
+		for _, m := range t.Members {
+			if !listed[m.Repo] {
+				continue
+			}
+			if _, ok := live[topicKey(m.Repo, m.Branch)]; ok {
+				continue
+			}
+			checks = append(checks, doctorCheck{
+				// "fail", not "warn": hydra would otherwise report a topic
+				// containing a worktree that does not exist — wrong output, not a
+				// caution. It also matches doctor's existing invariant that only
+				// "fail" checks are eligible for --fix.
+				ID: checkTopicDanglingMember, Status: "fail", Fixable: true,
+				Message: fmt.Sprintf(
+					"topic %q still records %s on branch %q, but no such worktree exists; --fix detaches it",
+					t.ID, m.Repo, m.Branch),
+				Repo:     m.Repo,
+				Topic:    t.ID,
+				Branch:   m.Branch,
+				Worktree: m.Repo + "@" + m.Branch,
+			})
+		}
 	}
 	return checks
 }
@@ -552,6 +630,15 @@ func applyDoctorFixes(report *doctorReport, cfg *config.Config, projectRoot stri
 				continue
 			}
 			markDoctorFixed(check, "stale worktree registration pruned")
+
+		case checkTopicDanglingMember:
+			// Detach only this member. Removing the whole topic would destroy
+			// membership for worktrees that are still present and healthy.
+			if err := topic.Open(projectRoot).Detach(check.Topic, check.Repo, check.Branch); err != nil {
+				check.Message = err.Error()
+				continue
+			}
+			markDoctorFixed(check, fmt.Sprintf("detached %s@%s from topic %q", check.Repo, check.Branch, check.Topic))
 		}
 	}
 }

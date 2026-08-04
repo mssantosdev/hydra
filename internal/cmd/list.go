@@ -33,6 +33,7 @@ EXIT CODES
 
 func init() {
 	listCmd.Flags().BoolVar(&listAll, "all", false, "List worktrees across every registered project")
+	listCmd.Flags().StringVar(&topicFilter, "topic", "", "Show only worktrees recorded in this topic")
 	rootCmd.AddCommand(listCmd)
 }
 
@@ -60,8 +61,20 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Validate the topic BEFORE filtering. An unknown id must be topic_unknown, not
+	// an empty list — "no such topic" and "that topic has no worktrees" are
+	// different answers, and silently conflating them is how an agent loses work.
+	//
+	// Validation spans the SAME targets being listed, because with --all a topic may
+	// live in any registered project; checking only the current one would reject an
+	// id that genuinely exists.
+	if err := requireTopicInTargets(targets, topicFilter); err != nil {
+		return err
+	}
+
 	projects, warnings, attempted, succeeded := collectProjectWorktrees(targets)
 	warnings = append(warnings, targetWarnings...)
+	projects = filterProjectsByTopic(projects, topicFilter)
 
 	if err := checkWorktreePartialFailure(targets, targetWarnings, attempted, succeeded); err != nil {
 		return err
@@ -114,7 +127,7 @@ func collectProjectWorktrees(targets []projectTarget) ([]projectWorktrees, []str
 		warnings = append(warnings, wtWarnings...)
 		succeeded += len(repos) - len(wtWarnings)
 
-		items := enrichWorktrees(contexts, &warnings)
+		items := enrichWorktrees(target.Root, contexts, &warnings)
 		projects = append(projects, projectWorktrees{
 			Project:   target.Name,
 			Root:      target.Root,
@@ -125,7 +138,14 @@ func collectProjectWorktrees(targets []projectTarget) ([]projectWorktrees, []str
 	return projects, warnings, attempted, succeeded
 }
 
-func enrichWorktrees(contexts []worktreeContext, warnings *[]string) []worktreeJSON {
+// enrichWorktrees fills tracking and topic membership. Membership failure is a
+// warning, never fatal: a listing whose git data is intact is still useful, and
+// unreadable state must not make the whole workspace unlistable.
+func enrichWorktrees(root string, contexts []worktreeContext, warnings *[]string) []worktreeJSON {
+	idx, err := newTopicIndex(root)
+	if err != nil {
+		*warnings = append(*warnings, fmt.Sprintf("topic state unreadable: %v", err))
+	}
 	items := make([]worktreeJSON, 0, len(contexts))
 	for _, wt := range contexts {
 		item, err := wt.withTracking()
@@ -133,6 +153,7 @@ func enrichWorktrees(contexts []worktreeContext, warnings *[]string) []worktreeJ
 			*warnings = append(*warnings, fmt.Sprintf("%s: %v", wt.Qualified(), err))
 			item = wt.json()
 		}
+		idx.decorate(&item)
 		items = append(items, item)
 	}
 	return items

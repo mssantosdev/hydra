@@ -144,6 +144,75 @@ check "doctor --fix restored the refspec" \
 check "doctor is clean afterwards" \
   '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e "[.data.checks[]|select(.status==\"fail\")]|length==0" >/dev/null'
 
+# ------------------------------------------------ 9b. topic membership (step 3)
+# There is no `topic` command yet, so membership is written the way the store
+# writes it. What is under test is the WIRING: decoration, filtering, detach on
+# remove, and doctor's drift check.
+#
+# This section creates its OWN worktree rather than reusing one an earlier section
+# touched: section 5 leaves api-stage dirty. It also passes --no-hooks, because
+# section 8 installs a post_add hook that writes into every new worktree — which
+# would make the remove assertions test hook side effects, not membership.
+echo "== 9b. topic membership is recorded, reported, filtered and repaired =="
+"$HYDRA" add api feat/topic-demo --no-hooks --output json >/dev/null
+check "a fresh worktree reports topic null" \
+  '"$HYDRA" list --output json | jq -e ".data.worktrees[]|select(.branch==\"feat/topic-demo\")|has(\"topic\") and .topic==null" >/dev/null'
+
+write_state(){ mkdir -p .hydra && cat > .hydra/state.yaml; }
+write_state <<'YAML'
+version: "1"
+topics:
+  "2072958":
+    members:
+      - repo: api
+        branch: feat/topic-demo
+YAML
+
+check "membership reaches the envelope" \
+  '"$HYDRA" list --output json | jq -e ".data.worktrees[]|select(.branch==\"feat/topic-demo\")|.topic==\"2072958\"" >/dev/null'
+check "--topic narrows to recorded members" \
+  '[ "$("$HYDRA" list --topic 2072958 --output json | jq ".data.worktrees|length")" = 1 ]'
+check "--topic on status narrows too" \
+  '[ "$("$HYDRA" status --topic 2072958 --output json | jq ".data.worktrees|length")" = 1 ]'
+# Error envelopes are written to stderr, so they must be redirected to be parsed.
+check "an unknown topic is an error, not an empty list" \
+  '{ "$HYDRA" list --topic 9999999 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_unknown\"" >/dev/null'
+check "the unknown-topic error lists the known ids" \
+  '{ "$HYDRA" list --topic 9999999 --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.known|index(\"2072958\")!=null" >/dev/null'
+check "topic_unknown exits 1" \
+  '{ "$HYDRA" list --topic 9999999 --output json >/dev/null 2>&1; [ "$?" = 1 ]; }'
+
+# Drift: a member whose worktree never existed. This is the state an interrupted
+# remove leaves behind.
+write_state <<'YAML'
+version: "1"
+topics:
+  "2072958":
+    members:
+      - repo: api
+        branch: feat/topic-demo
+      - repo: api
+        branch: feat/vanished
+YAML
+check "doctor reports the dangling member" \
+  '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e ".data.checks[]|select(.id==\"topic_dangling_member\")|.branch==\"feat/vanished\"" >/dev/null'
+check "the healthy member is not reported as dangling" \
+  '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e "[.data.checks[]|select(.id==\"topic_dangling_member\")]|length==1" >/dev/null'
+"$HYDRA" doctor --fix --output json >/dev/null 2>&1 || true
+check "doctor --fix detached only the dangling member" \
+  '"$HYDRA" list --topic 2072958 --output json | jq -e ".data.worktrees|length==1" >/dev/null'
+check "doctor is clean after the topic fix" \
+  '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e "[.data.checks[]|select(.status==\"fail\")]|length==0" >/dev/null'
+
+# remove detaches AFTER the worktree is gone, so state cannot outlive it.
+check "remove reports the topic it detached" \
+  '"$HYDRA" remove api feat/topic-demo --yes --output json | jq -e ".data.topic==\"2072958\"" >/dev/null'
+check "the removed worktree is gone" '! test -d backend/api-feat-topic-demo'
+check "doctor stays clean after remove detached" \
+  '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e "[.data.checks[]|select(.id==\"topic_dangling_member\")]|length==0" >/dev/null'
+check "an emptied topic no longer matches anything" \
+  '{ "$HYDRA" list --topic 2072958 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_unknown\"" >/dev/null'
+
 # ------------------------------------------------ 10. registry (step 2)
 echo "== 10. project registry =="
 check "the workspace registered itself" \

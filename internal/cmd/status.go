@@ -30,6 +30,7 @@ EXIT CODES
 
 func init() {
 	statusCmd.Flags().BoolVar(&statusAll, "all", false, "Show status across every registered project")
+	statusCmd.Flags().StringVar(&topicFilter, "topic", "", "Show only worktrees recorded in this topic")
 	rootCmd.AddCommand(statusCmd)
 }
 
@@ -61,8 +62,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Validate before filtering: an unknown id is topic_unknown, never an empty
+	// status board that looks like "everything is clean".
+	if err := requireTopicInTargets(targets, topicFilter); err != nil {
+		return err
+	}
+
 	projects, warnings, attempted, succeeded := collectProjectWorktrees(targets)
 	warnings = append(warnings, targetWarnings...)
+	projects = filterProjectsByTopic(projects, topicFilter)
 
 	if err := checkWorktreePartialFailure(targets, targetWarnings, attempted, succeeded); err != nil {
 		return err

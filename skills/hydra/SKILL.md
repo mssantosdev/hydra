@@ -8,12 +8,12 @@ description: Manage hydra workspaces and git worktrees with the `hydra` CLI. Use
 ## Model
 
 Four levels: **project** → **group** → **repo** → **worktree**. A project is a workspace root holding
-`.hydra.yaml`, registered by name in a global registry. The bare repository holds git data only;
+`.hydra/config.yaml`, registered by name in a global registry. Bare repos hold git data only;
 every worktree is a real sibling directory under its group.
 
 ```
 <project-root>/
-  .hydra.yaml
+  .hydra/config.yaml     # shared manifest; .hydra/ also holds local state
   .bare/api.git/          # git data ONLY — never cd into or write under .bare/
   backend/
     api/                  # worktree for the repo's default branch
@@ -41,7 +41,7 @@ The map key under a group **is** the repo alias, and it is the single source of 
 
 | command | purpose | key flag |
 |---|---|---|
-| `init` | create `.hydra.yaml` in the current directory | `--project-name` |
+| `init` | create `.hydra/config.yaml` in the current directory | `--project-name` |
 | `new` | bootstrap a new project and its first repo | `--group` |
 | `clone` | clone a remote into a project, one worktree per branch | `--branches` |
 | `adopt` | import an existing checkout into the current project | `--group` |
@@ -83,8 +83,8 @@ Failure, on stderr:
 
 | code | exit | raised when |
 |---|---|---|
-| `not_in_project` | 2 | no `.hydra.yaml` found walking up, and no `--project` |
-| `config_version_unsupported` | 2 | `.hydra.yaml` `version` is not `"2"` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` found walking up, and no `--project` |
+| `config_version_unsupported` | 2 | manifest `version` is not `"2"` |
 | `project_unknown` | 2 | `--project <name>` not in the registry |
 | `repo_unknown` | 1 | alias not present in any group |
 | `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |

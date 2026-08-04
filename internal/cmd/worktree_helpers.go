@@ -11,6 +11,7 @@ import (
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/hooks"
 	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/topic"
 )
 
 // repoContext is a repo registered in .hydra.yaml, resolved against a project root.
@@ -74,6 +75,9 @@ type worktreeJSON struct {
 	Behind   int     `json:"behind"`
 	Dirty    bool    `json:"dirty"`
 	Changes  int     `json:"changes"`
+	// Topic is the recorded topic this worktree belongs to, nil when unassigned.
+	// Unassigned is a permanent, first-class state — not a missing value.
+	Topic    *string `json:"topic"`
 	Locked   bool    `json:"locked,omitempty"`
 	Prunable bool    `json:"prunable,omitempty"`
 }
@@ -108,6 +112,112 @@ func (w worktreeContext) withTracking() (worktreeJSON, error) {
 	item.Dirty = status.HasChanges
 	item.Changes = status.ChangeCount
 	return item, nil
+}
+
+// topicFilter backs --topic on the listing commands. It is shared rather than
+// per-command so the flag cannot drift in name or meaning between them.
+var topicFilter string
+
+// topicIndex is an in-memory (repo, branch) -> topic lookup.
+//
+// It exists so a listing reads and parses the state file ONCE instead of once per
+// worktree. A nil index is valid and reports everything as unassigned, which is
+// what makes membership decoration safe on commands that never load a project.
+type topicIndex map[string]string
+
+func topicKey(repo, branch string) string { return repo + "\x00" + branch }
+
+// newTopicIndex reads recorded membership once for one project root.
+//
+// The root is explicit rather than taken from the global because `list`/`status`
+// can span several registered projects in one invocation, and each has its own
+// state file. A missing state file is not an error: a workspace that has never
+// used topics reports every worktree unassigned, which is the correct answer.
+func newTopicIndex(root string) (topicIndex, error) {
+	all, err := topic.Open(root).List()
+	if err != nil {
+		return nil, classifyTopicErr(err)
+	}
+	idx := make(topicIndex)
+	for _, t := range all {
+		for _, m := range t.Members {
+			idx[topicKey(m.Repo, m.Branch)] = t.ID
+		}
+	}
+	return idx, nil
+}
+
+// decorate stamps recorded membership onto an item. Detached worktrees can never
+// be members: membership is keyed by branch, and a detached HEAD has none.
+func (idx topicIndex) decorate(item *worktreeJSON) {
+	if idx == nil || item.Detached {
+		return
+	}
+	if id, ok := idx[topicKey(item.Repo, item.Branch)]; ok {
+		item.Topic = &id
+	}
+}
+
+// requireTopicInTargets validates a topic id against every project being operated
+// on, not just the active one.
+//
+// An empty id is a no-op: no filter was requested. Unreadable state in one project
+// does not veto the others — it only matters if NO target has the id, in which case
+// the read error is the more useful thing to report.
+func requireTopicInTargets(targets []projectTarget, id string) error {
+	if id == "" {
+		return nil
+	}
+	var known []string
+	var readErr error
+	for _, target := range targets {
+		names, err := topic.Open(target.Root).Names()
+		if err != nil {
+			if readErr == nil {
+				readErr = err
+			}
+			continue
+		}
+		for _, name := range names {
+			if name == id {
+				return nil
+			}
+		}
+		known = append(known, names...)
+	}
+	if readErr != nil && len(known) == 0 {
+		return classifyTopicErr(readErr)
+	}
+	sort.Strings(known)
+	return output.Errorf(output.CodeTopicUnknown,
+		"topic %q is not known; run \"hydra topic list\" to see active topics", id).
+		WithDetail("topic", id).
+		WithDetail("known", known)
+}
+
+// filterProjectsByTopic narrows a listing to exact recorded membership.
+//
+// Projects that end up empty are dropped entirely, so `--topic X` never renders a
+// project heading with nothing under it.
+func filterProjectsByTopic(projects []projectWorktrees, id string) []projectWorktrees {
+	if id == "" {
+		return projects
+	}
+	out := make([]projectWorktrees, 0, len(projects))
+	for _, project := range projects {
+		kept := make([]worktreeJSON, 0, len(project.Worktrees))
+		for _, wt := range project.Worktrees {
+			if wt.Topic != nil && *wt.Topic == id {
+				kept = append(kept, wt)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		project.Worktrees = kept
+		out = append(out, project)
+	}
+	return out
 }
 
 // repoContextFor builds a repoContext, resolving the effective default branch

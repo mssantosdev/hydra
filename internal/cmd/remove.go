@@ -26,6 +26,8 @@ type removeResult struct {
 	Branch        string `json:"branch"`
 	Path          string `json:"path"`
 	BranchDeleted bool   `json:"branch_deleted"`
+	// Topic is the topic this worktree was detached from, nil when unassigned.
+	Topic *string `json:"topic"`
 }
 
 var removeCmd = &cobra.Command{
@@ -156,6 +158,29 @@ func runRemove(cmd *cobra.Command, args []string) error {
 		Repo:   repo.Alias,
 		Branch: wt.Branch,
 		Path:   wt.Path,
+	}
+
+	// Detach AFTER the worktree is gone, never before.
+	//
+	// Detach-first would, on an interrupted run, leave a live worktree that looks
+	// unassigned — indistinguishable from genuinely ad-hoc work, so nothing reports
+	// it. Detach-after leaves a member whose worktree is missing, which `doctor`
+	// names as topic_dangling_member and fixes. A loud, findable inconsistency
+	// beats a silent, invisible one.
+	//
+	// Failure to detach is a warning, not an error: the removal already succeeded,
+	// and returning an error here would report a failure for work that was done.
+	if wt.Branch != "" {
+		if id, ok, err := topicStore().TopicOf(repo.Alias, wt.Branch); err != nil {
+			warnings = append(warnings, fmt.Sprintf("topic membership not updated: %v", classifyTopicErr(err)))
+		} else if ok {
+			result.Topic = &id
+			if err := topicStore().Detach(id, repo.Alias, wt.Branch); err != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"worktree removed but it is still recorded in topic %q; run \"hydra doctor --fix\": %v",
+					id, classifyTopicErr(err)))
+			}
+		}
 	}
 
 	if removeDeleteBranch {

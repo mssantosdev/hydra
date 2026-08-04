@@ -14,6 +14,7 @@ import (
 	"github.com/mssantosdev/hydra/internal/hooks"
 	"github.com/mssantosdev/hydra/internal/log"
 	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/topic"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 )
 
@@ -36,7 +37,7 @@ var (
 	projectConfigPath string
 	outMode           output.Mode
 
-	// commandsWithoutProject do not need a .hydra.yaml to run: they either create
+	// commandsWithoutProject do not need a manifest to run: they either create
 	// one, manage the global registry, or are pure output.
 	commandsWithoutProject = map[string]bool{
 		"init":       true,
@@ -347,6 +348,47 @@ func runHookEventForProject(c *config.Config, root, event string, hctx hooks.Con
 	hctx.Project = c.Project
 	hctx.ProjectRoot = root
 	return hooks.Run(chain, hctx, cwd, os.Stderr)
+}
+
+// topicStore returns the active project's topic store.
+//
+// It is a function rather than a global because topic.Open performs no I/O — it
+// only remembers the root — so there is no handle to hold, nothing to close, and
+// no stale value to reset between commands or tests.
+func topicStore() *topic.Store { return topic.Open(projectRoot) }
+
+// classifyTopicErr maps the store's sentinel errors onto the output enum so no
+// call site invents its own mapping.
+func classifyTopicErr(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var claimed *topic.ErrClaimed
+	if errors.As(err, &claimed) {
+		return output.Errorf(output.CodeTopicConflict, "%s", claimed.Error()).
+			WithDetail("repo", claimed.Repo).
+			WithDetail("branch", claimed.Branch).
+			WithDetail("existing_topic", claimed.Existing).
+			WithDetail("requested_topic", claimed.Requested)
+	}
+
+	var ver *topic.ErrVersion
+	if errors.As(err, &ver) {
+		return output.Errorf(output.CodeStateVersionUnsupported, "%s", ver.Error()).
+			WithDetail("path", ver.Path).
+			WithDetail("found_version", ver.Found).
+			WithDetail("supported_versions", []string{ver.Supported})
+	}
+
+	if topic.IsBusy(err) {
+		return output.Wrap(output.CodeBusy, err,
+			"another hydra process is writing topic state; retry").
+			WithDetail("resource", "state").
+			WithDetail("path", topic.LockPath(projectRoot))
+	}
+
+	return output.Wrap(output.CodeInternal, err, "failed to read or update topic state")
 }
 
 // versionInfo renders the version string.
