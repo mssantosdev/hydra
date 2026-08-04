@@ -25,7 +25,6 @@ var (
 	cloneGroup    string
 	cloneBranches []string
 	cloneAll      bool
-	cloneYes      bool
 	cloneDryRun   bool
 )
 
@@ -113,7 +112,6 @@ func init() {
 	cloneCmd.Flags().StringVar(&cloneGroup, "group", "", "group directory for the worktrees")
 	cloneCmd.Flags().StringSliceVar(&cloneBranches, "branches", nil, "branches to create worktrees for")
 	cloneCmd.Flags().BoolVar(&cloneAll, "all", false, "create a worktree for every branch on origin")
-	cloneCmd.Flags().BoolVar(&cloneYes, "yes", false, "skip confirmation prompts")
 	cloneCmd.Flags().BoolVar(&cloneDryRun, "dry-run", false, "report the plan without touching disk")
 	rootCmd.AddCommand(cloneCmd)
 }

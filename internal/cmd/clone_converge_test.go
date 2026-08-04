@@ -22,7 +22,7 @@ func TestClone_ReRunOnCompleteRepoIsConvergent(t *testing.T) {
 	env.Chdir()
 
 	args := []string{"clone", remote, "--alias", "api", "--group", "backend",
-		"--branches", "main,stage", "--yes", "--output", "json"}
+		"--branches", "main,stage", "--output", "json"}
 
 	resetCommandState(t)
 	rootCmd.SetArgs(args)
@@ -87,7 +87,7 @@ func TestClone_ConvergedRunStillReportsWorktrees(t *testing.T) {
 	env.Chdir()
 
 	args := []string{"clone", remote, "--alias", "api", "--group", "backend",
-		"--branches", "main,stage", "--yes", "--output", "json"}
+		"--branches", "main,stage", "--output", "json"}
 
 	resetCommandState(t)
 	rootCmd.SetArgs(args)

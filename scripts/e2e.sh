@@ -32,7 +32,7 @@ ok "upstream with main + stage"
 
 mkdir -p "$T/ws" && cd "$T/ws"
 "$HYDRA" init --project-name demo >/dev/null
-"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --yes --output json >/dev/null
+"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --output json >/dev/null
 "$HYDRA" add api stage --output json >/dev/null
 ok "init + clone + add"
 
@@ -88,9 +88,9 @@ echo "== 3b. re-cloning a complete repository is a no-op =="
 # Before the fan-out engine every already-present branch counted as a failure, so
 # this exact command returned git_failed "no worktree could be created".
 check "a second identical clone exits 0" \
-  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --yes --output json >/dev/null 2>&1'
+  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --output json >/dev/null 2>&1'
 check "the converged clone still reports the worktree" \
-  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --yes --output json 2>/dev/null | jq -e ".data.worktrees|length>=1" >/dev/null'
+  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --output json 2>/dev/null | jq -e ".data.worktrees|length>=1" >/dev/null'
 check "the re-clone destroyed nothing" 'test -d backend/api && test -d .bare/api.git'
 
 # ------------------------------------------------ 4. machine contract (step 5)
@@ -311,7 +311,7 @@ check "the invalid-filter error names the valid set" \
 # so clone the same upstream a second time under a different group and alias: both
 # then have a "main" worktree, which is the ordinary shape that made first-match
 # resolution dangerous.
-"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --yes --output json >/dev/null
+"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --output json >/dev/null
 check "the second repo has its own main worktree" 'test -d frontend/web'
 # Ambiguity: main exists in every repo, so a bare branch name names several.
 check "an ambiguous handle is refused by path" \
@@ -416,7 +416,7 @@ check "doctor is clean after a topic removal" \
 # ------------------------------------------------ 9e. hydra start (step 7c)
 echo "== 9e. start: two axes, convergent, no guessing =="
 # A second repo, so "which repos" is a real question.
-"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --yes --output json >/dev/null 2>&1 || true
+"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --output json >/dev/null 2>&1 || true
 
 check "start with no selector asks which repos" \
   '{ "$HYDRA" start feat/x --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.one_of|index(\"--repos\")!=null)" >/dev/null'

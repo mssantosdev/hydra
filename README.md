@@ -231,7 +231,6 @@ hydra remove api hotfix/critical-bug --delete-branch
 | `hydra config` | Manage global configuration (theme, editor) |
 | `hydra init-shell` | Install shell integration |
 | `hydra completion` | Emit shell completion script |
-| `hydra glossary` | Show terminology help |
 | `hydra skill` | Emit the agent skill (`--install`) |
 
 ## Machine-readable output

@@ -57,7 +57,6 @@ EXIT CODES
   1  General error (could not write the skill)
 
 SEE ALSO
-  • hydra glossary   - hydra's vocabulary for humans
   • hydra completion - shell completion scripts`,
 	Args: cobra.NoArgs,
 	RunE: runSkill,

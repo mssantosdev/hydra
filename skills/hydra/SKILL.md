@@ -60,7 +60,6 @@ The map key under a group **is** the repo alias, and it is the single source of 
 | `config` | `show`, or `set theme\|editor <value>` without a prompt | — |
 | `init-shell` | install the shell helper that powers `switch` | `--install` |
 | `completion` | emit a shell completion script | — |
-| `glossary` | explain hydra's vocabulary | — |
 | `skill` | emit this skill | `--install` |
 
 Global flags: `--output auto|text|json`, `--project <name>`, `--config <path>`, `--verbose`,

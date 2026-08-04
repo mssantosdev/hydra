@@ -44,7 +44,6 @@ var (
 		"new":        true,
 		"clone":      true,
 		"help":       true,
-		"glossary":   true,
 		"config":     true,
 		"init-shell": true,
 		"completion": true,

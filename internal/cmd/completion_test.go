@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -95,32 +94,5 @@ func TestCompleteWorktreeNamesReturnsDirectoryBasenames(t *testing.T) {
 		if !want[name] {
 			t.Fatalf("unexpected worktree name %q in %v", name, names)
 		}
-	}
-}
-
-func TestGlossaryNonInteractiveJSON(t *testing.T) {
-	resetCommandState(t)
-	var out bytes.Buffer
-	rootCmd.SetOut(&out)
-	rootCmd.SetErr(&out)
-	rootCmd.SetArgs([]string{"glossary", "--output", "json"})
-
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("glossary --output json failed: %v", err)
-	}
-
-	var envelope struct {
-		Data struct {
-			Terms []struct {
-				Term       string `json:"term"`
-				Definition string `json:"definition"`
-			} `json:"terms"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
-		t.Fatalf("failed to parse glossary JSON: %v\noutput: %s", err, out.String())
-	}
-	if len(envelope.Data.Terms) == 0 {
-		t.Fatal("expected glossary terms in JSON output")
 	}
 }
