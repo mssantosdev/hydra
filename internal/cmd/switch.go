@@ -129,14 +129,19 @@ func resolveSwitchTarget(args []string) (worktreeContext, error) {
 
 	if len(args) == 1 {
 		name := strings.TrimSpace(args[0])
-		wt, ok := findWorktreeInList(items, name)
-		if !ok {
+		wt, err := resolveOneWorktree(items, name)
+		if err == nil {
+			return wt, nil
+		}
+		// Enrich only the not-found case; an ambiguity error already names every
+		// candidate, and suggestions there would be noise.
+		if output.Classify(err).Code == output.CodeWorktreeUnknown {
 			return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
 				"no worktree named %q", name).
 				WithDetail("name", name).
 				WithDetail("did_you_mean", findSimilarWorktreesByName(cfg, projectRoot, name))
 		}
-		return wt, nil
+		return worktreeContext{}, err
 	}
 
 	if len(items) == 0 {
@@ -160,11 +165,10 @@ func resolveSwitchTarget(args []string) (worktreeContext, error) {
 	if err := huh.NewSelect[string]().Title("Switch to").Options(options...).Value(&selected).Run(); err != nil {
 		return worktreeContext{}, output.Wrap(output.CodeInternal, err, "cancelled")
 	}
-	wt, ok := findWorktreeInList(items, selected)
-	if !ok {
-		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown, "no worktree named %q", selected)
-	}
-	return wt, nil
+	// The picker yields a Qualified() name, which is unique by construction, so this
+	// cannot be ambiguous — it goes through the same resolver anyway so there is one
+	// matching rule rather than two that could drift.
+	return resolveOneWorktree(items, selected)
 }
 
 func worktreeHandles(items []worktreeContext) []string {

@@ -139,16 +139,20 @@ func resolveHooksWorktree(event string) (worktreeContext, string, error) {
 	var wt worktreeContext
 
 	if strings.TrimSpace(hooksWorktree) != "" {
-		var found bool
-		wt, found = findWorktreeByName(cfg, projectRoot, hooksWorktree)
-		if !found {
-			similar := findSimilarWorktreesByName(cfg, projectRoot, hooksWorktree)
-			err := output.Errorf(output.CodeWorktreeUnknown, "worktree not found: %s", hooksWorktree)
-			if len(similar) > 0 {
-				err = err.WithDetail("did_you_mean", similar)
+		items, _ := collectWorktrees(cfg, projectRoot)
+		resolved, err := resolveOneWorktree(items, hooksWorktree)
+		if err != nil {
+			if output.Classify(err).Code != output.CodeWorktreeUnknown {
+				return worktreeContext{}, "", err
 			}
-			return worktreeContext{}, "", err
+			similar := findSimilarWorktreesByName(cfg, projectRoot, hooksWorktree)
+			unknown := output.Errorf(output.CodeWorktreeUnknown, "worktree not found: %s", hooksWorktree)
+			if len(similar) > 0 {
+				unknown = unknown.WithDetail("did_you_mean", similar)
+			}
+			return worktreeContext{}, "", unknown
 		}
+		wt = resolved
 	} else {
 		wd, err := os.Getwd()
 		if err != nil {

@@ -246,14 +246,20 @@ func resolveRemoveTarget(args []string) (worktreeContext, error) {
 
 	case 1:
 		name := strings.TrimSpace(args[0])
-		wt, ok := findWorktreeByName(cfg, projectRoot, name)
-		if !ok {
+		items, _ := collectWorktrees(cfg, projectRoot)
+		wt, err := resolveOneWorktree(items, name)
+		if err == nil {
+			return wt, nil
+		}
+		// Ambiguity matters most here: removing the wrong worktree destroys work.
+		// The two-argument form `remove <alias> <branch>` is the unambiguous escape.
+		if output.Classify(err).Code == output.CodeWorktreeUnknown {
 			return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
 				"no worktree named %q", name).
 				WithDetail("name", name).
 				WithDetail("did_you_mean", findSimilarWorktreesByName(cfg, projectRoot, name))
 		}
-		return wt, nil
+		return worktreeContext{}, err
 	}
 
 	if !interactive() {
@@ -274,11 +280,7 @@ func resolveRemoveTarget(args []string) (worktreeContext, error) {
 	if err := huh.NewSelect[string]().Title("Worktree to remove").Options(options...).Value(&selected).Run(); err != nil {
 		return worktreeContext{}, output.Wrap(output.CodeInternal, err, "cancelled")
 	}
-	wt, ok := findWorktreeInList(items, selected)
-	if !ok {
-		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown, "no worktree named %q", selected)
-	}
-	return wt, nil
+	return resolveOneWorktree(items, selected)
 }
 
 // removeGroupDirIfEmpty drops a group directory that has no entries left.

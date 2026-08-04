@@ -10,6 +10,8 @@ import (
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/hooks"
+	"github.com/spf13/pflag"
+
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/topic"
 )
@@ -114,9 +116,34 @@ func (w worktreeContext) withTracking() (worktreeJSON, error) {
 	return item, nil
 }
 
-// topicFilter backs --topic on the listing commands. It is shared rather than
-// per-command so the flag cannot drift in name or meaning between them.
-var topicFilter string
+// The selector flags, shared by every command that takes them so a flag cannot
+// drift in name or meaning between commands.
+var (
+	topicFilter string
+	reposFilter []string
+	groupFilter string
+	stateFilter []string
+)
+
+// currentSelector snapshots the selector flags as parsed for this invocation.
+func currentSelector() Selector {
+	return Selector{
+		Topic:  topicFilter,
+		Repos:  reposFilter,
+		Group:  groupFilter,
+		Filter: stateFilter,
+	}
+}
+
+// registerSelectorFlags declares the selector surface on a command. It is one
+// function so a command cannot accidentally offer a subset.
+func registerSelectorFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&topicFilter, "topic", "", "Only worktrees recorded in this topic")
+	flags.StringSliceVar(&reposFilter, "repos", nil, "Only these repositories (repeatable, comma-separated)")
+	flags.StringVar(&groupFilter, "group", "", "Only worktrees in this group")
+	flags.StringArrayVar(&stateFilter, "filter", nil,
+		"Narrow by state: dirty, behind, or branch:<glob> (repeatable)")
+}
 
 // topicIndex is an in-memory (repo, branch) -> topic lookup.
 //
@@ -193,31 +220,6 @@ func requireTopicInTargets(targets []projectTarget, id string) error {
 		"topic %q is not known; run \"hydra topic list\" to see active topics", id).
 		WithDetail("topic", id).
 		WithDetail("known", known)
-}
-
-// filterProjectsByTopic narrows a listing to exact recorded membership.
-//
-// Projects that end up empty are dropped entirely, so `--topic X` never renders a
-// project heading with nothing under it.
-func filterProjectsByTopic(projects []projectWorktrees, id string) []projectWorktrees {
-	if id == "" {
-		return projects
-	}
-	out := make([]projectWorktrees, 0, len(projects))
-	for _, project := range projects {
-		kept := make([]worktreeJSON, 0, len(project.Worktrees))
-		for _, wt := range project.Worktrees {
-			if wt.Topic != nil && *wt.Topic == id {
-				kept = append(kept, wt)
-			}
-		}
-		if len(kept) == 0 {
-			continue
-		}
-		project.Worktrees = kept
-		out = append(out, project)
-	}
-	return out
 }
 
 // repoContextFor builds a repoContext, resolving the effective default branch
@@ -364,32 +366,6 @@ func resolveCurrentHydraContext(wd string, cfg *config.Config, projectRoot strin
 		}
 	}
 	return best
-}
-
-// findWorktreeInList matches a handle against an already-collected list.
-func findWorktreeInList(items []worktreeContext, name string) (worktreeContext, bool) {
-	query := strings.TrimSpace(name)
-
-	// Exact directory name or group-qualified name first.
-	for _, item := range items {
-		if strings.EqualFold(item.DirName, query) || strings.EqualFold(item.Qualified(), query) {
-			return item, true
-		}
-	}
-	// Then real branch names.
-	for _, item := range items {
-		if item.Branch != "" && strings.EqualFold(item.Branch, query) {
-			return item, true
-		}
-	}
-	return worktreeContext{}, false
-}
-
-// findWorktreeByName matches a user-supplied handle against real directory names
-// and real branch names.
-func findWorktreeByName(cfg *config.Config, projectRoot, name string) (worktreeContext, bool) {
-	items, _ := collectWorktrees(cfg, projectRoot)
-	return findWorktreeInList(items, name)
 }
 
 // findRepoWorktreeByBranch locates a repo's worktree for an exact branch.

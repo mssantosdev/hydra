@@ -1,0 +1,342 @@
+package cmd
+
+import (
+	"fmt"
+	"path"
+	"sort"
+	"strings"
+
+	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/topic"
+)
+
+// Session is the resolved project a command operates within.
+//
+// It exists so the resolver takes its inputs as arguments instead of reading the
+// package globals. Those globals are set once by loadProject and are fine for a
+// read-only leaf command, but resolution must be callable against an explicit
+// project: `--all` spans several, and mutating globals mid-invocation to walk them
+// is how a command ends up operating on the wrong workspace.
+type Session struct {
+	Cfg        *config.Config
+	Root       string
+	ConfigPath string
+	Topics     *topic.Store
+}
+
+// currentSession snapshots what loadProject resolved.
+func currentSession() Session {
+	return Session{
+		Cfg:        cfg,
+		Root:       projectRoot,
+		ConfigPath: projectConfigPath,
+		Topics:     topic.Open(projectRoot),
+	}
+}
+
+// sessionFor builds a session for one entry of a multi-project walk.
+func sessionFor(target projectTarget) Session {
+	return Session{
+		Cfg:    target.Cfg,
+		Root:   target.Root,
+		Topics: topic.Open(target.Root),
+	}
+}
+
+// Selector narrows which worktrees a command acts on. The zero value selects every
+// worktree in the session's project.
+type Selector struct {
+	Topic  string
+	Repos  []string
+	Group  string
+	Filter []string
+}
+
+// empty reports whether the selector narrows anything at all.
+func (s Selector) empty() bool {
+	return s.Topic == "" && len(s.Repos) == 0 && s.Group == "" && len(s.Filter) == 0
+}
+
+// filters is the parsed form of --filter.
+//
+// The value set is closed so it can be completed and validated. An open-ended
+// expression language was refused: it cannot be completed, and every value here is
+// answerable from data hydra already computes.
+type filters struct {
+	dirty    bool
+	behind   bool
+	branches []string
+}
+
+// derived reports whether any filter needs per-worktree git data. It decides
+// whether the expensive tracking phase must run at all.
+func (f filters) derived() bool { return f.dirty || f.behind }
+
+const filterValues = "dirty, behind, or branch:<glob>"
+
+func parseFilters(raw []string) (filters, error) {
+	var out filters
+	for _, entry := range raw {
+		value := strings.TrimSpace(entry)
+		switch {
+		case value == "dirty":
+			out.dirty = true
+		case value == "behind":
+			out.behind = true
+		case strings.HasPrefix(value, "branch:"):
+			glob := strings.TrimPrefix(value, "branch:")
+			if glob == "" {
+				return filters{}, output.Errorf(output.CodeInternal,
+					"--filter branch: needs a pattern, for example branch:feat/*")
+			}
+			// Reject a malformed pattern now rather than silently matching nothing.
+			if _, err := path.Match(glob, ""); err != nil {
+				return filters{}, output.Errorf(output.CodeInternal,
+					"invalid --filter branch pattern %q: %v", glob, err)
+			}
+			out.branches = append(out.branches, glob)
+		default:
+			return filters{}, output.Errorf(output.CodeInternal,
+				"invalid --filter value %q (want %s)", value, filterValues).
+				WithDetail("filter", value).
+				WithDetail("valid", []string{"dirty", "behind", "branch:<glob>"})
+		}
+	}
+	return out, nil
+}
+
+// matchesBranch reports whether a branch satisfies the branch globs. Several globs
+// are a union: --filter branch:feat/* --filter branch:fix/* means either.
+func (f filters) matchesBranch(branch string) bool {
+	if len(f.branches) == 0 {
+		return true
+	}
+	for _, glob := range f.branches {
+		if ok, _ := path.Match(glob, branch); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// resolvedWorktree pairs a worktree with the envelope item derived from it. Item is
+// only fully populated when the tracking phase ran.
+type resolvedWorktree struct {
+	Context worktreeContext
+	Item    worktreeJSON
+}
+
+// resolveTargets applies a selector to a session's worktrees.
+//
+// Filtering is deliberately two-phase. Topic, repo, group and branch are answerable
+// from data already in hand, so they run FIRST and shrink the set before any
+// per-worktree git call. Dirty and behind are *derived from* those calls, so they
+// can only run after. Collapsing the phases either makes the cheap filters pay for
+// git on worktrees about to be discarded, or makes the derived filters impossible.
+//
+// tracking forces the expensive phase for callers that need ahead/behind/dirty
+// regardless of filtering. A derived filter turns it on by itself.
+func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree, []string, error) {
+	parsed, err := parseFilters(sel.Filter)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Validate narrowing values before doing any work, so a typo is reported as a
+	// typo rather than as an empty result.
+	if err := validateRepos(s, sel.Repos); err != nil {
+		return nil, nil, err
+	}
+	if err := validateGroup(s, sel.Group); err != nil {
+		return nil, nil, err
+	}
+
+	// Topic EXISTENCE is deliberately not checked here.
+	//
+	// The resolver runs once per project, so failing on "this project has no topic X"
+	// would abort a --all walk the moment it reached a project that legitimately has
+	// no such topic — even though X lives in a sibling project. Existence is answered
+	// once across the whole walk by requireTopicInTargets in the caller; here an
+	// absent topic simply means "nothing in this project matches", which the
+	// membership comparison below already produces.
+	//
+	// Unreadable state is a different thing from an absent topic, and is handled
+	// immediately below: corruption may fail, absence may not.
+	index, indexErr := newTopicIndex(s.Root)
+
+	contexts, warnings := collectWorktrees(s.Cfg, s.Root)
+	if indexErr != nil {
+		// Membership is unreadable. That is fatal only when it was asked about;
+		// otherwise a listing with git data intact is still worth returning.
+		if sel.Topic != "" {
+			return nil, warnings, indexErr
+		}
+		warnings = append(warnings, fmt.Sprintf("topic state unreadable: %v", indexErr))
+	}
+
+	// Phase one: cheap.
+	kept := make([]resolvedWorktree, 0, len(contexts))
+	repos := lowerSet(sel.Repos)
+	for _, ctx := range contexts {
+		if len(repos) > 0 {
+			if _, ok := repos[strings.ToLower(ctx.RepoContext.Alias)]; !ok {
+				continue
+			}
+		}
+		if sel.Group != "" && !strings.EqualFold(ctx.RepoContext.Group, sel.Group) {
+			continue
+		}
+		if !parsed.matchesBranch(ctx.Branch) {
+			continue
+		}
+		item := ctx.json()
+		index.decorate(&item)
+		if sel.Topic != "" && (item.Topic == nil || *item.Topic != sel.Topic) {
+			continue
+		}
+		kept = append(kept, resolvedWorktree{Context: ctx, Item: item})
+	}
+
+	if !tracking && !parsed.derived() {
+		return kept, warnings, nil
+	}
+
+	// Phase two: expensive, and only over what survived phase one.
+	out := make([]resolvedWorktree, 0, len(kept))
+	for _, target := range kept {
+		item, err := target.Context.withTracking()
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s: %v", target.Context.Qualified(), err))
+			// Keep the un-tracked item so the worktree is still reported, but never
+			// let it satisfy a derived filter: its dirty/behind fields are unknown,
+			// not false.
+			if parsed.derived() {
+				continue
+			}
+			out = append(out, target)
+			continue
+		}
+		index.decorate(&item)
+		if parsed.dirty && !item.Dirty {
+			continue
+		}
+		if parsed.behind && item.Behind == 0 {
+			continue
+		}
+		out = append(out, resolvedWorktree{Context: target.Context, Item: item})
+	}
+	return out, warnings, nil
+}
+
+func lowerSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		out[strings.ToLower(strings.TrimSpace(value))] = struct{}{}
+	}
+	return out
+}
+
+// validateRepos rejects an unknown alias instead of returning nothing. "That repo
+// is not registered" and "that repo has no worktrees" are different answers.
+func validateRepos(s Session, aliases []string) error {
+	if len(aliases) == 0 {
+		return nil
+	}
+	known := make(map[string]struct{})
+	var names []string
+	for _, ref := range s.Cfg.Repos() {
+		known[strings.ToLower(ref.Alias)] = struct{}{}
+		names = append(names, ref.Alias)
+	}
+	sort.Strings(names)
+	for _, alias := range aliases {
+		if _, ok := known[strings.ToLower(strings.TrimSpace(alias))]; !ok {
+			return output.Errorf(output.CodeRepoUnknown,
+				"repository %q is not registered; run \"hydra repo list\" to see registered repositories", alias).
+				WithDetail("repo", alias).
+				WithDetail("known", names)
+		}
+	}
+	return nil
+}
+
+// validateGroup rejects an unknown group for the same reason.
+func validateGroup(s Session, group string) error {
+	if group == "" {
+		return nil
+	}
+	var names []string
+	for _, name := range s.Cfg.SortedGroups() {
+		if strings.EqualFold(name, group) {
+			return nil
+		}
+		names = append(names, name)
+	}
+	return output.Errorf(output.CodeRepoUnknown,
+		"group %q does not exist; run \"hydra list\" to see groups", group).
+		WithDetail("group", group).
+		WithDetail("known", names)
+}
+
+// matchWorktrees returns EVERY worktree a handle matches.
+//
+// Directory and group-qualified names are tried before branch names, because a
+// qualified name is unique by construction while a branch name is not: every repo
+// has a main, so "main" legitimately names several worktrees.
+func matchWorktrees(items []worktreeContext, query string) []worktreeContext {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+
+	var byName []worktreeContext
+	for _, item := range items {
+		if strings.EqualFold(item.DirName, query) || strings.EqualFold(item.Qualified(), query) {
+			byName = append(byName, item)
+		}
+	}
+	if len(byName) > 0 {
+		return byName
+	}
+
+	var byBranch []worktreeContext
+	for _, item := range items {
+		if item.Branch != "" && strings.EqualFold(item.Branch, query) {
+			byBranch = append(byBranch, item)
+		}
+	}
+	return byBranch
+}
+
+// resolveOneWorktree requires a handle to name exactly one worktree.
+//
+// Returning the first of several matches was a real bug: every repo has a main
+// branch, so "hydra path main" picked whichever repo happened to sort first and
+// reported no problem. Silently acting on the wrong worktree is worse than
+// refusing, so ambiguity is an error listing the candidates.
+func resolveOneWorktree(items []worktreeContext, query string) (worktreeContext, error) {
+	matches := matchWorktrees(items, query)
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
+			"no worktree named %q; run \"hydra list\" to see worktrees", query).
+			WithDetail("worktree", query)
+	default:
+		candidates := make([]string, 0, len(matches))
+		for _, match := range matches {
+			candidates = append(candidates, match.Qualified())
+		}
+		sort.Strings(candidates)
+		return worktreeContext{}, output.Errorf(output.CodeWorktreeNameConflict,
+			"%q matches %d worktrees; name one of %s",
+			query, len(matches), strings.Join(candidates, ", ")).
+			WithDetail("worktree", query).
+			WithDetail("candidates", candidates)
+	}
+}

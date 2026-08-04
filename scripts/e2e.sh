@@ -213,6 +213,87 @@ check "doctor stays clean after remove detached" \
 check "an emptied topic no longer matches anything" \
   '{ "$HYDRA" list --topic 2072958 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_unknown\"" >/dev/null'
 
+# ------------------------------------------------ 9c. selector surface (step 4)
+echo "== 9c. the selector narrows, and ambiguity is refused =="
+check "--repos narrows to one repository" \
+  '[ "$("$HYDRA" list --repos api --output json | jq "[.data.worktrees[]|select(.repo!=\"api\")]|length")" = 0 ]'
+check "--group narrows to one group" \
+  '[ "$("$HYDRA" list --group backend --output json | jq "[.data.worktrees[]|select(.group!=\"backend\")]|length")" = 0 ]'
+check "an unknown --repos value is refused" \
+  '{ "$HYDRA" list --repos nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"repo_unknown\"" >/dev/null'
+check "the unknown-repo error lists the known aliases" \
+  '{ "$HYDRA" list --repos nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.known|index(\"api\")!=null" >/dev/null'
+check "an unknown --group value is refused" \
+  '{ "$HYDRA" list --group nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"repo_unknown\"" >/dev/null'
+
+"$HYDRA" add api feat/selector --no-hooks --output json >/dev/null
+check "--filter branch:<glob> narrows by branch" \
+  '[ "$("$HYDRA" list --filter "branch:feat/*" --output json | jq "[.data.worktrees[]|select(.branch|startswith(\"feat/\")|not)]|length")" = 0 ]'
+check "--filter branch matched the new worktree" \
+  '"$HYDRA" list --filter "branch:feat/*" --output json | jq -e "[.data.worktrees[]|select(.branch==\"feat/selector\")]|length==1" >/dev/null'
+# An earlier section leaves api-stage dirty, so assert about THIS worktree rather
+# than about the workspace being globally clean.
+check "--filter dirty excludes the clean worktree" \
+  '[ "$("$HYDRA" list --filter dirty --output json | jq "[.data.worktrees[]|select(.branch==\"feat/selector\")]|length")" = 0 ]'
+echo scratch > backend/api-feat-selector/scratch.txt
+check "--filter dirty finds the dirtied worktree" \
+  '"$HYDRA" list --filter dirty --output json | jq -e "[.data.worktrees[]|select(.branch==\"feat/selector\")]|length==1" >/dev/null'
+# Filters intersect: dirty AND a non-matching branch glob yields nothing, even
+# though each alone matches feat/selector.
+check "filters combine as an intersection, not a union" \
+  '[ "$("$HYDRA" list --filter dirty --filter "branch:hotfix/*" --output json | jq "[.data.worktrees[]|select(.branch==\"feat/selector\")]|length")" = 0 ]'
+check "an invalid --filter value is refused" \
+  '{ "$HYDRA" list --filter nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+check "the invalid-filter error names the valid set" \
+  '{ "$HYDRA" list --filter nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.valid|index(\"dirty\")!=null" >/dev/null'
+# Ambiguity needs a branch name that exists in two repos. The fixture registers one,
+# so clone the same upstream a second time under a different group and alias: both
+# then have a "main" worktree, which is the ordinary shape that made first-match
+# resolution dangerous.
+"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --yes --output json >/dev/null
+check "the second repo has its own main worktree" 'test -d frontend/web'
+# Ambiguity: main exists in every repo, so a bare branch name names several.
+check "an ambiguous handle is refused by path" \
+  '{ "$HYDRA" path main --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+check "the ambiguity error lists every candidate" \
+  '{ "$HYDRA" path main --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.candidates|length>=2" >/dev/null'
+check "a group-qualified handle still resolves" \
+  '[ "$("$HYDRA" path backend/api)" = "$PWD/backend/api" ]'
+check "an ambiguous handle is refused by remove" \
+  '{ "$HYDRA" remove main --yes --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+check "the refused remove deleted nothing" 'test -d backend/api'
+
+# path --topic must print exactly one path.
+"$HYDRA" list --output json >/dev/null
+write_state <<'YAML'
+version: "1"
+topics:
+  spanning:
+    members:
+      - repo: api
+        branch: main
+      - repo: api
+        branch: feat/selector
+YAML
+check "path --topic refuses a topic spanning worktrees" \
+  '{ "$HYDRA" path --topic spanning --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+write_state <<'YAML'
+version: "1"
+topics:
+  solo:
+    members:
+      - repo: api
+        branch: feat/selector
+YAML
+check "path --topic prints the single worktree path" \
+  '[ "$("$HYDRA" path --topic solo)" = "$PWD/backend/api-feat-selector" ]'
+check "a handle and --topic together are refused" \
+  '{ "$HYDRA" path backend/api --topic solo --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+
+rm -f backend/api-feat-selector/scratch.txt
+"$HYDRA" remove api feat/selector --yes --output json >/dev/null
+rm -f .hydra/state.yaml
+
 # ------------------------------------------------ 10. registry (step 2)
 echo "== 10. project registry =="
 check "the workspace registered itself" \

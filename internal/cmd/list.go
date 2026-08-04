@@ -33,7 +33,7 @@ EXIT CODES
 
 func init() {
 	listCmd.Flags().BoolVar(&listAll, "all", false, "List worktrees across every registered project")
-	listCmd.Flags().StringVar(&topicFilter, "topic", "", "Show only worktrees recorded in this topic")
+	registerSelectorFlags(listCmd.Flags())
 	rootCmd.AddCommand(listCmd)
 }
 
@@ -61,7 +61,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Validate the topic BEFORE filtering. An unknown id must be topic_unknown, not
+	// Validate the topic BEFORE resolving. An unknown id must be topic_unknown, not
 	// an empty list — "no such topic" and "that topic has no worktrees" are
 	// different answers, and silently conflating them is how an agent loses work.
 	//
@@ -72,9 +72,11 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	projects, warnings, attempted, succeeded := collectProjectWorktrees(targets)
+	projects, warnings, attempted, succeeded, err := collectProjectWorktrees(targets, currentSelector())
+	if err != nil {
+		return err
+	}
 	warnings = append(warnings, targetWarnings...)
-	projects = filterProjectsByTopic(projects, topicFilter)
 
 	if err := checkWorktreePartialFailure(targets, targetWarnings, attempted, succeeded); err != nil {
 		return err
@@ -114,7 +116,9 @@ func runList(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func collectProjectWorktrees(targets []projectTarget) ([]projectWorktrees, []string, int, int) {
+// collectProjectWorktrees resolves each target's worktrees through the shared
+// resolver, so selector semantics cannot differ between list and status.
+func collectProjectWorktrees(targets []projectTarget, sel Selector) ([]projectWorktrees, []string, int, int, error) {
 	var projects []projectWorktrees
 	var warnings []string
 	attempted, succeeded := 0, 0
@@ -123,11 +127,23 @@ func collectProjectWorktrees(targets []projectTarget) ([]projectWorktrees, []str
 		repos := allRepoContexts(target.Cfg, target.Root)
 		attempted += len(repos)
 
-		contexts, wtWarnings := collectWorktrees(target.Cfg, target.Root)
+		resolved, wtWarnings, err := resolveTargets(sessionFor(target), sel, true)
+		if err != nil {
+			return nil, warnings, attempted, succeeded, err
+		}
 		warnings = append(warnings, wtWarnings...)
 		succeeded += len(repos) - len(wtWarnings)
 
-		items := enrichWorktrees(target.Root, contexts, &warnings)
+		items := make([]worktreeJSON, 0, len(resolved))
+		for _, entry := range resolved {
+			items = append(items, entry.Item)
+		}
+
+		// A selector that matched nothing here drops the project entirely, so a
+		// narrowed listing never prints a heading with nothing under it.
+		if len(items) == 0 && !sel.empty() {
+			continue
+		}
 		projects = append(projects, projectWorktrees{
 			Project:   target.Name,
 			Root:      target.Root,
@@ -135,28 +151,7 @@ func collectProjectWorktrees(targets []projectTarget) ([]projectWorktrees, []str
 		})
 	}
 
-	return projects, warnings, attempted, succeeded
-}
-
-// enrichWorktrees fills tracking and topic membership. Membership failure is a
-// warning, never fatal: a listing whose git data is intact is still useful, and
-// unreadable state must not make the whole workspace unlistable.
-func enrichWorktrees(root string, contexts []worktreeContext, warnings *[]string) []worktreeJSON {
-	idx, err := newTopicIndex(root)
-	if err != nil {
-		*warnings = append(*warnings, fmt.Sprintf("topic state unreadable: %v", err))
-	}
-	items := make([]worktreeJSON, 0, len(contexts))
-	for _, wt := range contexts {
-		item, err := wt.withTracking()
-		if err != nil {
-			*warnings = append(*warnings, fmt.Sprintf("%s: %v", wt.Qualified(), err))
-			item = wt.json()
-		}
-		idx.decorate(&item)
-		items = append(items, item)
-	}
-	return items
+	return projects, warnings, attempted, succeeded, nil
 }
 
 func checkWorktreePartialFailure(targets []projectTarget, targetWarnings []string, attempted, succeeded int) error {
