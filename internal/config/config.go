@@ -76,13 +76,21 @@ func DefaultConfig(project string) *Config {
 	}
 }
 
-// Save writes the config to path.
+// Save writes the manifest to path, creating its directory when needed.
+//
+// The manifest lives inside <root>/.hydra/, so the parent may not exist yet on a
+// fresh workspace; every caller would otherwise have to MkdirAll first, and one
+// forgetting is a confusing "no such file or directory".
 func (c *Config) Save(path string) error {
 	data, err := yaml.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	// .hydra.yaml is committed to the repo, so it must stay world-readable.
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	// The manifest is the shareable half of .hydra/ and may be committed, so it
+	// stays world-readable.
 	//nolint:gosec // G306: 0644 is deliberate for a repo-tracked config file
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
@@ -131,17 +139,53 @@ func Load(path string) (*Config, error) {
 		cfg.Groups = make(map[string]map[string]Repo)
 	}
 	if cfg.Project == "" {
-		cfg.Project = filepath.Base(filepath.Dir(path))
+		cfg.Project = filepath.Base(ProjectRoot(path))
 	}
 
 	return &cfg, nil
 }
 
-// FindConfig searches for .hydra.yaml walking up from startDir.
+// Layout of hydra's per-project files. These are the single source of truth for
+// the on-disk names; nothing else may hard-code them. Before this existed the
+// manifest filename was duplicated in 22 places across 13 files, which is how it
+// became unmovable.
+const (
+	// StateDir holds every hydra-owned file for a project.
+	StateDir = ".hydra"
+	// ManifestName is the shared, committable manifest inside StateDir.
+	ManifestName = "config.yaml"
+)
+
+// ManifestDir returns the hydra directory for a workspace root.
+func ManifestDir(root string) string { return filepath.Join(root, StateDir) }
+
+// ManifestPath returns the manifest location for a workspace root.
+func ManifestPath(root string) string { return filepath.Join(root, StateDir, ManifestName) }
+
+// ProjectRoot resolves the workspace root that owns a manifest.
+//
+// The manifest lives at <root>/.hydra/config.yaml, so the root is the parent of
+// the .hydra directory — NOT the manifest's own parent. Getting this wrong sends
+// every derived path inside .hydra/ (e.g. .hydra/.bare/api.git), which is exactly
+// what happened when the manifest moved. A path passed explicitly via --config
+// need not sit inside .hydra/, so that case falls back to the parent.
+func ProjectRoot(manifestPath string) string {
+	abs, err := filepath.Abs(manifestPath)
+	if err != nil {
+		abs = manifestPath
+	}
+	dir := filepath.Dir(abs)
+	if filepath.Base(dir) == StateDir {
+		return filepath.Dir(dir)
+	}
+	return dir
+}
+
+// FindConfig searches for the manifest walking up from startDir.
 func FindConfig(startDir string) (string, *Config, error) {
 	dir := startDir
 	for {
-		configPath := filepath.Join(dir, ".hydra.yaml")
+		configPath := ManifestPath(dir)
 		if _, err := os.Stat(configPath); err == nil {
 			cfg, err := Load(configPath)
 			if err != nil {
@@ -155,7 +199,8 @@ func FindConfig(startDir string) (string, *Config, error) {
 		}
 		dir = parent
 	}
-	return "", nil, fmt.Errorf("no .hydra.yaml found in %s or any parent directory", startDir)
+	return "", nil, fmt.Errorf("no %s found in %s or any parent directory",
+		filepath.Join(StateDir, ManifestName), startDir)
 }
 
 // FindRepo locates a repo by alias across all groups.

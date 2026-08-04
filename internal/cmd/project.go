@@ -209,7 +209,7 @@ func runProjectRm(cmd *cobra.Command, args []string) error {
 }
 
 func verifyWorkspaceRoot(root string) (*config.Config, error) {
-	configPath := filepath.Join(root, ".hydra.yaml")
+	configPath := config.ManifestPath(root)
 	if _, err := os.Stat(configPath); err != nil {
 		if os.IsNotExist(err) {
 			return nil, output.Errorf(output.CodeNotInProject,
@@ -230,7 +230,7 @@ func verifyWorkspaceRoot(root string) (*config.Config, error) {
 }
 
 func workspaceConfigExists(root string) bool {
-	_, err := os.Stat(filepath.Join(root, ".hydra.yaml"))
+	_, err := os.Stat(config.ManifestPath(root))
 	return err == nil
 }
 

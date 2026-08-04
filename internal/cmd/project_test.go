@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"github.com/mssantosdev/hydra/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -69,7 +70,7 @@ func TestProjectAddListPruneAndRm(t *testing.T) {
 		t.Fatalf("projects = %+v", payload.Projects)
 	}
 
-	if err := os.Remove(filepath.Join(env.RootDir, ".hydra.yaml")); err != nil {
+	if err := os.Remove(config.ManifestPath(env.RootDir)); err != nil {
 		t.Fatalf("remove config: %v", err)
 	}
 

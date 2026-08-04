@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"os"
-	"path/filepath"
 
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -103,7 +102,7 @@ func completeWorktreeNames(cmd *cobra.Command, args []string, toComplete string)
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	projectRoot := filepath.Dir(configPath)
+	projectRoot := config.ProjectRoot(configPath)
 	worktrees, _ := collectWorktrees(cfg, projectRoot)
 
 	results := make([]string, 0, len(worktrees))

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -157,7 +156,7 @@ func loadProject() error {
 }
 
 func loadProjectAt(root string) error {
-	path := filepath.Join(root, ".hydra.yaml")
+	path := config.ManifestPath(root)
 	loaded, err := config.Load(path)
 	if err != nil {
 		return classifyConfigError(err)
@@ -180,13 +179,9 @@ func classifyConfigError(err error) error {
 		"%v\n\nRun \"hydra init\" to create a workspace, or pass --project <name>.", err)
 }
 
-func absDir(configPath string) string {
-	abs, err := filepath.Abs(configPath)
-	if err != nil {
-		return filepath.Dir(configPath)
-	}
-	return filepath.Dir(abs)
-}
+// absDir resolves the workspace root that owns a manifest. See config.ProjectRoot:
+// the root is the parent of .hydra/, not the manifest's own parent.
+func absDir(configPath string) string { return config.ProjectRoot(configPath) }
 
 // Execute runs the root command, returning the command path that ran so the
 // caller can label the error envelope.
@@ -319,7 +314,7 @@ func projectTargets(all bool) ([]projectTarget, []string, error) {
 	var warnings []string
 	for _, name := range reg.Names() {
 		root, _ := reg.Resolve(name)
-		loaded, loadErr := config.Load(filepath.Join(root, ".hydra.yaml"))
+		loaded, loadErr := config.Load(config.ManifestPath(root))
 		if loadErr != nil {
 			warnings = append(warnings, fmt.Sprintf("%s (%s): %v", name, root, loadErr))
 			continue

@@ -31,7 +31,7 @@ func TestHooksRunPostAddInjectsEnvAndCwd(t *testing.T) {
 
 	env.ChdirTo(filepath.Join("backend", "api"))
 	projectRoot = env.RootDir
-	projectConfigPath = filepath.Join(env.RootDir, ".hydra.yaml")
+	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
 
 	var stdout bytes.Buffer
@@ -65,7 +65,7 @@ func TestHooksRunRequiredFailure(t *testing.T) {
 
 	env.ChdirTo(filepath.Join("backend", "api"))
 	projectRoot = env.RootDir
-	projectConfigPath = filepath.Join(env.RootDir, ".hydra.yaml")
+	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
 
 	rootCmd.SetArgs([]string{"hooks", "run", "post_add", "--worktree", "api"})
@@ -90,7 +90,7 @@ func TestHooksRunOptionalFailureWarns(t *testing.T) {
 
 	env.ChdirTo(filepath.Join("backend", "api"))
 	projectRoot = env.RootDir
-	projectConfigPath = filepath.Join(env.RootDir, ".hydra.yaml")
+	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
 
 	var stdout, stderr bytes.Buffer

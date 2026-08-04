@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"github.com/mssantosdev/hydra/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,7 +98,10 @@ func TestPruneDropsDanglingRoots(t *testing.T) {
 			t.Fatalf("mkdir: %v", err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(alive, ".hydra.yaml"), []byte("version: \"2\"\n"), 0644); err != nil {
+	if err := os.MkdirAll(config.ManifestDir(alive), 0o750); err != nil {
+		t.Fatalf("mkdir hydra dir: %v", err)
+	}
+	if err := os.WriteFile(config.ManifestPath(alive), []byte("version: \"2\"\n"), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

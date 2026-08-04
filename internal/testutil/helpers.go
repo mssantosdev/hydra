@@ -56,7 +56,7 @@ func (e *TestEnv) InitConfig() string {
 	e.T.Helper()
 
 	cfg := config.DefaultConfig(filepath.Base(e.RootDir))
-	configPath := filepath.Join(e.RootDir, ".hydra.yaml")
+	configPath := config.ManifestPath(e.RootDir)
 	if err := cfg.Save(configPath); err != nil {
 		e.T.Fatalf("Failed to save config: %v", err)
 	}
@@ -67,7 +67,7 @@ func (e *TestEnv) InitConfig() string {
 func (e *TestEnv) LoadConfig() *config.Config {
 	e.T.Helper()
 
-	cfg, err := config.Load(filepath.Join(e.RootDir, ".hydra.yaml"))
+	cfg, err := config.Load(config.ManifestPath(e.RootDir))
 	if err != nil {
 		e.T.Fatalf("Failed to load config: %v", err)
 	}
@@ -78,7 +78,7 @@ func (e *TestEnv) LoadConfig() *config.Config {
 func (e *TestEnv) SaveConfig(cfg *config.Config) {
 	e.T.Helper()
 
-	if err := cfg.Save(filepath.Join(e.RootDir, ".hydra.yaml")); err != nil {
+	if err := cfg.Save(config.ManifestPath(e.RootDir)); err != nil {
 		e.T.Fatalf("Failed to save config: %v", err)
 	}
 }

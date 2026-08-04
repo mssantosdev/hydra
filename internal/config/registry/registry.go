@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/config/global"
 )
 
@@ -111,12 +112,12 @@ func (r *Registry) Names() []string {
 	return names
 }
 
-// Prune drops entries whose root no longer holds a .hydra.yaml and returns the
+// Prune drops entries whose root no longer holds a manifest and returns the
 // removed project names.
 func (r *Registry) Prune() []string {
 	var removed []string
 	for _, name := range r.Names() {
-		if _, err := os.Stat(filepath.Join(r.Projects[name], ".hydra.yaml")); err != nil {
+		if _, err := os.Stat(config.ManifestPath(r.Projects[name])); err != nil {
 			removed = append(removed, name)
 			delete(r.Projects, name)
 		}

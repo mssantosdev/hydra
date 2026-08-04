@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/config/registry"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -119,7 +120,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 		reg, err := registry.Load()
 		if err == nil {
 			for name, root := range reg.Projects {
-				if _, err := os.Stat(filepath.Join(root, ".hydra.yaml")); err != nil {
+				if _, err := os.Stat(config.ManifestPath(root)); err != nil {
 					result.PrunedProjects = append(result.PrunedProjects, name)
 				}
 			}

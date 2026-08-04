@@ -19,7 +19,7 @@ func TestStatus_NoConfig(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	testutil.Contains(t, err.Error(), "no .hydra.yaml")
+	testutil.Contains(t, err.Error(), "no .hydra/config.yaml")
 }
 
 func TestStatus_EmptyProject(t *testing.T) {

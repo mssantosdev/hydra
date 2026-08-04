@@ -121,7 +121,7 @@ check "branch really deleted" \
 
 # ------------------------------------------------ 8. hooks (step 7)
 echo "== 8. hooks run with the documented environment =="
-cat >> .hydra.yaml <<'YAML'
+cat >> .hydra/config.yaml <<'YAML'
 hooks:
   post_add:
     - run: 'printf "%s|%s|%s" "$HYDRA_BRANCH" "$HYDRA_REPO" "$HYDRA_GROUP" > .hydra-hook-ran'

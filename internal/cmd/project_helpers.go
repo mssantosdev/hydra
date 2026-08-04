@@ -48,7 +48,7 @@ func createProjectRoot(baseDir, projectPath string) (string, string, *config.Con
 		return "", "", nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
-	configPath := filepath.Join(projectRoot, ".hydra.yaml")
+	configPath := config.ManifestPath(projectRoot)
 	if _, err := os.Stat(configPath); err == nil {
 		return "", "", nil, fmt.Errorf("hydra project already exists at %s", projectRoot)
 	}
@@ -73,7 +73,7 @@ func createProjectRootAt(root, projectName string) (string, string, *config.Conf
 		return "", "", nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
-	configPath := filepath.Join(abs, ".hydra.yaml")
+	configPath := config.ManifestPath(abs)
 	if _, err := os.Stat(configPath); err == nil {
 		return "", "", nil, fmt.Errorf("hydra project already exists at %s", abs)
 	}

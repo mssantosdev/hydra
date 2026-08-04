@@ -23,7 +23,7 @@ func TestSync_NoConfig(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no config")
 	}
-	testutil.Contains(t, err.Error(), "no .hydra.yaml")
+	testutil.Contains(t, err.Error(), "no .hydra/config.yaml")
 }
 
 func TestSync_NoWorktrees(t *testing.T) {

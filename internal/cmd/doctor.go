@@ -464,7 +464,7 @@ func diagnoseRegistry() []doctorCheck {
 	}
 	var dangling []string
 	for name, root := range reg.Projects {
-		if _, err := os.Stat(filepath.Join(root, ".hydra.yaml")); err != nil {
+		if _, err := os.Stat(config.ManifestPath(root)); err != nil {
 			dangling = append(dangling, name)
 		}
 	}

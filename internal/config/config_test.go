@@ -10,10 +10,7 @@ import (
 func writeConfig(t *testing.T, dir, body string) string {
 	t.Helper()
 
-	path := filepath.Join(dir, ".hydra.yaml")
-	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	path := writeManifest(t, dir, body)
 	return path
 }
 
@@ -72,7 +69,7 @@ func TestDefaultConfigRoundTrips(t *testing.T) {
 	cfg.Hooks.PostAdd = []Hook{{Run: "bun install", Optional: true}}
 	cfg.Defaults.BaseBranch = "prod"
 
-	path := filepath.Join(dir, ".hydra.yaml")
+	path := ManifestPath(dir)
 	if err := cfg.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -151,7 +148,7 @@ func TestFindConfigWalksUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindConfig: %v", err)
 	}
-	if path != filepath.Join(root, ".hydra.yaml") {
+	if path != ManifestPath(root) {
 		t.Errorf("FindConfig found %q, want the root config", path)
 	}
 	if cfg.Project != "demo" {
@@ -187,4 +184,17 @@ func TestHooksForCoversEveryEvent(t *testing.T) {
 	if _, known := cfg.HooksFor("pre_add"); known {
 		t.Error("HooksFor must reject an unknown event name")
 	}
+}
+
+// writeManifest creates .hydra/ and writes a manifest, mirroring what Save does.
+func writeManifest(t *testing.T, root, body string) string {
+	t.Helper()
+	if err := os.MkdirAll(ManifestDir(root), 0o750); err != nil {
+		t.Fatalf("mkdir hydra dir: %v", err)
+	}
+	path := ManifestPath(root)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return path
 }

@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"bytes"
-	"path/filepath"
+	"github.com/mssantosdev/hydra/internal/config"
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/testutil"
@@ -20,7 +20,7 @@ func TestFullFlow_InitAndClone(t *testing.T) {
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	configPath := filepath.Join(env.RootDir, ".hydra.yaml")
+	configPath := config.ManifestPath(env.RootDir)
 	if !env.FileExists(configPath) {
 		t.Fatal("missing config after init")
 	}
