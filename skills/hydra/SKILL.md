@@ -52,12 +52,12 @@ The map key under a group **is** the repo alias, and it is the single source of 
 | `list` | list worktrees (alias `ls`) | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
 | `status` | tracking, dirtiness, and merged-ness vs any ref | `--topic`, `--filter`, `--against REF` |
 | `topic` | `list`/`show`/`attach`/`detach`/`remove` units of work spanning repos | `--with-worktrees`, `--yes` |
-| `sync` | fast-forward worktrees from their upstreams | `--force`, `--yes` |
+| `sync` | fast-forward worktrees from their upstreams | `--dirty stash\|reset\|skip`, `--yes` |
 | `doctor` | diagnose workspace/upstream problems | `--fix`, `--all` |
 | `prune` | drop stale worktree registrations and empty groups | `--dry-run` |
 | `project` | manage the global project registry (`ls`/`add`/`rm`) | `--prune` |
 | `hooks` | inspect or run configured hooks (`ls`/`run <event>`) | `--worktree` |
-| `config` | edit global settings (theme, editor) | — |
+| `config` | `show`, or `set theme\|editor <value>` without a prompt | — |
 | `init-shell` | install the shell helper that powers `switch` | `--install` |
 | `completion` | emit a shell completion script | — |
 | `glossary` | explain hydra's vocabulary | — |

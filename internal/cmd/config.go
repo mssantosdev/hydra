@@ -46,8 +46,134 @@ SEE ALSO
 	RunE: runConfig,
 }
 
+var configShowCmd = &cobra.Command{
+	Use:     "show",
+	Aliases: []string{"view"},
+	Short:   "Print the global configuration",
+	Args:    cobra.NoArgs,
+	RunE:    runConfigShow,
+}
+
+var configSetCmd = &cobra.Command{
+	Use:   "set <theme|editor> <value>",
+	Short: "Set a global setting without a prompt",
+	Long: `Set a global setting.
+
+DESCRIPTION
+  The non-interactive equivalent of the form "hydra config" opens. Without this the
+  only way to change a setting was a prompt, so an agent — or any non-TTY caller —
+  could read the configuration but never write it.
+
+KEYS
+  theme   one of the registered theme names; "hydra config show" lists the current one
+  editor  any command line, used when hydra opens a file
+
+EXAMPLES
+  $ hydra config set theme tokyonight
+  $ hydra config set editor "code --wait"
+
+EXIT CODES
+  0  Success
+  1  internal (unknown key, or an invalid theme name)
+  7  needs_input (a key or value is missing)`,
+	Args:      cobra.MaximumNArgs(2),
+	RunE:      runConfigSet,
+	ValidArgs: []string{"theme", "editor"},
+}
+
 func init() {
 	rootCmd.AddCommand(configCmd)
+	configCmd.AddCommand(configShowCmd, configSetCmd)
+
+	configSetCmd.ValidArgsFunction = completeConfigSetArgs
+}
+
+// completeConfigSetArgs completes the key, then that key's values. Only theme has a
+// closed set; an editor command line cannot be enumerated.
+func completeConfigSetArgs(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	switch len(args) {
+	case 0:
+		return []string{"theme", "editor"}, cobra.ShellCompDirectiveNoFileComp
+	case 1:
+		if args[0] == "theme" {
+			return themes.GetNames(), cobra.ShellCompDirectiveNoFileComp
+		}
+	}
+	return nil, cobra.ShellCompDirectiveNoFileComp
+}
+
+func runConfigShow(cmd *cobra.Command, args []string) error {
+	cfg, err := global.Load()
+	if err != nil {
+		return output.Wrap(output.CodeInternal, err, "failed to load global config")
+	}
+	return emitGlobalConfig(cmd, cfg, false)
+}
+
+func runConfigSet(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return output.Errorf(output.CodeNeedsInput, "which setting?").
+			WithDetail("missing", []string{"<key>"}).
+			WithDetail("one_of", []string{"theme", "editor"})
+	}
+	key := args[0]
+	if len(args) == 1 {
+		return output.Errorf(output.CodeNeedsInput, "a value for %q is required", key).
+			WithDetail("missing", []string{"<value>"}).
+			WithDetail("key", key)
+	}
+	value := args[1]
+
+	cfg, err := global.Load()
+	if err != nil {
+		return output.Wrap(output.CodeInternal, err, "failed to load global config")
+	}
+
+	switch key {
+	case "theme":
+		// Validate HERE rather than relying on SetTheme, which does not: it assigns and
+		// saves, so `config set theme garbage` used to persist an unusable value that
+		// only surfaced as a silent fallback at render time.
+		if !themes.IsValid(value) {
+			return output.Errorf(output.CodeInternal, "unknown theme %q", value).
+				WithDetail("theme", value).
+				WithDetail("valid", themes.GetNames())
+		}
+		if err := cfg.SetTheme(value); err != nil {
+			return output.Wrap(output.CodeInternal, err, "failed to set the theme")
+		}
+	case "editor":
+		if err := cfg.SetEditor(value); err != nil {
+			return output.Wrap(output.CodeInternal, err, "failed to set the editor")
+		}
+	default:
+		return output.Errorf(output.CodeInternal, "unknown setting %q", key).
+			WithDetail("key", key).
+			WithDetail("valid", []string{"theme", "editor"})
+	}
+
+	return emitGlobalConfig(cmd, cfg, true)
+}
+
+// emitGlobalConfig is the one funnel for both show and set, so a written value is
+// reported in exactly the shape a reader would have seen.
+func emitGlobalConfig(cmd *cobra.Command, cfg *global.GlobalConfig, changed bool) error {
+	payload := configPayload{
+		Theme:      cfg.Theme.Name,
+		Editor:     cfg.Defaults.Editor,
+		ConfigPath: global.GetConfigPath(),
+		Changed:    changed,
+	}
+	summary := "global configuration"
+	if changed {
+		summary = "global configuration updated"
+	}
+	return emit(cmd, summary, payload, nil, func() {
+		out := cmd.OutOrStdout()
+		_, _ = fmt.Fprintf(out, "Theme:  %s %s\n", cfg.Theme.Name, themes.Get(cfg.Theme.Name).Preview())
+		_, _ = fmt.Fprintf(out, "Editor: %s\n", cfg.Defaults.Editor)
+		_, _ = fmt.Fprintf(out, "Config: %s\n", global.GetConfigPath())
+	})
 }
 
 type configPayload struct {

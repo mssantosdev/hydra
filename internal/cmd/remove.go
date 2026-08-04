@@ -279,8 +279,12 @@ func resolveRemoveTarget(args []string) (worktreeContext, error) {
 	}
 
 	if !interactive() {
-		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
-			"a worktree is required: hydra remove <alias> <branch> or hydra remove <worktree>")
+		// needs_input, not worktree_unknown: no worktree was named and a prompt cannot
+		// be shown, so the caller is told exactly which argument is missing.
+		return worktreeContext{}, output.Errorf(output.CodeNeedsInput,
+			"a worktree is required: hydra remove <alias> <branch>, or hydra remove <worktree>").
+			WithDetail("missing", []string{"<worktree>"}).
+			WithDetail("available", worktreeHandles(mustCollectWorktrees()))
 	}
 
 	items, _ := collectWorktrees(cfg, projectRoot)

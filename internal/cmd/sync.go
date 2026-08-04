@@ -25,6 +25,10 @@ var (
 	syncAll   bool
 	syncYes   bool
 	syncForce bool
+	// syncDirty is the non-interactive equivalent of the dirty-policy prompt. --force
+	// remains as a shorthand for --dirty stash: it already ships and reads naturally,
+	// but it adds no capability this does not have.
+	syncDirty string
 )
 
 type syncEntry struct {
@@ -119,13 +123,28 @@ SEE ALSO
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.Flags().BoolVarP(&syncAll, "all", "a", false, "Sync all repositories")
 	syncCmd.Flags().BoolVarP(&syncYes, "yes", "y", false, "Skip confirmation, pull all clean worktrees")
-	syncCmd.Flags().BoolVarP(&syncForce, "force", "f", false, "Pull dirty worktrees (stash changes)")
+	syncCmd.Flags().BoolVarP(&syncForce, "force", "f", false, "Pull dirty worktrees (same as --dirty stash)")
+	syncCmd.Flags().StringVar(&syncDirty, "dirty", "",
+		"Policy for worktrees with uncommitted changes: stash, reset, or skip")
+	_ = syncCmd.RegisterFlagCompletionFunc("dirty",
+		func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+			return dirtyPolicies, cobra.ShellCompDirectiveNoFileComp
+		})
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
 		return output.Errorf(output.CodeNotInProject,
 			`no hydra workspace found; run "hydra init" or pass --project <name>`)
+	}
+
+	// Validate --dirty BEFORE any work. A typo'd flag value must be reported even when
+	// there turns out to be nothing to sync: reaching the "no worktrees to sync" exit
+	// with an invalid flag reports success for a command the user got wrong.
+	if syncDirty != "" {
+		if _, err := parseDirtyPolicy(syncDirty); err != nil {
+			return err
+		}
 	}
 	wd, err := os.Getwd()
 	if err != nil {
@@ -165,18 +184,22 @@ func runSync(cmd *cobra.Command, args []string) error {
 	default:
 		selected = autoSelectYes(candidates)
 	}
-	selected = selectedSyncEntries(selected)
-	if len(selected) == 0 {
-		results := mergeSyncResults(entries, nil, nil)
-		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
-		return emit(cmd, "no worktrees selected", data, collectWarnings, func() { log.Info("No worktrees selected for sync") })
-	}
+	// Resolve the dirty policy BEFORE filtering to selected entries.
+	//
+	// selectedSyncEntries drops anything unselected, and with no policy autoSelectYes
+	// leaves dirty worktrees unselected — so filtering first emptied the list and
+	// returned "no worktrees selected", which is the same silent skip in a new place.
+	// The policy decision has to see the dirty candidates.
 	if syncForce {
 		applyForceDirty(selected)
 	} else {
-		selected = handleDirtyWorktrees(selected)
-		selected = selectedSyncEntries(selected)
+		withPolicy, dirtyErr := handleDirtyWorktrees(selected)
+		if dirtyErr != nil {
+			return dirtyErr
+		}
+		selected = withPolicy
 	}
+	selected = selectedSyncEntries(selected)
 	if len(selected) == 0 {
 		results := mergeSyncResults(entries, nil, nil)
 		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
@@ -344,15 +367,30 @@ func filterWithUpdates(entries []syncEntry) []syncEntry {
 
 func syncEntryKey(entry syncEntry) string { return entry.group + "/" + entry.name }
 
+// autoSelectYes selects everything --yes can act on without asking.
+//
+// A dirty worktree is selected only when a POLICY exists for it — --force or
+// --dirty. Without one it stays unselected so handleDirtyWorktrees can report
+// needs_input naming --dirty; selecting it anyway would push the decision into the
+// pull itself, and skipping it silently is the behaviour this step exists to remove.
 func autoSelectYes(candidates []syncEntry) []syncEntry {
+	havePolicy := syncForce || syncDirty != ""
+
 	out := make([]syncEntry, len(candidates))
 	copy(out, candidates)
 	for i := range out {
-		if syncForce || !out[i].dirty {
+		if !out[i].dirty {
 			out[i].selected = true
-			if syncForce && out[i].dirty {
-				out[i].pullAction = "stash"
-			}
+			continue
+		}
+		if !havePolicy {
+			continue
+		}
+		out[i].selected = true
+		if syncForce {
+			// --force is exactly --dirty stash; the explicit flag is applied later by
+			// handleDirtyWorktrees, so only the shorthand needs resolving here.
+			out[i].pullAction = "stash"
 		}
 	}
 	return out
@@ -409,7 +447,37 @@ func selectWorktreesToSync(worktrees []syncEntry) []syncEntry {
 	return result
 }
 
-func handleDirtyWorktrees(worktrees []syncEntry) []syncEntry {
+// dirtyPolicies is the closed value set for --dirty, so it can be completed and
+// validated rather than guessed.
+var dirtyPolicies = []string{"stash", "reset", "skip"}
+
+// handleDirtyWorktrees decides what to do about uncommitted changes.
+//
+// Three ways in, and the third used to be silent: an explicit --dirty policy, an
+// interactive prompt, or neither. With neither, huh's form simply failed in a non-TTY
+// and the error branch deselected the worktree — so `hydra sync --output json` skipped
+// every dirty worktree with nothing in the envelope saying why. That is exactly the
+// class of silence needs_input exists to remove.
+func handleDirtyWorktrees(worktrees []syncEntry) ([]syncEntry, error) {
+	if syncDirty != "" {
+		policy, err := parseDirtyPolicy(syncDirty)
+		if err != nil {
+			return nil, err
+		}
+		return applyDirtyPolicy(worktrees, policy), nil
+	}
+
+	// Look at dirty CANDIDATES, not dirty-and-selected. With no policy autoSelectYes
+	// deliberately leaves them unselected, so keying off `selected` here would find
+	// nothing and reproduce the silent skip this replaces.
+	if dirty := dirtyCandidates(worktrees); len(dirty) > 0 && !interactive() {
+		return nil, output.Errorf(output.CodeNeedsInput,
+			"%d worktree(s) have uncommitted changes; choose a policy", len(dirty)).
+			WithDetail("missing", []string{"--dirty"}).
+			WithDetail("one_of", dirtyPolicies).
+			WithDetail("worktrees", dirty)
+	}
+
 	var result []syncEntry
 	for _, wt := range worktrees {
 		if !wt.dirty || !wt.selected {
@@ -425,25 +493,62 @@ func handleDirtyWorktrees(worktrees []syncEntry) []syncEntry {
 			huh.NewOption("Skip this worktree", "skip"),
 		).Value(&action)))
 		if err := form.Run(); err != nil {
+			// A cancelled prompt means "not this one", which is the safe reading.
 			item := wt
 			item.selected = false
 			result = append(result, item)
 			continue
 		}
-		item := wt
-		switch action {
-		case "stash":
-			item.pullAction = "stash"
-			result = append(result, item)
-		case "reset":
-			item.pullAction = "reset"
-			result = append(result, item)
-		case "skip":
-			item.selected = false
-			result = append(result, item)
+		result = append(result, applyOneDirtyPolicy(wt, action))
+	}
+	return result, nil
+}
+
+func parseDirtyPolicy(value string) (string, error) {
+	for _, policy := range dirtyPolicies {
+		if value == policy {
+			return policy, nil
 		}
 	}
+	return "", output.Errorf(output.CodeInternal,
+		"invalid --dirty value %q (want %s)", value, strings.Join(dirtyPolicies, ", ")).
+		WithDetail("dirty", value).
+		WithDetail("valid", dirtyPolicies)
+}
+
+// dirtyCandidates names the worktrees blocking the run, so a needs_input error says
+// which ones rather than only how many.
+func dirtyCandidates(worktrees []syncEntry) []string {
+	var out []string
+	for _, wt := range worktrees {
+		if wt.dirty {
+			out = append(out, wt.repo+"/"+wt.branch)
+		}
+	}
+	return out
+}
+
+func applyDirtyPolicy(worktrees []syncEntry, policy string) []syncEntry {
+	result := make([]syncEntry, 0, len(worktrees))
+	for _, wt := range worktrees {
+		if !wt.dirty || !wt.selected {
+			result = append(result, wt)
+			continue
+		}
+		result = append(result, applyOneDirtyPolicy(wt, policy))
+	}
 	return result
+}
+
+func applyOneDirtyPolicy(wt syncEntry, policy string) syncEntry {
+	item := wt
+	switch policy {
+	case "stash", "reset":
+		item.pullAction = policy
+	case "skip":
+		item.selected = false
+	}
+	return item
 }
 
 func selectedSyncEntries(candidates []syncEntry) []syncEntry {
@@ -557,15 +662,26 @@ func syncOne(entry syncEntry) syncOpResult {
 			result.err = output.Wrap(output.CodeGitFailed, err, "failed to stash changes")
 			return result
 		}
+		// Confirm a stash exists before popping. StashChanges now includes untracked
+		// files so one normally will, but popping unconditionally turns "there was
+		// nothing to save" into a reported sync FAILURE for a pull that succeeded.
+		stashed, stashErr := git.HasStash(entry.path)
+		if stashErr != nil {
+			result.status = "failed"
+			result.err = output.Wrap(output.CodeGitFailed, stashErr, "failed to inspect stashes")
+			return result
+		}
 		if err := git.PullWorktree(entry.path); err != nil {
 			result.status = "failed"
 			result.err = output.Wrap(output.CodeGitFailed, err, "failed to pull")
 			return result
 		}
-		if err := git.PopStash(entry.path); err != nil {
-			result.status = "failed"
-			result.err = output.Wrap(output.CodeGitFailed, err, "pull succeeded but failed to restore stash")
-			return result
+		if stashed {
+			if err := git.PopStash(entry.path); err != nil {
+				result.status = "failed"
+				result.err = output.Wrap(output.CodeGitFailed, err, "pull succeeded but failed to restore stash")
+				return result
+			}
 		}
 		result.status = "stashed"
 		result.pulled = true

@@ -201,8 +201,9 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 
 	if opts.URL == "" {
 		if !opts.Interactive {
-			return nil, output.Errorf(output.CodeInternal,
-				"a repository URL is required; pass it as the first argument")
+			return nil, output.Errorf(output.CodeNeedsInput,
+				"a repository URL is required; pass it as the first argument").
+				WithDetail("missing", []string{"<url|path>"})
 		}
 		if err := huh.NewInput().Title("Repository URL").Value(&opts.URL).Run(); err != nil {
 			return nil, output.Wrap(output.CodeInternal, err, "cancelled")

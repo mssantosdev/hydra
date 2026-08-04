@@ -169,8 +169,13 @@ func resolveNewProjectOptions() (*newProjectOptions, error) {
 		InitialBranch: newBranch,
 	}
 
+	// Missing VALUES are needs_input naming the flag; invalid values stay ordinary
+	// errors. The distinction matters to a caller: one is "supply this", the other is
+	// "what you supplied is wrong".
 	if strings.TrimSpace(opts.ProjectPath) == "" {
-		return nil, output.Errorf(output.CodeInternal, "--project-path is required in non-interactive mode")
+		return nil, output.Errorf(output.CodeNeedsInput,
+			"a project path is required when prompts cannot be shown").
+			WithDetail("missing", []string{"--project-path"})
 	}
 	if err := validatePathSegment("group", opts.Group); err != nil {
 		return nil, output.Errorf(output.CodeInternal, "%v", err)
@@ -179,7 +184,8 @@ func resolveNewProjectOptions() (*newProjectOptions, error) {
 		return nil, output.Errorf(output.CodeInternal, "%v", err)
 	}
 	if strings.TrimSpace(opts.InitialBranch) == "" {
-		return nil, output.Errorf(output.CodeInternal, "branch cannot be empty")
+		return nil, output.Errorf(output.CodeNeedsInput, "a branch name is required").
+			WithDetail("missing", []string{"--branch"})
 	}
 
 	switch {
@@ -189,7 +195,11 @@ func resolveNewProjectOptions() (*newProjectOptions, error) {
 		opts.Mode = "remote"
 		opts.RemoteURL = newRemoteURL
 	default:
-		return nil, output.Errorf(output.CodeInternal, "pass --local or --remote-url in non-interactive mode")
+		// one_of, not missing: either flag satisfies this, and a single "missing" list
+		// would tell the caller to pass a flag it may not want.
+		return nil, output.Errorf(output.CodeNeedsInput,
+			"choose how to create the first repository").
+			WithDetail("one_of", []string{"--local", "--remote-url"})
 	}
 
 	return opts, nil

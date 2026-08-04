@@ -151,8 +151,12 @@ func resolveSwitchTarget(args []string) (worktreeContext, error) {
 	}
 
 	if !interactive() {
-		return worktreeContext{}, output.Errorf(output.CodeWorktreeUnknown,
-			"a worktree name is required: hydra switch <worktree>").
+		// needs_input, not worktree_unknown: nothing is unknown here — no worktree was
+		// named, and a prompt cannot be shown. An agent must be told which argument to
+		// supply, and available[] gives it the valid values in the same response.
+		return worktreeContext{}, output.Errorf(output.CodeNeedsInput,
+			"a worktree is required: hydra switch <worktree>").
+			WithDetail("missing", []string{"<worktree>"}).
 			WithDetail("available", worktreeHandles(items))
 	}
 

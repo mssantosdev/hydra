@@ -176,6 +176,16 @@ func registerAgainstFlag(flags *pflag.FlagSet) {
 		"Also report ahead/behind against this ref, and whether the branch is merged into it")
 }
 
+// mustCollectWorktrees collects worktrees for an error detail, discarding warnings.
+//
+// Used only to populate an "available" list on a needs_input error: if collection
+// partly failed, an incomplete list of valid values is still more useful to the caller
+// than none, and the command is failing anyway.
+func mustCollectWorktrees() []worktreeContext {
+	items, _ := collectWorktrees(cfg, projectRoot)
+	return items
+}
+
 // topicIndex is an in-memory (repo, branch) -> topic lookup.
 //
 // It exists so a listing reads and parses the state file ONCE instead of once per

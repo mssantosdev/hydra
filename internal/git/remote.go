@@ -271,7 +271,20 @@ func PullWorktree(worktreePath string) error {
 
 // StashChanges stashes changes in a worktree.
 func StashChanges(worktreePath string) error {
-	return runGit("-C", worktreePath, "stash", "push", "-m", "hydra-auto-stash")
+	// --include-untracked is REQUIRED for this to match hydra's own definition of
+	// dirty: HasUncommittedChanges counts untracked files, so without -u hydra would
+	// call a worktree dirty, stash nothing, pull, and then fail popping a stash that
+	// was never created — reporting a sync failure for a pull that succeeded.
+	return runGit("-C", worktreePath, "stash", "push", "--include-untracked", "-m", "hydra-auto-stash")
+}
+
+// HasStash reports whether the worktree has at least one stash entry.
+func HasStash(worktreePath string) (bool, error) {
+	out, err := runGitOutput("-C", worktreePath, "stash", "list")
+	if err != nil {
+		return false, fmt.Errorf("failed to list stashes in %s: %w", worktreePath, err)
+	}
+	return strings.TrimSpace(out) != "", nil
 }
 
 // PopStash pops the latest stash.

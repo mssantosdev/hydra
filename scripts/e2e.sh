@@ -467,6 +467,7 @@ echo "== 9f. --against answers merged-ness without storing an edge =="
 # A release branch at main, plus a worktree carrying a commit release does not have.
 git -C .bare/api.git branch release main
 "$HYDRA" start feat/unmerged --repos api --output json >/dev/null 2>&1
+
 git -C backend/api-feat-unmerged -c user.email=t@t -c user.name=T commit -q --allow-empty -m "not in release"
 
 check "a branch with unique commits is NOT merged into the ref" \
@@ -489,6 +490,43 @@ check "--against combines with a filter" \
   '"$HYDRA" status --repos api --against release --filter "branch:feat/*" --output json 2>/dev/null | jq -e "[.data.worktrees[]|select(.branch|startswith(\"feat/\")|not)]|length==0" >/dev/null'
 
 "$HYDRA" remove api feat/unmerged --yes --output json >/dev/null 2>&1 || true
+
+# ------------------------------------------------ 9g. parity holes closed (step 10)
+echo "== 9g. every prompt has a flag, and none of them hang =="
+# A prompt that cannot be shown must name the missing argument. worktree_unknown was
+# wrong for these: nothing is unknown, nothing was named.
+check "switch with no argument asks for one" \
+  '{ "$HYDRA" switch --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"<worktree>\")!=null)" >/dev/null'
+check "remove with no argument asks for one" \
+  '{ "$HYDRA" remove --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
+check "needs_input exits 7" \
+  '"$HYDRA" switch --output json >/dev/null 2>&1; [ "$?" = 7 ]'
+
+# sync --dirty. The stderr of sync carries git's fetch output before the envelope, so
+# these assert on the EXIT CODE rather than parsing that stream.
+echo dirty-content > backend/api/dirty-file.txt
+git -C "$T/upstream" -c user.email=t@t -c user.name=T commit -q --allow-empty -m "for dirty policy"
+check "a dirty worktree with no policy exits 7, not silently skipped" \
+  '"$HYDRA" sync api --yes --output json >/dev/null 2>&1; [ "$?" = 7 ]'
+check "--dirty skip leaves it alone and exits 0" \
+  '"$HYDRA" sync api --yes --dirty skip --output json 2>/dev/null | jq -e ".data.summary.pulled==0" >/dev/null'
+check "--dirty stash pulls and restores the change" \
+  '"$HYDRA" sync api --yes --dirty stash --output json 2>/dev/null | jq -e ".data.summary.pulled==1" >/dev/null &&
+   test -f backend/api/dirty-file.txt'
+check "an invalid --dirty value is refused" \
+  '"$HYDRA" sync api --yes --dirty nope --output json >/dev/null 2>&1; [ "$?" = 1 ]'
+rm -f backend/api/dirty-file.txt
+
+# config was read-only without a TTY: an agent could see settings but never write them.
+check "config show reports without changing" \
+  '"$HYDRA" config show --output json | jq -e "(.data.theme|length)>0 and (has(\"changed\")|not or .data.changed!=true)" >/dev/null'
+check "config set editor persists" \
+  '"$HYDRA" config set editor "e2e-editor" --output json | jq -e ".data.changed==true" >/dev/null &&
+   "$HYDRA" config show --output json | jq -e ".data.editor==\"e2e-editor\"" >/dev/null'
+check "config set theme rejects an unknown name with the valid set" \
+  '{ "$HYDRA" config set theme no-such-theme --output json 2>&1 >/dev/null || true; } | jq -e "(.error.details.valid|length)>0" >/dev/null'
+check "config set with no value asks for it" \
+  '{ "$HYDRA" config set theme --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"<value>\")!=null)" >/dev/null'
 
 # ------------------------------------------------ 10. registry (step 2)
 echo "== 10. project registry =="
