@@ -25,7 +25,18 @@ const (
 	CodeShellHelperMissing       = "shell_helper_missing"
 	CodePartialFailure           = "partial_failure"
 	CodeGitFailed                = "git_failed"
-	CodeInternal                 = "internal"
+	// Topic membership, the store behind it, and input the caller must supply.
+	CodeTopicUnknown            = "topic_unknown"
+	CodeTopicConflict           = "topic_conflict"
+	CodeStateVersionUnsupported = "state_version_unsupported"
+	CodeBranchProviderFailed    = "branch_provider_failed"
+	// CodeBusy is the ONLY retryable code: a git lock or the topic state lock was
+	// held. Callers may retry with backoff; every other code is terminal.
+	CodeBusy = "busy"
+	// CodeNeedsInput means a prompt would have been required but output is
+	// machine-readable, so hydra names the missing flag instead of blocking.
+	CodeNeedsInput = "needs_input"
+	CodeInternal   = "internal"
 )
 
 // exitCodes is the single authority mapping error codes to process exit codes.
@@ -44,6 +55,12 @@ var exitCodes = map[string]int{
 	CodeShellHelperMissing:       3,
 	CodePartialFailure:           4,
 	CodeGitFailed:                1,
+	CodeTopicUnknown:             1,
+	CodeTopicConflict:            1,
+	CodeStateVersionUnsupported:  2,
+	CodeBranchProviderFailed:     1,
+	CodeBusy:                     6,
+	CodeNeedsInput:               7,
 	CodeInternal:                 1,
 }
 

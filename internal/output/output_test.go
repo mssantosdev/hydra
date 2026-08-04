@@ -167,7 +167,16 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		CodeShellHelperMissing:       3,
 		CodePartialFailure:           4,
 		CodeGitFailed:                1,
-		CodeInternal:                 1,
+		CodeTopicUnknown:             1,
+		CodeTopicConflict:            1,
+		CodeStateVersionUnsupported:  2,
+		CodeBranchProviderFailed:     1,
+		// busy is the only retryable code, so a script or agent can tell
+		// "another hydra is mid-write, retry me" from a real failure.
+		CodeBusy: 6,
+		// needs_input replaces blocking on a prompt when output is machine-readable.
+		CodeNeedsInput: 7,
+		CodeInternal:   1,
 	}
 
 	got := ExitCodes()

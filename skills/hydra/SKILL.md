@@ -97,6 +97,12 @@ Failure, on stderr:
 | `shell_helper_missing` | 3 | `switch --cd` with no shell helper installed |
 | `partial_failure` | 4 | some items succeeded, some failed |
 | `git_failed` | 1 | an underlying git invocation failed |
+| `topic_unknown` | 1 | `--topic <id>` is not recorded; `details.known` lists valid ids |
+| `topic_conflict` | 1 | that worktree already belongs to another topic |
+| `state_version_unsupported` | 2 | `.hydra/state.yaml` was written by a newer hydra |
+| `branch_provider_failed` | 1 | a configured `branch_provider` failed or timed out |
+| `busy` | 6 | a git or state lock was held — **the only retryable code** |
+| `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names the flag |
 | `internal` | 1 | anything unclassified |
 
 ## Anti-patterns
@@ -104,8 +110,7 @@ Failure, on stderr:
 - Building `<group>/<repo>-<branch>` yourself instead of reading `data[].path` — `--as` may have
   overridden the directory name, and `/` in a branch becomes `-`.
 - Treating `upstream: null` as a failure; it is a branch with no upstream yet.
-- Assuming exit 1 for every failure: `not_in_project` is 2, `worktree_dirty` is 5,
-  `partial_failure` is 4, `shell_helper_missing` is 3.
+- Assuming exit 1 for every failure: `not_in_project` 2, `shell_helper_missing` 3, `partial_failure` 4, `worktree_dirty` 5, `busy` 6 (retry this one), `needs_input` 7.
 - Calling `hydra switch` from a script to find a path; use `hydra path`.
 - Reacting to a `hook_failed` from `add` by deleting the worktree — the worktree was created
   correctly. Fix the hook and run `hydra hooks run post_add`.
