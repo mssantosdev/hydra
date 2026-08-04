@@ -333,6 +333,64 @@ rm -f backend/api-feat-selector/scratch.txt
 "$HYDRA" remove api feat/selector --yes --output json >/dev/null
 rm -f .hydra/state.yaml
 
+# ------------------------------------------------ 9d. topic commands (step 7b)
+echo "== 9d. the topic command tree =="
+"$HYDRA" add api feat/t1 --no-hooks --output json >/dev/null
+"$HYDRA" add api feat/t2 --no-hooks --output json >/dev/null
+
+check "an empty workspace lists no topics" \
+  '"$HYDRA" topic list --output json | jq -e ".data.total==0" >/dev/null'
+check "attach creates the topic" \
+  '"$HYDRA" topic attach 3001 backend/api-feat-t1 --output json | jq -e ".data.topic==\"3001\"" >/dev/null'
+check "topic list now reports it" \
+  '"$HYDRA" topic list --output json | jq -e "[.data.topics[].id]|index(\"3001\")!=null" >/dev/null'
+check "attaching a second worktree extends it" \
+  '"$HYDRA" topic attach 3001 backend/api-feat-t2 --output json >/dev/null &&
+   "$HYDRA" topic show 3001 --output json | jq -e ".data.members|length==2" >/dev/null'
+check "a worktree cannot belong to two topics" \
+  '{ "$HYDRA" topic attach 3002 backend/api-feat-t1 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_conflict\" and .error.details.existing_topic==\"3001\"" >/dev/null'
+check "show on an unknown topic lists the known ids" \
+  '{ "$HYDRA" topic show 9999 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_unknown\" and (.error.details.known|index(\"3001\")!=null)" >/dev/null'
+check "detaching a non-member is refused" \
+  '{ "$HYDRA" topic detach 3001 backend/api --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_unknown\"" >/dev/null'
+
+# The gates, which are the reason this is not a loop over single-worktree remove.
+#
+# Order matters: the dirty gate (step 3) runs BEFORE the confirmation gate (step 5),
+# so the --yes check must be made while the workspace is still clean or the dirty
+# gate answers first.
+check "a non-TTY removal without --yes refuses" \
+  '{ "$HYDRA" topic remove 3001 --with-worktrees --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--yes\")!=null)" >/dev/null'
+
+echo scratch > backend/api-feat-t2/scratch.txt
+check "one dirty member refuses the WHOLE removal" \
+  '{ "$HYDRA" topic remove 3001 --with-worktrees --yes --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_dirty\"" >/dev/null'
+check "the dirty gate names the offending member" \
+  '{ "$HYDRA" topic remove 3001 --with-worktrees --yes --output json 2>&1 >/dev/null || true; } | jq -e "[.error.details.dirty[].branch]|index(\"feat/t2\")!=null" >/dev/null'
+check "the refused removal mutated nothing" \
+  'test -d backend/api-feat-t1 && test -d backend/api-feat-t2 &&
+   "$HYDRA" topic show 3001 --output json | jq -e ".data.members|length==2" >/dev/null'
+rm -f backend/api-feat-t2/scratch.txt
+
+check "--dry-run changes nothing" \
+  '"$HYDRA" topic remove 3001 --with-worktrees --dry-run --output json | jq -e ".data.dry_run==true" >/dev/null &&
+   test -d backend/api-feat-t1'
+check "membership-only removal keeps the worktrees" \
+  '"$HYDRA" topic remove 3001 --yes --output json | jq -e ".data.topic_removed==true" >/dev/null &&
+   test -d backend/api-feat-t1 && test -d backend/api-feat-t2'
+check "the topic is garbage-collected with its last member" \
+  '"$HYDRA" topic list --output json | jq -e ".data.total==0" >/dev/null'
+
+# --with-worktrees really removes them, and detach happens after each success.
+"$HYDRA" topic attach 3003 backend/api-feat-t1 --output json >/dev/null
+"$HYDRA" topic attach 3003 backend/api-feat-t2 --output json >/dev/null
+check "--with-worktrees removes every member's worktree" \
+  '"$HYDRA" topic remove 3003 --with-worktrees --yes --output json | jq -e ".data.targets|length==2 and all(.worktree_removed and .detached)" >/dev/null'
+check "both worktrees are gone from disk" \
+  '! test -d backend/api-feat-t1 && ! test -d backend/api-feat-t2'
+check "doctor is clean after a topic removal" \
+  '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e "[.data.checks[]|select(.status==\"fail\")]|length==0" >/dev/null'
+
 # ------------------------------------------------ 10. registry (step 2)
 echo "== 10. project registry =="
 check "the workspace registered itself" \
