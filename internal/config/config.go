@@ -35,11 +35,35 @@ type Paths struct {
 type Repo struct {
 	Remote        string `yaml:"remote"`
 	DefaultBranch string `yaml:"default_branch,omitempty"`
+
+	// BranchPattern and BranchProvider override the project defaults for this repo.
+	// A repo-level entry wins because a monorepo and a service in the same workspace
+	// legitimately name branches differently.
+	BranchPattern  string `yaml:"branch_pattern,omitempty"`
+	BranchProvider string `yaml:"branch_provider,omitempty"`
 }
 
 // Defaults holds project-wide defaults.
 type Defaults struct {
 	BaseBranch string `yaml:"base_branch,omitempty"`
+
+	// BranchPattern is ONE literal string with closed placeholder substitution:
+	// {topic} {kind} {slug} {user} {repo} {group}. It is deliberately not a template
+	// language — no conditionals, per-kind maps, counters, date arithmetic, nested
+	// defaults, alternation or embedded shell. Anything beyond substitution belongs
+	// in BranchProvider, so the pattern cannot grow into the workflow DSL that three
+	// reviewers rejected outright.
+	BranchPattern string `yaml:"branch_pattern,omitempty"`
+
+	// BranchProvider is an executable that receives JSON on stdin and prints one
+	// branch name on stdout. It is NOT a lifecycle hook: hooks run after the branch
+	// exists, route stdout to stderr, and have no timeout, so they cannot return a
+	// value.
+	BranchProvider string `yaml:"branch_provider,omitempty"`
+
+	// BranchPatternStrict turns an off-pattern explicit branch into an error instead
+	// of a warning. Off by default: branch shape belongs to the team, not to hydra.
+	BranchPatternStrict bool `yaml:"branch_pattern_strict,omitempty"`
 }
 
 // Hook is a single declarative shell command bound to a lifecycle event.
