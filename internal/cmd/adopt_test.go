@@ -42,7 +42,7 @@ func TestAdopt_ExistingCheckout(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(checkout), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	clone := exec.Command("git", "clone", remote, checkout)
+	clone := exec.Command("git", "clone", remote, checkout) //nolint:gosec // G204: test fixture, constant binary
 	if out, err := clone.CombinedOutput(); err != nil {
 		t.Fatalf("clone checkout: %v\n%s", err, out)
 	}
@@ -53,7 +53,7 @@ func TestAdopt_ExistingCheckout(t *testing.T) {
 
 	buf, restore := withDoctorJSON(t)
 	defer restore()
-	rootCmd.SetArgs([]string{"adopt", checkout, "--group", "backend", "--alias", "api"})
+	rootCmd.SetArgs([]string{"repo", "add", checkout, "--adopt", "--group", "backend", "--as", "api"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("adopt: %v", err)
 	}

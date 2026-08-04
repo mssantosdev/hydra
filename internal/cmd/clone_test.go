@@ -20,8 +20,8 @@ func TestClone_LocalRemoteSiblingLayout(t *testing.T) {
 	env.Chdir()
 
 	rootCmd.SetArgs([]string{
-		"clone", remote,
-		"--alias", "api",
+		"repo", "add", remote,
+		"--as", "api",
 		"--group", "tools",
 		"--branches", "main",
 	})
@@ -84,8 +84,8 @@ func TestClone_ResumesInterruptedClone(t *testing.T) {
 	}
 
 	rootCmd.SetArgs([]string{
-		"clone", remote,
-		"--alias", "api", "--group", "backend", "--branches", "main",
+		"repo", "add", remote,
+		"--as", "api", "--group", "backend", "--branches", "main",
 	})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("clone must resume an interrupted clone, got: %v", err)
@@ -124,13 +124,13 @@ func TestClone_RefusesConflictingRemote(t *testing.T) {
 	second := env.CreateRemoteRepo("other-origin", "main")
 	env.Chdir()
 
-	rootCmd.SetArgs([]string{"clone", first, "--alias", "api", "--group", "backend", "--branches", "main"})
+	rootCmd.SetArgs([]string{"repo", "add", first, "--as", "api", "--group", "backend", "--branches", "main"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("first clone: %v", err)
 	}
 
 	resetCommandState(t)
-	rootCmd.SetArgs([]string{"clone", second, "--alias", "api", "--group", "backend", "--branches", "main"})
+	rootCmd.SetArgs([]string{"repo", "add", second, "--as", "api", "--group", "backend", "--branches", "main"})
 	err := rootCmd.Execute()
 	if err == nil {
 		t.Fatal("cloning a different remote over a registered alias must fail")

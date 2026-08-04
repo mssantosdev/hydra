@@ -129,7 +129,7 @@ Complete documentation is in [`docs/`](docs/):
 - **[Getting Started](docs/README.md)** — Overview and quick start
 - **[Commands](docs/commands/README.md)** — Complete command reference
   - [Worktree Management](docs/commands/worktree-management.md) — `add`, `remove`
-  - [Project Bootstrap](docs/commands/project-bootstrap.md) — `new`, `init`, `clone`, `adopt`
+  - [Project Bootstrap](docs/commands/project-bootstrap.md) — `new`, `init`, `repo add`, `repo add --adopt`
 - **[Configuration](docs/configuration.md)** — `.hydra/config.yaml` schema v2
 
 For AI agents and automation, use the embedded skill contract:
@@ -215,8 +215,8 @@ hydra remove api hotfix/critical-bug --delete-branch
 |---------|-------------|
 | `hydra init` | Initialize Hydra in the current directory |
 | `hydra new` | Bootstrap a new project and first repository |
-| `hydra clone <url>` | Clone a remote into a project |
-| `hydra adopt` | Import an existing checkout into the current project |
+| `hydra repo add <url>` | Clone a remote into a project |
+| `hydra repo add --adopt` | Import an existing checkout into the current project |
 | `hydra add [<repo> <branch>]` | Create a new worktree |
 | `hydra remove [<repo> <branch>]` | Remove a worktree |
 | `hydra path <worktree>` | Print a worktree's absolute path |

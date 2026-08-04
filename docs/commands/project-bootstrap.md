@@ -30,7 +30,7 @@ hydra init --project-name my-project
 ./.bare/
 ```
 
-Add repositories with `hydra clone`, `hydra new`, or by editing `.hydra/config.yaml` and running `hydra doctor`.
+Add repositories with `hydra repo add`, `hydra new`, or by editing `.hydra/config.yaml` and running `hydra doctor`.
 
 ---
 
@@ -89,21 +89,21 @@ On disk (schema v2):
 ### Notes
 
 - Local bootstrap creates an initial commit
-- Remote bootstrap uses the same clone machinery as `hydra clone`
+- Remote bootstrap uses the same clone machinery as `hydra repo add`
 - After creation: `cd <project>` and `hydra list`
 
 ---
 
-## hydra clone
+## hydra repo add
 
 Clone a remote repository into a Hydra project and create worktrees.
 
 ### Usage
 
 ```bash
-hydra clone <url>
-hydra clone git@github.com:org/my-api.git --group backend --alias api
-hydra clone <url> --branches main,develop
+hydra repo add <url>
+hydra repo add git@github.com:org/my-api.git --group backend --as api
+hydra repo add <url> --branches main,develop
 ```
 
 ### Flags
@@ -111,7 +111,7 @@ hydra clone <url> --branches main,develop
 | Flag | Description |
 |------|-------------|
 | `--group` | Group name for the repository |
-| `--alias` | Repo alias (map key in `.hydra/config.yaml`) |
+| `--as` | Repo alias (map key in `.hydra/config.yaml`) |
 | `--branches` | Comma-separated branches to check out as worktrees |
 | `--all` | Create a worktree for every branch on origin |
 | `--yes` | Skip confirmation prompts |
@@ -137,7 +137,7 @@ every command ignored, while the directory looked cloned. Registering first mean
 interruption always leaves a repo hydra can see:
 
 - `hydra doctor` reports it (`bare_unregistered` if the crash beat registration).
-- Re-running the same `hydra clone` **completes** it instead of failing or starting
+- Re-running the same `hydra repo add` **completes** it instead of failing or starting
   over: the existing bare repo is brought up to spec (refspec, fetch, `origin/HEAD`)
   and the worktrees are created. The run reports this in `warnings`.
 
@@ -146,15 +146,15 @@ Re-cloning a *different* remote over a registered alias is refused with
 
 ---
 
-## hydra adopt
+## hydra repo add --adopt
 
 Import an existing Git checkout into the current Hydra project.
 
 ### Usage
 
 ```bash
-hydra adopt
-hydra adopt --group backend --alias api /path/to/existing/checkout
+hydra repo add --adopt
+hydra repo add --adopt --group backend --as api /path/to/existing/checkout
 ```
 
 ### Description

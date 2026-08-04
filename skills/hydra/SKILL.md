@@ -42,8 +42,7 @@ The map key under a group **is** the repo alias, and it is the single source of 
 |---|---|---|
 | `init` | create `.hydra/config.yaml` in the current directory | `--project-name` |
 | `new` | bootstrap a new project and its first repo | `--group` |
-| `clone` | clone a remote into a project, one worktree per branch | `--branches` |
-| `adopt` | import an existing checkout into the current project | `--group` |
+| `repo` | `add <url\|path>` (`--adopt`), `list`, `remove` repositories | `--group`, `--branches` |
 | `add` | create one worktree for a branch | `--as`, `--from` |
 | `start` | one branch across many repos, convergent; records a topic | `--repos`, `--topic`, `--slug` |
 | `remove` | delete a worktree | `--delete-branch`, `--force` |
@@ -117,4 +116,4 @@ the process exit status carries it.
 - Calling `hydra switch` from a script to find a path; use `hydra path`.
 - Deleting the worktree after `hook_failed` from `add` — it was created correctly; fix the hook and run `hydra hooks run post_add`.
 - Retrying `remove --delete-branch --force` after a `git_failed` refusal: the branch is NOT merged and nothing was removed. Ask the user.
-- Deleting `.bare/<alias>.git` after an interrupted clone; re-run the same `hydra clone` — it is convergent and completes.
+- Deleting `.bare/<alias>.git` after an interrupted clone; re-run the same `hydra repo add` — it is convergent and completes.

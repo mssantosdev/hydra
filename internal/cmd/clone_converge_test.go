@@ -21,7 +21,7 @@ func TestClone_ReRunOnCompleteRepoIsConvergent(t *testing.T) {
 	remote := env.CreateRemoteRepo("api-origin", "main", "stage")
 	env.Chdir()
 
-	args := []string{"clone", remote, "--alias", "api", "--group", "backend",
+	args := []string{"repo", "add", remote, "--as", "api", "--group", "backend",
 		"--branches", "main,stage", "--output", "json"}
 
 	resetCommandState(t)
@@ -86,7 +86,7 @@ func TestClone_ConvergedRunStillReportsWorktrees(t *testing.T) {
 	remote := env.CreateRemoteRepo("api-origin", "main", "stage")
 	env.Chdir()
 
-	args := []string{"clone", remote, "--alias", "api", "--group", "backend",
+	args := []string{"repo", "add", remote, "--as", "api", "--group", "backend",
 		"--branches", "main,stage", "--output", "json"}
 
 	resetCommandState(t)

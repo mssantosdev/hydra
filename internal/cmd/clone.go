@@ -113,7 +113,6 @@ func init() {
 	cloneCmd.Flags().StringSliceVar(&cloneBranches, "branches", nil, "branches to create worktrees for")
 	cloneCmd.Flags().BoolVar(&cloneAll, "all", false, "create a worktree for every branch on origin")
 	cloneCmd.Flags().BoolVar(&cloneDryRun, "dry-run", false, "report the plan without touching disk")
-	rootCmd.AddCommand(cloneCmd)
 }
 
 func runClone(cmd *cobra.Command, args []string) error {

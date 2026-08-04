@@ -71,7 +71,6 @@ type adoptJSON struct {
 }
 
 func init() {
-	rootCmd.AddCommand(adoptCmd)
 	adoptCmd.Flags().StringVar(&adoptGroup, "group", "", "Group directory for the adopted repository (required)")
 	adoptCmd.Flags().StringVar(&adoptAlias, "alias", "", "Repository alias (default: checkout directory name)")
 	adoptCmd.Flags().StringVar(&adoptBranch, "branch", "", "Branch to adopt (default: checkout current branch)")

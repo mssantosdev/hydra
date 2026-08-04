@@ -27,7 +27,7 @@ func TestFullFlow_InitAndClone(t *testing.T) {
 
 	remote := env.CreateRemoteRepo("flow-origin", "main")
 	rootCmd.SetOut(&bytes.Buffer{})
-	rootCmd.SetArgs([]string{"clone", remote, "--alias", "api", "--group", "tools", "--branches", "main"})
+	rootCmd.SetArgs([]string{"repo", "add", remote, "--as", "api", "--group", "tools", "--branches", "main"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("clone: %v", err)
 	}

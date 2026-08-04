@@ -23,8 +23,8 @@ Complete reference for all Hydra commands. Global flags on every command:
 |------|---------|---------|
 | Initialize project | `hydra init` | [Project Bootstrap](./project-bootstrap.md#hydra-init) |
 | Bootstrap new project | `hydra new` | [Project Bootstrap](./project-bootstrap.md#hydra-new) |
-| Clone repository | `hydra clone <url>` | [Project Bootstrap](./project-bootstrap.md#hydra-clone) |
-| Adopt existing checkout | `hydra adopt` | [Project Bootstrap](./project-bootstrap.md#hydra-adopt) |
+| Clone repository | `hydra repo add <url>` | [Project Bootstrap](./project-bootstrap.md#hydra-clone) |
+| Adopt existing checkout | `hydra repo add --adopt` | [Project Bootstrap](./project-bootstrap.md#hydra-adopt) |
 | Add worktree | `hydra add [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-add) |
 | Remove worktree | `hydra remove [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-remove) |
 | Print worktree path | `hydra path <worktree>` | [Navigation](#hydra-path) |
@@ -46,7 +46,7 @@ Version details appear in `hydra`, `hydra --help`, and `hydra --version`.
 
 ## Project Bootstrap
 
-See [Project Bootstrap](./project-bootstrap.md) for `init`, `new`, `clone`, and `adopt`.
+See [Project Bootstrap](./project-bootstrap.md) for `init`, `new`, `repo add`, and `repo add --adopt`.
 
 ## Worktree Management
 
@@ -227,8 +227,8 @@ Source of truth: [skills/hydra/SKILL.md](../../skills/hydra/SKILL.md).
 Starting new project?
 ├── Guided setup → hydra new
 ├── Existing directory → hydra init
-├── Remote URL → hydra clone <url>
-└── Existing checkout → hydra adopt
+├── Remote URL → hydra repo add <url>
+└── Existing checkout → hydra repo add --adopt
 
 Need a worktree?
 ├── hydra add <repo> <branch>
@@ -282,4 +282,4 @@ In JSON mode, branch on `error.code` — never on message text.
 - [Configuration](../configuration.md) — `.hydra/config.yaml` schema v2
 - [skills/hydra/SKILL.md](../../skills/hydra/SKILL.md) — Agent contract
 - [Worktree Management](./worktree-management.md) — `add` / `remove` details
-- [Project Bootstrap](./project-bootstrap.md) — `new` / `init` / `clone` / `adopt`
+- [Project Bootstrap](./project-bootstrap.md) — `new` / `init` / `repo add` / `repo add --adopt`

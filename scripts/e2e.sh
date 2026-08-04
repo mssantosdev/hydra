@@ -32,7 +32,7 @@ ok "upstream with main + stage"
 
 mkdir -p "$T/ws" && cd "$T/ws"
 "$HYDRA" init --project-name demo >/dev/null
-"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --output json >/dev/null
+"$HYDRA" repo add "$T/upstream" --as api --group backend --branches main --output json >/dev/null
 "$HYDRA" add api stage --output json >/dev/null
 ok "init + clone + add"
 
@@ -88,9 +88,9 @@ echo "== 3b. re-cloning a complete repository is a no-op =="
 # Before the fan-out engine every already-present branch counted as a failure, so
 # this exact command returned git_failed "no worktree could be created".
 check "a second identical clone exits 0" \
-  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --output json >/dev/null 2>&1'
+  '"$HYDRA" repo add "$T/upstream" --as api --group backend --branches main --output json >/dev/null 2>&1'
 check "the converged clone still reports the worktree" \
-  '"$HYDRA" clone "$T/upstream" --alias api --group backend --branches main --output json 2>/dev/null | jq -e ".data.worktrees|length>=1" >/dev/null'
+  '"$HYDRA" repo add "$T/upstream" --as api --group backend --branches main --output json 2>/dev/null | jq -e ".data.worktrees|length>=1" >/dev/null'
 check "the re-clone destroyed nothing" 'test -d backend/api && test -d .bare/api.git'
 
 # ------------------------------------------------ 4. machine contract (step 5)
@@ -311,7 +311,7 @@ check "the invalid-filter error names the valid set" \
 # so clone the same upstream a second time under a different group and alias: both
 # then have a "main" worktree, which is the ordinary shape that made first-match
 # resolution dangerous.
-"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --output json >/dev/null
+"$HYDRA" repo add "$T/upstream" --as web --group frontend --branches main --output json >/dev/null
 check "the second repo has its own main worktree" 'test -d frontend/web'
 # Ambiguity: main exists in every repo, so a bare branch name names several.
 check "an ambiguous handle is refused by path" \
@@ -416,7 +416,7 @@ check "doctor is clean after a topic removal" \
 # ------------------------------------------------ 9e. hydra start (step 7c)
 echo "== 9e. start: two axes, convergent, no guessing =="
 # A second repo, so "which repos" is a real question.
-"$HYDRA" clone "$T/upstream" --alias web --group frontend --branches main --output json >/dev/null 2>&1 || true
+"$HYDRA" repo add "$T/upstream" --as web --group frontend --branches main --output json >/dev/null 2>&1 || true
 
 check "start with no selector asks which repos" \
   '{ "$HYDRA" start feat/x --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.one_of|index(\"--repos\")!=null)" >/dev/null'
@@ -490,6 +490,37 @@ check "--against combines with a filter" \
   '"$HYDRA" status --repos api --against release --filter "branch:feat/*" --output json 2>/dev/null | jq -e "[.data.worktrees[]|select(.branch|startswith(\"feat/\")|not)]|length==0" >/dev/null'
 
 "$HYDRA" remove api feat/unmerged --yes --output json >/dev/null 2>&1 || true
+
+# ------------------------------------------------ 9i. hydra repo (step 11)
+echo "== 9i. repo add is the one front door =="
+check "repo list reports the registered repositories" \
+  '"$HYDRA" repo list --output json | jq -e "(.data.total)>=1 and ([.data.repos[].alias]|index(\"api\")!=null)" >/dev/null'
+check "repo list reports whether the bare exists on disk" \
+  '"$HYDRA" repo list --output json | jq -e ".data.repos[]|select(.alias==\"api\")|.bare_exists==true" >/dev/null'
+
+# --adopt is required, never inferred: a local path is an ordinary clone SOURCE.
+git init -q -b main "$T/loose-checkout"
+git -C "$T/loose-checkout" -c user.email=t@t -c user.name=T commit -q --allow-empty -m loose
+check "a local path clones by default, it is not adopted" \
+  '"$HYDRA" repo add "$T/loose-checkout" --as cloned --group imported --branches main --output json >/dev/null 2>&1 &&
+   test -d .bare/cloned.git'
+check "--adopt with --branches is refused rather than ignored" \
+  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --group imported --branches main --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+check "--adopt without a group asks for one" \
+  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--group\")!=null)" >/dev/null'
+check "repo add with no argument asks for one" \
+  '{ "$HYDRA" repo add --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
+
+# remove unregisters and deletes NOTHING.
+check "repo remove refuses a repo with worktrees without --yes" \
+  '{ "$HYDRA" repo remove cloned --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--yes\")!=null)" >/dev/null'
+check "repo remove unregisters and reports what it kept" \
+  '"$HYDRA" repo remove cloned --yes --output json | jq -e "(.data.kept|length)>=1" >/dev/null'
+check "the git data really survived being unregistered" 'test -d .bare/cloned.git'
+check "the unregistered repo is gone from repo list" \
+  '"$HYDRA" repo list --output json | jq -e "[.data.repos[].alias]|index(\"cloned\")==null" >/dev/null'
+check "removing an unknown repo lists the known ones" \
+  '{ "$HYDRA" repo remove nosuchrepo --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"repo_unknown\" and (.error.details.known|index(\"api\")!=null)" >/dev/null'
 
 # ------------------------------------------------ 9h. hydra run (step 11)
 echo "== 9h. run: argv after --, never a shell =="

@@ -67,7 +67,7 @@ func TestParity_CloneWithoutURLAsksForIt(t *testing.T) {
 
 	resetCommandState(t)
 	resetCommandIO()
-	rootCmd.SetArgs([]string{"clone", "--output", "json"})
+	rootCmd.SetArgs([]string{"repo", "add", "--output", "json"})
 	err := rootCmd.Execute()
 	if err == nil {
 		t.Fatal("clone without a URL must fail")
