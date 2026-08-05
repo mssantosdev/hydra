@@ -11,17 +11,25 @@ ai_context: "Entry point for Hydra documentation: overview, quick start, and nav
 
 ## What is Hydra?
 
-Hydra helps you work with multiple Git branches simultaneously by creating separate working directories (worktrees) for each branch. Instead of stashing changes and switching branches, you can have all branches open in different directories.
+Hydra helps you work with multiple Git branches simultaneously by creating separate working
+directories (worktrees) for each branch. Instead of stashing changes and switching branches, you can
+have all branches open in different directories — and when one piece of work spans several
+repositories, Hydra treats that whole set as **one topic** rather than N unrelated worktrees.
 
 ### Key Features
 
 - 🌿 **Worktree Management**: Create, switch, and remove Git worktrees easily
 - 🏗️ **Group Organization**: Group related repositories (backend, frontend, infra)
+- 🎯 **Topics**: One unit of work spanning repositories — `hydra start <branch> --repos a,b --topic <id>`
+  creates the whole set in one command, and `hydra topic` inspects it. Membership is recorded, never
+  guessed from a branch name.
+- 🏃 **Fan-out execution**: `hydra run --topic <id> -- <argv>` runs one command per worktree
+- 📋 **Reproducible workspaces**: `hydra list -o json | hydra apply -` recreates a workspace elsewhere
 - 🎨 **Beautiful CLI**: Tokyo Night theme with styled output (more themes via `hydra config`)
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
-- 🤖 **Machine-readable output**: JSON envelopes for scripting and agents
-- 🔖 **Version Visibility**: Root output and help include version information
+- 🤖 **Machine-readable output**: a JSON envelope with stable error codes on every command; the whole
+  surface is published by `hydra commands --output json`
 
 ## On-Disk Layout
 
@@ -93,16 +101,18 @@ Complete command reference:
 
 | Category | Commands |
 |----------|----------|
-| Project bootstrap | `init`, `new`, `clone`, `adopt`, `project` |
+| Project bootstrap | `init`, `new`, `repo add\|list\|remove`, `project` |
 | Worktree lifecycle | `add`, `remove`, `path`, `switch` |
+| Units of work | `start`, `topic`, `run`, `apply` |
 | Inspection | `list` / `ls`, `status`, `doctor`, `prune` |
 | Maintenance | `sync`, `hooks` |
-| Settings | `config`, `init-shell`, `completion`, `glossary`, `skill` |
+| Settings | `config`, `init-shell`, `completion`, `skill`, `commands` |
 
 Detailed pages:
 
 - [Worktree Management](./commands/worktree-management.md) — `add`, `remove`
-- [Project Bootstrap](./commands/project-bootstrap.md) — `new`, `init`, `clone`, `adopt`
+- [Topics and execution](./commands/topics-and-execution.md) — `topic`, `start`, `run`, `apply`
+- [Project Bootstrap](./commands/project-bootstrap.md) — `new`, `init`, `repo add`
 
 ### [Configuration](./configuration.md)
 
@@ -115,9 +125,11 @@ Detailed pages:
 
 Use the embedded skill — not a separate markdown guide:
 
-- [skills/hydra/SKILL.md](../skills/hydra/SKILL.md)
-- `hydra skill` / `hydra skill --install`
+- [skills/hydra/SKILL.md](../skills/hydra/SKILL.md), emitted by `hydra skill` / `hydra skill --install`
+- `hydra commands --output json` publishes the whole command surface plus the complete
+  error-code→exit table, so nothing needs to scrape `--help`. It works without a workspace.
 - Always use `--output json` (or `--output auto` with a pipe) and branch on `error.code`
+- `busy` is the only retryable code; everything else is terminal
 
 ## Common Workflows
 
@@ -129,6 +141,22 @@ hydra switch api-feature-JIRA-123
 # ... work ...
 hydra switch api
 hydra remove api feature/JIRA-123
+```
+
+### One unit of work across repositories
+
+```bash
+# create the branch in both repos and record the topic in one command
+hydra start feat/JIRA-123 --repos api,web --topic JIRA-123
+
+# what is in this unit of work, and is any of it merged yet?
+hydra status --topic JIRA-123 --against main
+
+# run the same command in each of its worktrees
+hydra run --topic JIRA-123 -- go build ./...
+
+# tear the whole set down when it ships
+hydra topic remove JIRA-123 --with-worktrees --yes
 ```
 
 ### Hotfix Workflow
@@ -170,7 +198,7 @@ See [Configuration](./configuration.md) and [skills/hydra/SKILL.md](../skills/hy
 - **Command help**: `hydra <command> --help`
 - **All commands**: `hydra --help`
 - **Version**: `hydra --version`
-- **Glossary**: `hydra glossary`
+- **Machine-readable surface**: `hydra commands --output json`
 - **Diagnostics**: `hydra doctor`
 
 ## Contributing

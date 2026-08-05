@@ -26,6 +26,10 @@ Complete reference for all Hydra commands. Global flags on every command:
 | Clone repository | `hydra repo add <url>` | [Project Bootstrap](./project-bootstrap.md#hydra-clone) |
 | Adopt existing checkout | `hydra repo add --adopt` | [Project Bootstrap](./project-bootstrap.md#hydra-adopt) |
 | Add worktree | `hydra add [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-add) |
+| Start a unit of work | `hydra start <branch> --repos a,b --topic <id>` | [Topics and execution](./topics-and-execution.md#hydra-start) |
+| Inspect a unit of work | `hydra topic ls\|show\|attach\|detach\|remove` | [Topics and execution](./topics-and-execution.md#hydra-topic) |
+| Run a command per worktree | `hydra run --topic <id> -- <argv>` | [Topics and execution](./topics-and-execution.md#hydra-run) |
+| Recreate from JSON | `hydra list -o json \| hydra apply -` | [Topics and execution](./topics-and-execution.md#hydra-apply) |
 | Remove worktree | `hydra remove [<repo> <branch>]` | [Worktree Management](./worktree-management.md#hydra-remove) |
 | Print worktree path | `hydra path <worktree>` | [Navigation](#hydra-path) |
 | Switch worktree | `hydra switch [<worktree>]` | [Navigation](#hydra-switch) |
@@ -40,7 +44,7 @@ Complete reference for all Hydra commands. Global flags on every command:
 | Shell integration | `hydra init-shell` | [Configuration & shell](#hydra-init-shell) |
 | Shell completion | `hydra completion <shell>` | Built-in help |
 | Agent skill | `hydra skill [--install]` | [Agents](#hydra-skill) |
-| Glossary | `hydra glossary` | Built-in help |
+| Command surface | `hydra commands` | [Command surface](#hydra-commands) |
 
 Version details appear in `hydra`, `hydra --help`, and `hydra --version`.
 
@@ -51,6 +55,11 @@ See [Project Bootstrap](./project-bootstrap.md) for `init`, `new`, `repo add`, a
 ## Worktree Management
 
 See [Worktree Management](./worktree-management.md) for `add` and `remove`.
+
+## Topics and execution
+
+See [Topics and execution](./topics-and-execution.md) for `topic`, `start`, `run`, and `apply` — the
+commands that treat a unit of work spanning several repositories as one thing.
 
 ## Navigation
 
@@ -87,8 +96,10 @@ List worktrees in the current project.
 ```bash
 hydra list
 hydra ls
-hydra list --all    # every registered project
+hydra list --all                  # every registered project
 hydra list --output json
+hydra list --topic 2072958        # only one unit of work
+hydra list --against release      # add a merged-ness column vs any ref
 ```
 
 Alias: `ls`.
@@ -100,7 +111,28 @@ Per-worktree summary: branch, upstream tracking, dirty/clean state.
 ```bash
 hydra status
 hydra status --all
+hydra status --topic 2072958
+hydra status --against main       # is each branch merged into main yet?
 ```
+
+### Selectors
+
+`list`, `status`, `path`, `sync` and `run` share one selector surface. The flags **intersect**, so
+each one you add narrows the set further:
+
+| Flag | Selects |
+|------|---------|
+| `--topic <id>` | the worktrees recorded as members of that unit of work |
+| `--repos a,b` | those repository aliases |
+| `--group <name>` | every repository in that group |
+| `--all` | every registered project, not just the current one |
+| `--filter dirty` | worktrees with uncommitted changes |
+| `--filter behind` | worktrees behind their upstream |
+| `--filter branch:<glob>` | worktrees whose branch matches the glob |
+
+`--against REF` is not a selector: it adds a column answering "is this branch merged into REF
+yet?" without changing which worktrees are shown. The relationship is computed from git at query
+time, so it can never go stale.
 
 ## hydra sync
 
@@ -220,6 +252,20 @@ hydra skill --install       # install for agent tooling
 ```
 
 Source of truth: [skills/hydra/SKILL.md](../../skills/hydra/SKILL.md).
+
+## hydra commands
+
+Publish the whole command surface — every command, its local flags, and the complete
+error-code→exit-status table — as one machine-readable document.
+
+```bash
+hydra commands --output json    # the full surface, for tooling
+hydra commands --output text    # the same, human-readable
+```
+
+This is the discovery entry point for an agent: it needs no workspace, and it removes any need to
+scrape `--help`. [`SURFACE.txt`](../../SURFACE.txt) in the repo root is a committed snapshot of the
+text form, so any change to the surface shows up as a reviewable diff rather than silently.
 
 ## Decision Tree
 
