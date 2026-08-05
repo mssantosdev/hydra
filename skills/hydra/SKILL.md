@@ -1,119 +1,120 @@
 ---
 name: hydra
-description: Manage hydra workspaces and git worktrees with the `hydra` CLI. Use when creating or inspecting a hydra project, adding/removing/locating worktrees, syncing branches, diagnosing a broken workspace, or scripting any `hydra` invocation.
+description: Manage hydra workspaces and git worktrees with the `hydra` CLI. Use when creating or inspecting a hydra project, adding/removing/locating worktrees, grouping work into topics across repositories, running a command in many worktrees, syncing branches, diagnosing a broken workspace, or scripting any `hydra` invocation.
 ---
 
 # hydra
 
-## Model
+## Invariants
 
-Four levels: **project** → **group** → **repo** → **worktree**. A project is a workspace root holding
-`.hydra/config.yaml`, registered by name in a global registry. Bare repos hold git data only;
-every worktree is a real sibling directory under its group.
+These hold for every command. Rely on them instead of probing.
 
-```
-<project-root>/
-  .hydra/config.yaml     # shared manifest; .hydra/ also holds local state
-  .bare/api.git/          # git data ONLY — never cd into or write under .bare/
-  backend/
-    api/                  # worktree for the repo's default branch
-    api-feat-login/       # worktree for branch feat/login  (alias + "-" + slug)
-```
+1. `--output json` (default when stdout is not a terminal) emits one envelope. Never scrape text.
+2. Branch on `error.code`, never on message wording. Codes are stable; messages are not.
+3. Every command is **convergent**: doing it twice is a no-op that exits 0, reported as `skipped`.
+4. Nothing is inferred from a branch name. Topic membership is recorded, never guessed.
+5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`details.one_of` — hydra
+   never blocks on a prompt when output is machine-readable.
+6. A handle matching several worktrees is an error, never a silent first match.
+7. `hydra commands --output json` publishes the whole surface and the code→exit table.
 
-The map key under a group **is** the repo alias, and it is the single source of both the bare path
-(`.bare/<alias>.git`) and the worktree directory base name.
-
-## Rules for agents
-
-- Always pass `--output json` and parse the envelope. Never scrape text output.
-- Branch on `error.code`, never on message wording. Codes are stable; messages are not.
-- Use `hydra path <worktree>` to locate a worktree (`switch` is for interactive shells). It prints a
-  bare path even when captured, so `cd "$(hydra path api)"` works; read `data[].path` from any
-  envelope rather than reconstructing a path from a branch name.
-- Never `cd` into or write under `.bare/`.
-- Never call `git worktree add` directly in a hydra workspace: it bypasses upstream setup and hooks.
-- Pass `--yes` to skip confirmations and expect a prompt-free run. `--no-hooks` skips every hook.
-- Run `hydra doctor --output json` first whenever anything looks structurally wrong.
-- `upstream: null` is a valid **local-only** state (a branch not yet pushed), not an error.
-
-## Commands
-
-| command | purpose | key flag |
-|---|---|---|
-| `init` | create `.hydra/config.yaml` in the current directory | `--project-name` |
-| `new` | bootstrap a new project and its first repo | `--group` |
-| `repo` | `add <url\|path>` (`--adopt`), `list`, `remove` repositories | `--group`, `--branches` |
-| `add` | create one worktree for a branch | `--as`, `--from` |
-| `start` | one branch across many repos, convergent; records a topic | `--repos`, `--topic`, `--slug` |
-| `remove` | delete a worktree | `--delete-branch`, `--force` |
-| `path` | print a worktree's absolute path | — |
-| `switch` | change directory to a worktree (interactive shells) | `--cd` |
-| `list` | list worktrees (alias `ls`) | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
-| `status` | tracking, dirtiness, and merged-ness vs any ref | `--topic`, `--filter`, `--against REF` |
-| `topic` | `list`/`show`/`attach`/`detach`/`remove` units of work spanning repos | `--with-worktrees`, `--yes` |
-| `run` | run one command per worktree; argv after `--`, never a shell | `--topic`, `--jobs`, `--timeout` |
-| `sync` | fast-forward worktrees from their upstreams | `--dirty stash\|reset\|skip`, `--yes` |
-| `doctor` | diagnose workspace/upstream problems | `--fix`, `--all` |
-| `prune` | drop stale worktree registrations and empty groups | `--dry-run` |
-| `project` | manage the global project registry (`ls`/`add`/`rm`) | `--prune` |
-| `hooks` | inspect or run configured hooks (`ls`/`run <event>`) | `--worktree` |
-| `config` | `show`, or `set theme\|editor <value>` without a prompt | — |
-| `init-shell` | install the shell helper that powers `switch` | `--install` |
-| `completion` | emit a shell completion script | — |
-| `skill` | emit this skill | `--install` |
-
-Global flags: `--output auto|text|json`, `--project <name>`, `--config <path>`, `--verbose`,
-`--no-hooks`. `HYDRA_OUTPUT` sets the default mode; `NO_COLOR` disables color.
-
-## Contract
-
-Success, on stdout. `outcome` is `success` or `partial`; `summary` is the one-line answer;
-`next` is present only when there is a suggestion, and hydra never acts on it:
+## Envelope
 
 ```json
 {"schema":2,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
+{"schema":2,"command":"add","outcome":"failure","error":{"code":"worktree_dirty","retryable":false,"message":"…","details":{}}}
 ```
 
-Failure, on stderr. `retryable` is the one fact you cannot derive — only `busy` is `true`:
+`outcome` is `success`, `partial` or `failure`. A **partial** rides the SUCCESS envelope on stdout
+while the error envelope goes to stderr and the process exits 4 — read both, the work that landed is
+real. `summary` is the one-line answer; `next` is a suggestion hydra never acts on. There is no
+`exit` field; the process status carries it.
 
-```json
-{"schema":2,"command":"add","outcome":"failure","error":{"code":"worktree_name_conflict","retryable":false,"message":"…","details":{}}}
-```
+## Decisions
 
-`--output auto` (the default) emits JSON whenever stdout is not a terminal. There is no `exit` field:
-the process exit status carries it.
+**Which command creates worktrees?** One repo, one branch → `add`. Several repos, one unit of work →
+`start --topic <id> --repos a,b`, which also records the topic. A captured set →
+`list -o json | … | apply -`. `start` is `add` across repositories; `apply -` is its batch form,
+consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
+
+**Which worktrees does this act on?** A bare handle (`api-stage`, `backend/api-stage`) → exactly one.
+`--topic <id>` → recorded members. `--repos`/`--group`/`--all` → those repositories.
+`--filter dirty|behind|branch:<glob>` → narrow further. Combine freely; they intersect.
+
+**`topic_unknown`?** Never recorded. `details.known` lists the real ids; `topic attach <id> <worktree>` records it. Do not retry, and do not guess a branch name.
+
+**`needs_input`?** Read `details.missing` (pass each) or `details.one_of` (pass any one). Never retry unchanged.
+
+**`busy`?** Another hydra holds a lock. Retry with backoff. This is the ONLY code worth retrying.
+
+**`worktree_dirty`?** Uncommitted work is in the way. For `sync`, choose `--dirty stash|reset|skip`. For `remove`, commit or pass `--force`. Never `--force` blindly.
+
+**`partial_failure` (exit 4)?** Some items worked: `data` lists them, `details.failed` names what did not. Act on the failures only.
+
+**Workspace looks wrong?** `doctor --output json` first. `checks[].fixable` says whether
+`doctor --fix` can repair it.
+
+## Commands
+
+| command | purpose | key flags |
+|---|---|---|
+| `init` | create `.hydra/config.yaml` here | `--project-name` |
+| `new` | bootstrap a project and its first repo | `--local`, `--remote-url` |
+| `repo` | `add <url\|path>` (`--adopt`), `list`, `remove` | `--group`, `--branches`, `--as` |
+| `add` | one worktree for one branch | `--as`, `--from` |
+| `start` | one branch across repositories; records a topic | `--repos`, `--topic`, `--slug`, `--kind` |
+| `apply` | create the worktrees described by JSON on stdin | `-`, `--dry-run` |
+| `remove` | delete a worktree | `--delete-branch`, `--force`, `--yes` |
+| `topic` | `list`, `show`, `attach`, `detach`, `remove` | `--with-worktrees`, `--yes` |
+| `list` | list worktrees | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
+| `status` | tracking, dirtiness, merged-ness vs a ref | `--topic`, `--filter`, `--against REF` |
+| `path` | print one worktree's absolute path | `--topic` |
+| `switch` | change directory to a worktree (TTY) | `--cd` |
+| `run` | run a command per worktree; argv after `--` | `--topic`, `--jobs`, `--timeout` |
+| `sync` | fast-forward worktrees from upstream | `--dirty`, `--yes` |
+| `doctor` | diagnose, and repair what is fixable | `--fix`, `--all` |
+| `prune` | drop stale registrations and empty groups | `--dry-run` |
+| `project` | global registry: `list`, `add`, `rm` | `--prune` |
+| `hooks` | `ls`, `run <event>` | `--worktree` |
+| `config` | `show`, `set theme\|editor <value>` | — |
+| `commands` | the whole surface, and the error table | — |
+| `skill` | emit this skill | `--install` |
+| `init-shell` | install the helper `switch` needs | `--install` |
+| `completion` | shell completion script | — |
+
+## Error codes
 
 | code | exit | raised when |
 |---|---|---|
-| `not_in_project` | 2 | no `.hydra/config.yaml` found walking up, and no `--project` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` walking up, and no `--project` |
 | `config_version_unsupported` | 2 | manifest `version` is not `"2"` |
-| `project_unknown` | 2 | `--project <name>` not in the registry |
-| `repo_unknown` | 1 | alias not present in any group |
-| `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |
-| `branch_unknown` | 1 | branch does not exist where an existing branch was required |
-| `worktree_exists` | 1 | target worktree already exists for that branch |
-| `worktree_unknown` | 1 | named worktree not found |
-| `worktree_name_conflict` | 1 | derived directory name taken by a different branch |
+| `state_version_unsupported` | 2 | `.hydra/state.yaml` written by a newer hydra |
+| `project_unknown` | 2 | `--project` names nothing in the registry |
+| `repo_unknown` | 1 | repo alias or group not registered; `details.known` lists them |
+| `bare_missing` | 1 | `.bare/<alias>.git` is gone; run `doctor` |
+| `branch_unknown` | 1 | a base ref or branch name does not resolve |
+| `worktree_exists` | 1 | that branch already has a worktree |
+| `worktree_unknown` | 1 | no worktree by that name |
+| `worktree_name_conflict` | 1 | a name does not identify exactly one worktree |
 | `worktree_dirty` | 5 | destructive op blocked by uncommitted changes |
-| `hook_failed` | 1 | a non-`optional` hook exited non-zero |
-| `shell_helper_missing` | 3 | `switch --cd` with no shell helper installed |
-| `partial_failure` | 4 | some items succeeded, some failed |
-| `git_failed` | 1 | an underlying git invocation failed |
-| `topic_unknown` | 1 | `--topic <id>` is not recorded; `details.known` lists valid ids |
+| `topic_unknown` | 1 | id not recorded; `details.known` lists valid ids |
 | `topic_conflict` | 1 | that worktree already belongs to another topic |
-| `state_version_unsupported` | 2 | `.hydra/state.yaml` was written by a newer hydra |
-| `branch_provider_failed` | 1 | a configured `branch_provider` failed or timed out |
-| `busy` | 6 | a git or state lock was held — **the only retryable code** |
-| `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names the flag |
-| `internal` | 1 | anything unclassified |
+| `branch_provider_failed` | 1 | configured `branch_provider` failed or timed out |
+| `hook_failed` | 1 | a non-`optional` hook exited non-zero |
+| `shell_helper_missing` | 3 | `switch --cd` with no shell helper |
+| `partial_failure` | 4 | some items succeeded, some failed |
+| `busy` | 6 | a lock was held — **the only retryable code** |
+| `needs_input` | 7 | a value is missing; `details.missing`/`one_of` name it |
+| `git_failed` | 1 | an underlying git invocation failed |
+| `internal` | 1 | anything unclassified, including a bad flag value |
 
 ## Anti-patterns
 
-- Building `<group>/<repo>-<branch>` yourself instead of reading `data[].path` — `--as` may have
-  overridden the directory name, and `/` in a branch becomes `-`.
+- Rebuilding `<group>/<repo>-<branch>` instead of reading `data[].path` — `--as` may have overridden it.
 - Treating `upstream: null` as a failure; it is a branch with no upstream yet.
-- Branching on the exit status instead of `error.code` and `error.retryable`; only `busy` is retryable.
-- Calling `hydra switch` from a script to find a path; use `hydra path`.
-- Deleting the worktree after `hook_failed` from `add` — it was created correctly; fix the hook and run `hydra hooks run post_add`.
-- Retrying `remove --delete-branch --force` after a `git_failed` refusal: the branch is NOT merged and nothing was removed. Ask the user.
-- Deleting `.bare/<alias>.git` after an interrupted clone; re-run the same `hydra repo add` — it is convergent and completes.
+- Retrying anything but `busy`, or retrying `needs_input` without adding the flag.
+- Deleting the worktree after `hook_failed` from `add` — it was created correctly; fix the hook.
+- Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged. Ask first.
+- Deleting `.bare/<alias>.git` after an interrupted add; re-run the same command, it is convergent.
+- Passing `--force` to escape `worktree_dirty` without checking what is uncommitted.
+- Assuming `hydra run` gets a shell. It does not — pass `-- sh -c '…'` when you need one.

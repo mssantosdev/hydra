@@ -607,5 +607,53 @@ check "skill installs outside a workspace" \
   '(cd "$T" && "$HYDRA" skill --install --dir "$T/ws/.agents/skills" >/dev/null) &&
    test -f "$T/ws/.agents/skills/hydra/SKILL.md"'
 
+# ------------------------------------- 12. surface and apply (step 12)
+echo "== 12. commands surface, and apply round-trips list =="
+check "commands publishes the surface outside a workspace" \
+  '(cd "$T" && "$HYDRA" commands --output json |
+    jq -e ".data.surface_schema==1 and (.data.commands|length)>20" >/dev/null)'
+check "every documented error code carries an exit status" \
+  '"$HYDRA" commands --output json |
+   jq -e "(.data.error_codes|length)>15 and
+          (.data.error_codes|all(.exit>=0 and .code!=\"\"))" >/dev/null'
+check "the committed SURFACE.txt is not stale" \
+  '(cd "$T" && "$HYDRA" commands --output text) |
+   diff -q - "$(dirname "$HYDRA")/SURFACE.txt" >/dev/null'
+# The round-trip the design rests on: what list emits, apply consumes, in a SECOND
+# workspace - so this proves portability, not just idempotence in place. The replica has
+# to register the same repos first: apply creates worktrees, never repositories.
+check "apply reproduces a captured workspace elsewhere" \
+  '(cd "$T/ws" && "$HYDRA" list --output json > "$T/captured.json") &&
+   (mkdir -p "$T/ws2" && cd "$T/ws2" && "$HYDRA" init --project-name replica >/dev/null &&
+    "$HYDRA" repo add "$T/upstream" --as api --group backend --branches main >/dev/null &&
+    "$HYDRA" repo add "$T/upstream" --as web --group frontend --branches main >/dev/null &&
+    "$HYDRA" repo add "$T/loose-checkout" --as cloned --group imported --branches main >/dev/null &&
+    "$HYDRA" apply - < "$T/captured.json" --output json |
+      jq -e ".outcome==\"success\" and .data.created>0 and .data.failed==0" >/dev/null)'
+# Every branch the source had must exist in the replica. Containment, not equality: the
+# replica's own `repo add` creates a default-branch worktree per repo, and the source had
+# since removed one of those. Branch-carrying worktrees only - a detached worktree has no
+# branch, so no document can describe it, which apply warns about below.
+check "the replica holds every branch the source had" \
+  '(cd "$T/ws2" && "$HYDRA" list --output json |
+    jq -e --slurpfile src <(cd "$T/ws" && "$HYDRA" list --output json) "
+      [\$src[0].data.worktrees[]|select(.branch!=\"\").branch] -
+      [.data.worktrees[]|select(.branch!=\"\").branch] == []" >/dev/null)'
+printf '[{"repo":"api","branch":""},{"repo":"api","branch":"main"}]' > "$T/detached.json"
+check "a skipped detached worktree is warned about, not dropped in silence" \
+  '(cd "$T/ws2" && "$HYDRA" apply - < "$T/detached.json" --output json |
+    jq -e "(.warnings|length)==1 and (.warnings[0]|test(\"detached\"))" >/dev/null)'
+check "applying the same document twice creates nothing" \
+  '(cd "$T/ws2" && "$HYDRA" apply - < "$T/captured.json" --output json |
+    jq -e ".data.created==0 and .data.failed==0" >/dev/null)'
+check "apply carries topic membership across workspaces" \
+  '(cd "$T/ws2" && "$HYDRA" topic ls --output json | jq -e "(.data.topics|length)>0" >/dev/null)'
+check "a jq-filtered bare array is accepted too" \
+  '(cd "$T/ws2" && jq -c "[.data.worktrees[0]]" "$T/captured.json" |
+    "$HYDRA" apply - --output json | jq -e ".data.total==1" >/dev/null)'
+check "apply with no stdin asks for input" \
+  '{ (cd "$T/ws2" && printf "" | "$HYDRA" apply - --output json) || true; } 2>&1 >/dev/null |
+   jq -e ".error.code==\"needs_input\"" >/dev/null'
+
 echo
 echo "ALL $pass ASSERTIONS PASSED"

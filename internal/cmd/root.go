@@ -42,13 +42,16 @@ var (
 	commandsWithoutProject = map[string]bool{
 		"init":       true,
 		"new":        true,
-		"clone":      true,
 		"help":       true,
 		"config":     true,
 		"init-shell": true,
 		"completion": true,
 		"skill":      true,
 		"project":    true,
+		// commands describes hydra itself, so requiring a workspace would make the
+		// surface undiscoverable from anywhere a caller has not set one up yet.
+		// ("clone" is gone — "repo add" needs a project, so it is NOT listed here.)
+		"commands": true,
 	}
 
 	rootCmd = &cobra.Command{

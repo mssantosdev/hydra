@@ -94,7 +94,9 @@ func DocumentedCommands() []string {
 // DocumentedErrorCodes returns the code -> exit-code map from the Contract table.
 func DocumentedErrorCodes() map[string]int {
 	codes := make(map[string]int)
-	for _, line := range section("Contract") {
+	// "Error codes", not "Contract": the envelope and the code table were one section
+	// and are now two, so this reads the one that actually holds the table.
+	for _, line := range section("Error codes") {
 		cells := rowCells(line)
 		if len(cells) < 3 {
 			continue
