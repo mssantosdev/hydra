@@ -8,11 +8,15 @@ A beautiful CLI tool for managing Git worktrees with group organization.
 
 - 🌿 **Worktree Management**: Create, switch, and remove Git worktrees easily
 - 🏗️ **Group Organization**: Group related repositories (backend, frontend, infra)
+- 📌 **Topics**: A unit of work spanning repositories — record which worktrees belong together
+- 🚀 **Multi-repo start**: `hydra start` creates one branch across several repos in one command
+- ▶️ **Fan-out execution**: `hydra run` runs one command per worktree with no implicit shell
+- 📋 **Workspace replay**: `hydra apply -` reproduces a workspace from captured JSON
 - 🎨 **Beautiful CLI**: Multiple themes (Tokyo Night, Catppuccin, Dracula, Nord, One Dark)
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
 - 🔖 **Version Visibility**: `hydra`, `hydra --help`, and `hydra --version` show version info
-- 🤖 **Machine-readable output**: JSON envelopes for scripting and agents
+- 🤖 **Machine-readable output**: JSON envelopes with stable `error.code` values for scripting and agents
 
 ## Installation
 
@@ -102,6 +106,13 @@ hydra list
 # alias: hydra ls
 ```
 
+### 6. Start a Unit of Work Across Repositories
+
+```bash
+hydra start <branch> --repos a,b --topic <id>
+hydra list --topic <id>
+```
+
 ## On-Disk Layout
 
 Hydra keeps bare git data separate from real working directories. Worktrees are **sibling directories**, never symlinks:
@@ -129,6 +140,7 @@ Complete documentation is in [`docs/`](docs/):
 - **[Getting Started](docs/README.md)** — Overview and quick start
 - **[Commands](docs/commands/README.md)** — Complete command reference
   - [Worktree Management](docs/commands/worktree-management.md) — `add`, `remove`
+  - [Topics and execution](docs/commands/topics-and-execution.md) — topics, `start`, `run`, and `apply`
   - [Project Bootstrap](docs/commands/project-bootstrap.md) — `new`, `init`, `repo add`, `repo add --adopt`
 - **[Configuration](docs/configuration.md)** — `.hydra/config.yaml` schema v2
 
@@ -207,6 +219,22 @@ git push
 # --delete-branch is refused if the branch is not merged there yet, and nothing is
 # removed in that case. Being pushed to origin does not count as merged.
 hydra remove api hotfix/critical-bug --delete-branch
+```
+
+### Multi-Repo Topic
+
+```bash
+# Start a topic across two repos
+hydra start feat/oauth --repos api,web --topic JIRA-456
+
+# Check tracking status against main
+hydra status --topic JIRA-456 --against main
+
+# Run a command in each worktree (no implicit shell — everything after -- is argv)
+hydra run --topic JIRA-456 -- go test ./...
+
+# Tear down the topic and its worktrees
+hydra topic remove JIRA-456 --with-worktrees
 ```
 
 ## Commands Overview
