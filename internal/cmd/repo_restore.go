@@ -181,10 +181,12 @@ func declaredRepos(c *config.Config) []declaredRepo {
 	var out []declaredRepo
 	for group, repos := range c.Groups {
 		for alias, repo := range repos {
+			// Do NOT guess "main". A manifest entry can legitimately lack a default
+			// branch, and a repository whose branches are prod/stage then failed with
+			// `branch "main" does not exist on origin` — a guess presented as the
+			// user's own configuration. Empty means "let the clone resolve the
+			// remote's HEAD", which is the only defensible answer.
 			branch := repo.DefaultBranch
-			if branch == "" {
-				branch = "main"
-			}
 			out = append(out, declaredRepo{
 				Group:  group,
 				Alias:  alias,
@@ -217,7 +219,11 @@ func restoreSummary(p restoreJSON) string {
 	if p.Failed > 0 {
 		return fmt.Sprintf("%s %d, %d already present, %d failed", verb, p.Cloned, p.Present, p.Failed)
 	}
-	return fmt.Sprintf("%s %d, %d already present", verb, p.Cloned, p.Present)
+	// Say that worktrees are NOT complete. The manifest records repositories and their
+	// default branch only, so a workspace restored from it has one worktree per repo —
+	// not the set the source had open. Reporting only the repository count invited the
+	// conclusion that the restore was finished.
+	return fmt.Sprintf("%s %d, %d already present; default-branch worktrees only", verb, p.Cloned, p.Present)
 }
 
 func printRestoreText(p restoreJSON, summary string) {
@@ -261,10 +267,14 @@ func restoreOne(ref declaredRepo) (restoreRepoJSON, fanout.Disposition, error) {
 	}
 
 	opts := &CloneOptions{
-		URL:      ref.Remote,
-		Alias:    ref.Alias,
-		Group:    ref.Group,
-		Branches: []string{ref.Branch},
+		URL:   ref.Remote,
+		Alias: ref.Alias,
+		Group: ref.Group,
+	}
+	// Naming a branch the manifest never recorded would fail on a repository that has
+	// no such branch; leaving it empty makes the clone resolve the remote's default.
+	if ref.Branch != "" {
+		opts.Branches = []string{ref.Branch}
 	}
 	if _, _, err := performClone(opts, cfg, projectConfigPath, projectRoot); err != nil {
 		entry.Disposition = "failed"
