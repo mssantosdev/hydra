@@ -9,6 +9,27 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.1] - 2026-08-05
+
+### Fixed
+
+- **Help text no longer recommends commands that were deleted.** `clone` and `adopt` became
+  `repo add` in 0.2.0, but eleven places still named them — including the `Next:` block
+  `hydra init` prints on success, and `doctor`'s repair advice for an interrupted clone.
+
+  Found by handing the installed binary to four agents with no prior knowledge of hydra and
+  asking them to build a workspace. All four read `hydra init`'s own output, ran
+  `hydra clone`, and got `unknown_command` — the tool teaching something false at the first
+  opportunity, which is precisely what 0.3.0's affordances were meant to prevent. Every site
+  now names `hydra repo add`, with `--adopt` for a checkout and `--as` rather than the
+  long-removed `--alias`.
+
+  `TestHelpNeverNamesAMissingCommand` walks every registered command's short, long and
+  example text, extracts invocation-shaped mentions, and fails on any that is not a
+  registered command or alias. Prose that merely contains the word "hydra" is not matched.
+
+[0.3.1]: https://github.com/mssantosdev/hydra/compare/v0.3.0...v0.3.1
+
 ## [0.3.0] - 2026-08-05
 
 The release that makes hydra correct the caller instead of letting a wrong assumption stand.
