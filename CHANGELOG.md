@@ -5,9 +5,11 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases before `0.1.0` predate this file and are not reconstructed here; see the git history.
+Releases before `0.2.0` predate this file and are not reconstructed here; see the git history.
+There is no `0.1.0`: that version string was published once in an earlier life of this repository and
+is permanently bound to different content in the Go checksum database, so it can never be installed.
 
-## [0.1.0] - 2026-08-05
+## [0.2.0] - 2026-08-05
 
 The release that gives hydra a **unit of work**. Before this, the only noun was the worktree: you
 asked for a directory for one branch in one repository, once per repository. A single piece of work
@@ -182,4 +184,4 @@ Read this section before upgrading. Each entry says what to do.
   continuation bytes and a truncated multi-byte sequence through it behind a deadline, so the
   property is proven rather than assumed from a version bump.
 
-[0.1.0]: https://github.com/mssantosdev/hydra/compare/v0.0.19...v0.1.0
+[0.2.0]: https://github.com/mssantosdev/hydra/compare/v0.0.19...v0.2.0
