@@ -36,7 +36,11 @@ const (
 	// CodeNeedsInput means a prompt would have been required but output is
 	// machine-readable, so hydra names the missing flag instead of blocking.
 	CodeNeedsInput = "needs_input"
-	CodeInternal   = "internal"
+	// CodeUnknownCommand is a mistyped or invented subcommand. It is NOT internal:
+	// nothing broke, the caller named something that does not exist, and the recovery
+	// is a published list of what does.
+	CodeUnknownCommand = "unknown_command"
+	CodeInternal       = "internal"
 )
 
 // exitCodes is the single authority mapping error codes to process exit codes.
@@ -61,6 +65,7 @@ var exitCodes = map[string]int{
 	CodeBranchProviderFailed:     1,
 	CodeBusy:                     6,
 	CodeNeedsInput:               7,
+	CodeUnknownCommand:           1,
 	CodeInternal:                 1,
 }
 
@@ -128,6 +133,11 @@ type Error struct {
 	// exit status in a second place that could disagree with it.
 	Exit int `json:"-"`
 
+	// Next carries the invocation that recovers from this error, as argv rather than
+	// prose. It rides the error because guidance a caller has to know to ask for is not
+	// an affordance: it has to arrive in the failing call's own envelope.
+	Next []Next `json:"-"`
+
 	wrapped error
 }
 
@@ -176,6 +186,12 @@ func (e *Error) WithDetail(key string, value any) *Error {
 		e.Details = make(map[string]any)
 	}
 	e.Details[key] = value
+	return e
+}
+
+// WithNext attaches a recovering invocation and returns the error.
+func (e *Error) WithNext(n ...Next) *Error {
+	e.Next = append(e.Next, n...)
 	return e
 }
 

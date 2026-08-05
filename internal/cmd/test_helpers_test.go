@@ -20,6 +20,7 @@ func resetCommandState(t *testing.T) {
 	cfg, projectRoot, projectConfigPath = nil, "", ""
 	cfgFile, projectFlag, outputFlag = "", "", ""
 	verboseFlag, noHooksFlag = false, false
+	envelopeEmitted = false
 	outMode = output.ModeText
 	rootCmd.SetArgs(nil)
 

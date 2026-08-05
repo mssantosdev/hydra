@@ -212,23 +212,34 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// A partial failure is reported on the SUCCESS envelope as outcome=partial: the
 	// pulls that landed are real data, and a caller reading stdout must be able to
 	// see both what worked and that something did not.
+	// A hook failure no longer aborts the command: it is reported as a warning and the
+	// failure below is derived from the git results alone.
+	failed := failedWorktreeDetails(results)
+	var syncErr *output.Error
 	outcome := output.OutcomeSuccess
-	if summary.Failed > 0 {
+	switch {
+	case len(failed) == 0:
+	case summary.Total > 0 && len(failed) == summary.Total:
+		outcome = output.OutcomeFailure
+		syncErr = output.Errorf(output.CodeGitFailed,
+			"every worktree failed to sync").WithDetail("worktrees", failed)
+	default:
 		outcome = output.OutcomePartial
+		syncErr = output.Errorf(output.CodePartialFailure,
+			"%d worktree(s) failed to sync", len(failed)).WithDetail("worktrees", failed)
 	}
+
 	if err := emitResult(cmd, output.Result{
 		Outcome:  outcome,
 		Summary:  syncSummaryLine(summary),
 		Data:     data,
 		Warnings: allWarnings,
+		Err:      syncErr,
 	}, func() { printSyncText(results, summary) }); err != nil {
 		return err
 	}
-	// A hook failure no longer aborts the command: it is reported as a warning and
-	// partial_failure below is derived from the git results alone.
-	failed := failedWorktreeDetails(results)
-	if len(failed) > 0 {
-		return output.Errorf(output.CodePartialFailure, "%d worktree(s) failed to sync", len(failed)).WithDetail("worktrees", failed)
+	if syncErr != nil {
+		return syncErr
 	}
 	return nil
 }

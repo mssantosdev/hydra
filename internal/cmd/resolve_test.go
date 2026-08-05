@@ -31,7 +31,7 @@ func twoRepoEnv(t *testing.T) *testutil.TestEnv {
 // first match, so hydra acted on an arbitrary repo and reported success.
 func TestResolveOneWorktree_AmbiguousBranchIsRefused(t *testing.T) {
 	resetCommandState(t)
-	env := twoRepoEnv(t)
+	_ = twoRepoEnv(t)
 
 	items, _ := collectWorktrees(cfg, projectRoot)
 	_, err := resolveOneWorktree(items, "main")
@@ -47,7 +47,7 @@ func TestResolveOneWorktree_AmbiguousBranchIsRefused(t *testing.T) {
 	if !ok || len(candidates) != 2 {
 		t.Fatalf("details.candidates must name both worktrees, got %#v", classified.Details["candidates"])
 	}
-	_ = env
+
 }
 
 // A group-qualified handle is unique by construction, so it must still resolve even
@@ -154,7 +154,7 @@ func TestResolveTargets_UnknownRepoIsRefused(t *testing.T) {
 	resetCommandState(t)
 	twoRepoEnv(t)
 
-	_, _, err := resolveTargets(currentSession(), Selector{Repos: []string{"nope"}}, false)
+	_, _, _, err := resolveTargets(currentSession(), Selector{Repos: []string{"nope"}}, false)
 	if err == nil {
 		t.Fatal("an unknown repo must fail")
 	}
@@ -171,7 +171,7 @@ func TestResolveTargets_UnknownGroupIsRefused(t *testing.T) {
 	resetCommandState(t)
 	twoRepoEnv(t)
 
-	_, _, err := resolveTargets(currentSession(), Selector{Group: "nope"}, false)
+	_, _, _, err := resolveTargets(currentSession(), Selector{Group: "nope"}, false)
 	if code := output.Classify(err).Code; code != output.CodeRepoUnknown {
 		t.Fatalf("code = %q, want %q", code, output.CodeRepoUnknown)
 	}
@@ -182,7 +182,7 @@ func TestResolveTargets_NarrowsByRepoAndGroup(t *testing.T) {
 	twoRepoEnv(t)
 	session := currentSession()
 
-	byRepo, _, err := resolveTargets(session, Selector{Repos: []string{"api"}}, false)
+	byRepo, _, _, err := resolveTargets(session, Selector{Repos: []string{"api"}}, false)
 	if err != nil {
 		t.Fatalf("--repos api: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestResolveTargets_NarrowsByRepoAndGroup(t *testing.T) {
 		t.Error("--repos api must match something")
 	}
 
-	byGroup, _, err := resolveTargets(session, Selector{Group: "frontend"}, false)
+	byGroup, _, _, err := resolveTargets(session, Selector{Group: "frontend"}, false)
 	if err != nil {
 		t.Fatalf("--group frontend: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestResolveTargets_BranchFilterSkipsTracking(t *testing.T) {
 	env := twoRepoEnv(t)
 	env.CreateWorktree("backend", "api", "feat/login", "api-login")
 
-	resolved, _, err := resolveTargets(currentSession(), Selector{Filter: []string{"branch:feat/*"}}, false)
+	resolved, _, _, err := resolveTargets(currentSession(), Selector{Filter: []string{"branch:feat/*"}}, false)
 	if err != nil {
 		t.Fatalf("--filter branch: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestResolveTargets_DerivedFilterForcesTracking(t *testing.T) {
 	wt := env.CreateWorktree("backend", "api", "feat/dirty", "api-dirty")
 	env.MakeWorktreeDirty(wt)
 
-	resolved, _, err := resolveTargets(currentSession(), Selector{Filter: []string{"dirty"}}, false)
+	resolved, _, _, err := resolveTargets(currentSession(), Selector{Filter: []string{"dirty"}}, false)
 	if err != nil {
 		t.Fatalf("--filter dirty: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestResolveTargets_AbsentTopicMatchesNothing(t *testing.T) {
 	resetCommandState(t)
 	twoRepoEnv(t)
 
-	resolved, _, err := resolveTargets(currentSession(), Selector{Topic: "not-here"}, false)
+	resolved, _, _, err := resolveTargets(currentSession(), Selector{Topic: "not-here"}, false)
 	if err != nil {
 		t.Fatalf("an absent topic must not fail inside the resolver: %v", err)
 	}
@@ -330,5 +330,64 @@ func TestPath_HandleAndTopicTogetherIsRefused(t *testing.T) {
 	rootCmd.SetArgs([]string{"path", "backend/api", "--topic", "x", "--output", "json"})
 	if err := rootCmd.Execute(); err == nil {
 		t.Fatal("a handle and --topic together must be refused")
+	}
+}
+
+// A selector that matches nothing is a legitimate answer — "nothing is dirty" is true —
+// so it stays exit 0. But an empty result is indistinguishable from a typo'd glob, and a
+// caller reading success with an empty list concludes the work does not exist rather than
+// that its selector was wrong. Saying how many candidates were considered separates them.
+func TestResolve_EmptySelectionExplainsItself(t *testing.T) {
+	resetCommandState(t)
+	twoRepoEnv(t)
+
+	_, warnings, _, err := resolveTargets(currentSession(),
+		Selector{Filter: []string{"branch:no-such-*"}}, false)
+	if err != nil {
+		t.Fatalf("an empty match must not be an error: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "matched none") {
+		t.Fatalf("warnings = %q, want one naming the unmatched selector", warnings)
+	}
+	if !strings.Contains(warnings[0], "branch:no-such-*") {
+		t.Errorf("the warning must name the selector, got %q", warnings[0])
+	}
+}
+
+// Without a selector there is nothing to explain, so a plain listing stays silent.
+func TestResolve_NoSelectorProducesNoWarning(t *testing.T) {
+	resetCommandState(t)
+	twoRepoEnv(t)
+
+	resolved, warnings, _, err := resolveTargets(currentSession(), Selector{}, false)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(resolved) == 0 {
+		t.Fatal("fixture should have worktrees")
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %q, want none", warnings)
+	}
+}
+
+// Repository failures are counted explicitly. They used to be inferred as
+// len(repos) - len(warnings), so any advisory warning was miscounted as a repository
+// failure — which made a healthy listing report partial_failure.
+func TestResolve_AdvisoryWarningsAreNotRepoFailures(t *testing.T) {
+	resetCommandState(t)
+	twoRepoEnv(t)
+
+	_, warnings, repoFailures, err := resolveTargets(currentSession(),
+		Selector{Filter: []string{"branch:no-such-*"}}, false)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected an advisory warning to be present")
+	}
+	if repoFailures != 0 {
+		t.Errorf("repoFailures = %d, want 0: an advisory warning is not a failed repository",
+			repoFailures)
 	}
 }

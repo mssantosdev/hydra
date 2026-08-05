@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -105,9 +106,13 @@ func init() {
 }
 
 type startTargetJSON struct {
-	Group       string `json:"group"`
-	Repo        string `json:"repo"`
-	Branch      string `json:"branch"`
+	Group  string `json:"group"`
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+	// Name is the worktree directory name, which is the HANDLE every other command
+	// takes. Without it a caller has to take the basename of Path to address the
+	// worktree it just created.
+	Name        string `json:"name"`
 	Path        string `json:"path"`
 	Disposition string `json:"disposition"`
 	Reason      string `json:"reason,omitempty"`
@@ -204,31 +209,39 @@ func runStart(cmd *cobra.Command, args []string) error {
 	_, _, failed, _ := fanout.Summarize(results)
 
 	summary := startSummary(payload, source)
+
+	// start already distinguished total from partial failure; the error now rides the
+	// same envelope as the created worktrees instead of a second one on stderr.
+	var startErr *output.Error
 	outcome := output.OutcomeSuccess
-	if len(failed) > 0 {
+	switch {
+	case len(failed) == 0:
+	case len(payload.Created) == 0 && len(payload.Skipped) == 0:
+		outcome = output.OutcomeFailure
+		startErr = output.Errorf(output.CodeGitFailed,
+			"no worktree could be created for %q", branch).
+			WithDetail("branch", branch).
+			WithDetail("failed", len(failed))
+	default:
 		outcome = output.OutcomePartial
+		startErr = output.Errorf(output.CodePartialFailure,
+			"%d of %d repositories failed", len(failed), len(results)).
+			WithDetail("branch", branch).
+			WithDetail("failed", len(failed))
 	}
+
 	if emitErr := emitResult(cmd, output.Result{
 		Outcome:  outcome,
 		Summary:  summary,
 		Data:     payload,
 		Next:     startNext(payload),
 		Warnings: warnings,
+		Err:      startErr,
 	}, func() { printStartText(payload, summary) }); emitErr != nil {
 		return emitErr
 	}
-
-	if len(failed) > 0 {
-		if len(payload.Created) == 0 && len(payload.Skipped) == 0 {
-			return output.Errorf(output.CodeGitFailed,
-				"no worktree could be created for %q", branch).
-				WithDetail("branch", branch).
-				WithDetail("failed", len(failed))
-		}
-		return output.Errorf(output.CodePartialFailure,
-			"%d of %d repositories failed", len(failed), len(results)).
-			WithDetail("branch", branch).
-			WithDetail("failed", len(failed))
+	if startErr != nil {
+		return startErr
 	}
 	return nil
 }
@@ -488,6 +501,7 @@ func fillStartPayload(payload *startJSON, results []fanout.ItemResult) {
 			Group:       result.Target.Group,
 			Repo:        result.Target.Repo,
 			Branch:      result.Target.Branch,
+			Name:        filepath.Base(result.Target.Path),
 			Path:        result.Target.Path,
 			Disposition: string(result.Disposition),
 			Reason:      result.Reason,
@@ -530,15 +544,16 @@ func startNext(payload startJSON) []output.Next {
 		return nil
 	}
 	return []output.Next{{
-		Action: "status",
-		Cmd:    fmt.Sprintf("hydra status --topic %s", *payload.Topic),
+		Argv: []string{"hydra", "status", "--topic", *payload.Topic},
+		Why:  "see tracking and dirtiness for every worktree in this topic",
 	}}
 }
 
 func emitStartPreview(cmd *cobra.Command, payload startJSON, targets []fanout.Target) error {
 	for _, t := range targets {
 		payload.Created = append(payload.Created, startTargetJSON{
-			Group: t.Group, Repo: t.Repo, Branch: t.Branch, Path: t.Path,
+			Group: t.Group, Repo: t.Repo, Branch: t.Branch,
+			Name: filepath.Base(t.Path), Path: t.Path,
 			Disposition: "would_create",
 		})
 	}

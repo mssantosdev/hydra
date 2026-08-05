@@ -126,12 +126,12 @@ func collectProjectWorktrees(targets []projectTarget, sel Selector) ([]projectWo
 		repos := allRepoContexts(target.Cfg, target.Root)
 		attempted += len(repos)
 
-		resolved, wtWarnings, err := resolveTargets(sessionFor(target), sel, true)
+		resolved, wtWarnings, repoFailures, err := resolveTargets(sessionFor(target), sel, true)
 		if err != nil {
 			return nil, warnings, attempted, succeeded, err
 		}
 		warnings = append(warnings, wtWarnings...)
-		succeeded += len(repos) - len(wtWarnings)
+		succeeded += len(repos) - repoFailures
 
 		items := make([]worktreeJSON, 0, len(resolved))
 		for _, entry := range resolved {

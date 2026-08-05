@@ -81,7 +81,7 @@ check "a failing post_sync hook warns instead of aborting" \
   '"$HYDRA" sync api --yes --output json 2>/dev/null | jq -e ".data.summary.pulled==1 and .data.summary.failed==0 and (.warnings|length)>0" >/dev/null'
 cp "$T/config.before-hook" .hydra/config.yaml
 check "the manifest is restored and still parses" \
-  '"$HYDRA" list --output json | jq -e ".schema==2" >/dev/null && ! grep -q post_sync .hydra/config.yaml'
+  '"$HYDRA" list --output json | jq -e ".schema==3" >/dev/null && ! grep -q post_sync .hydra/config.yaml'
 
 # ------------------------------------------------ 3b. clone converges (step 5)
 echo "== 3b. re-cloning a complete repository is a no-op =="
@@ -95,22 +95,22 @@ check "the re-clone destroyed nothing" 'test -d backend/api && test -d .bare/api
 
 # ------------------------------------------------ 4. machine contract (step 5)
 echo "== 4. machine contract and exit codes =="
-check "list envelope has schema 2 and 2 worktrees" \
-  '"$HYDRA" list --output json | jq -e ".schema==2 and (.data.worktrees|length)==2" >/dev/null'
+check "list envelope has schema 3 and 2 worktrees" \
+  '"$HYDRA" list --output json | jq -e ".schema==3 and (.data.worktrees|length)==2" >/dev/null'
 check "non-TTY stdout auto-selects JSON" \
-  '"$HYDRA" list | jq -e ".schema==2" >/dev/null'
-# The schema-2 fields (step 6): every envelope carries them, so a consumer never has
+  '"$HYDRA" list | jq -e ".schema==3" >/dev/null'
+# The envelope fields (step 6): every envelope carries them, so a consumer never has
 # to reconstruct "what happened" from data or interpret an exit status.
 check "every success envelope carries outcome and summary" \
   '"$HYDRA" list --output json | jq -e ".outcome==\"success\" and (.summary|type==\"string\" and length>0)" >/dev/null'
 check "next is omitted rather than null when empty" \
   '"$HYDRA" list --output json | jq -e "has(\"next\")|not" >/dev/null'
 check "error envelopes carry outcome failure" \
-  '{ "$HYDRA" list --topic nope --output json 2>&1 >/dev/null || true; } | jq -e ".outcome==\"failure\"" >/dev/null'
+  '{ "$HYDRA" list --topic nope --output json 2>/dev/null || true; } | jq -e ".outcome==\"failure\"" >/dev/null'
 check "a terminal error is retryable:false, never absent" \
-  '{ "$HYDRA" list --topic nope --output json 2>&1 >/dev/null || true; } | jq -e ".error|has(\"retryable\") and .retryable==false" >/dev/null'
+  '{ "$HYDRA" list --topic nope --output json 2>/dev/null || true; } | jq -e ".error|has(\"retryable\") and .retryable==false" >/dev/null'
 check "exit is still absent from the error envelope" \
-  '{ "$HYDRA" list --topic nope --output json 2>&1 >/dev/null || true; } | jq -e ".error|has(\"exit\")|not" >/dev/null'
+  '{ "$HYDRA" list --topic nope --output json 2>/dev/null || true; } | jq -e ".error|has(\"exit\")|not" >/dev/null'
 check "summary states the actual count" \
   '[ "$("$HYDRA" list --output json | jq -r .summary)" = "2 worktree(s)" ]'
 check "HYDRA_OUTPUT=text forces text" \
@@ -237,9 +237,9 @@ check "--topic on status narrows too" \
   '[ "$("$HYDRA" status --topic 2072958 --output json | jq ".data.worktrees|length")" = 1 ]'
 # Error envelopes are written to stderr, so they must be redirected to be parsed.
 check "an unknown topic is an error, not an empty list" \
-  '{ "$HYDRA" list --topic 9999999 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_unknown\"" >/dev/null'
+  '{ "$HYDRA" list --topic 9999999 --output json 2>/dev/null || true; } | jq -e ".error.code==\"topic_unknown\"" >/dev/null'
 check "the unknown-topic error lists the known ids" \
-  '{ "$HYDRA" list --topic 9999999 --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.known|index(\"2072958\")!=null" >/dev/null'
+  '{ "$HYDRA" list --topic 9999999 --output json 2>/dev/null || true; } | jq -e ".error.details.known|index(\"2072958\")!=null" >/dev/null'
 check "topic_unknown exits 1" \
   '{ "$HYDRA" list --topic 9999999 --output json >/dev/null 2>&1; [ "$?" = 1 ]; }'
 
@@ -272,7 +272,7 @@ check "the removed worktree is gone" '! test -d backend/api-feat-topic-demo'
 check "doctor stays clean after remove detached" \
   '{ "$HYDRA" doctor --output json 2>/dev/null || true; } | jq -e "[.data.checks[]|select(.id==\"topic_dangling_member\")]|length==0" >/dev/null'
 check "an emptied topic no longer matches anything" \
-  '{ "$HYDRA" list --topic 2072958 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_unknown\"" >/dev/null'
+  '{ "$HYDRA" list --topic 2072958 --output json 2>/dev/null || true; } | jq -e ".error.code==\"topic_unknown\"" >/dev/null'
 
 # ------------------------------------------------ 9c. selector surface (step 4)
 echo "== 9c. the selector narrows, and ambiguity is refused =="
@@ -281,11 +281,11 @@ check "--repos narrows to one repository" \
 check "--group narrows to one group" \
   '[ "$("$HYDRA" list --group backend --output json | jq "[.data.worktrees[]|select(.group!=\"backend\")]|length")" = 0 ]'
 check "an unknown --repos value is refused" \
-  '{ "$HYDRA" list --repos nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"repo_unknown\"" >/dev/null'
+  '{ "$HYDRA" list --repos nope --output json 2>/dev/null || true; } | jq -e ".error.code==\"repo_unknown\"" >/dev/null'
 check "the unknown-repo error lists the known aliases" \
-  '{ "$HYDRA" list --repos nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.known|index(\"api\")!=null" >/dev/null'
+  '{ "$HYDRA" list --repos nope --output json 2>/dev/null || true; } | jq -e ".error.details.known|index(\"api\")!=null" >/dev/null'
 check "an unknown --group value is refused" \
-  '{ "$HYDRA" list --group nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"repo_unknown\"" >/dev/null'
+  '{ "$HYDRA" list --group nope --output json 2>/dev/null || true; } | jq -e ".error.code==\"repo_unknown\"" >/dev/null'
 
 "$HYDRA" add api feat/selector --no-hooks --output json >/dev/null
 check "--filter branch:<glob> narrows by branch" \
@@ -304,9 +304,9 @@ check "--filter dirty finds the dirtied worktree" \
 check "filters combine as an intersection, not a union" \
   '[ "$("$HYDRA" list --filter dirty --filter "branch:hotfix/*" --output json | jq "[.data.worktrees[]|select(.branch==\"feat/selector\")]|length")" = 0 ]'
 check "an invalid --filter value is refused" \
-  '{ "$HYDRA" list --filter nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+  '{ "$HYDRA" list --filter nope --output json 2>/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
 check "the invalid-filter error names the valid set" \
-  '{ "$HYDRA" list --filter nope --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.valid|index(\"dirty\")!=null" >/dev/null'
+  '{ "$HYDRA" list --filter nope --output json 2>/dev/null || true; } | jq -e ".error.details.valid|index(\"dirty\")!=null" >/dev/null'
 # Ambiguity needs a branch name that exists in two repos. The fixture registers one,
 # so clone the same upstream a second time under a different group and alias: both
 # then have a "main" worktree, which is the ordinary shape that made first-match
@@ -315,13 +315,13 @@ check "the invalid-filter error names the valid set" \
 check "the second repo has its own main worktree" 'test -d frontend/web'
 # Ambiguity: main exists in every repo, so a bare branch name names several.
 check "an ambiguous handle is refused by path" \
-  '{ "$HYDRA" path main --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+  '{ "$HYDRA" path main --output json 2>/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
 check "the ambiguity error lists every candidate" \
-  '{ "$HYDRA" path main --output json 2>&1 >/dev/null || true; } | jq -e ".error.details.candidates|length>=2" >/dev/null'
+  '{ "$HYDRA" path main --output json 2>/dev/null || true; } | jq -e ".error.details.candidates|length>=2" >/dev/null'
 check "a group-qualified handle still resolves" \
   '[ "$("$HYDRA" path backend/api)" = "$PWD/backend/api" ]'
 check "an ambiguous handle is refused by remove" \
-  '{ "$HYDRA" remove main --yes --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+  '{ "$HYDRA" remove main --yes --output json 2>/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
 check "the refused remove deleted nothing" 'test -d backend/api'
 
 # path --topic must print exactly one path.
@@ -337,7 +337,7 @@ topics:
         branch: feat/selector
 YAML
 check "path --topic refuses a topic spanning worktrees" \
-  '{ "$HYDRA" path --topic spanning --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+  '{ "$HYDRA" path --topic spanning --output json 2>/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
 write_state <<'YAML'
 version: "1"
 topics:
@@ -349,7 +349,7 @@ YAML
 check "path --topic prints the single worktree path" \
   '[ "$("$HYDRA" path --topic solo)" = "$PWD/backend/api-feat-selector" ]'
 check "a handle and --topic together are refused" \
-  '{ "$HYDRA" path backend/api --topic solo --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+  '{ "$HYDRA" path backend/api --topic solo --output json 2>/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
 
 rm -f backend/api-feat-selector/scratch.txt
 "$HYDRA" remove api feat/selector --yes --output json >/dev/null
@@ -370,11 +370,11 @@ check "attaching a second worktree extends it" \
   '"$HYDRA" topic attach 3001 backend/api-feat-t2 --output json >/dev/null &&
    "$HYDRA" topic show 3001 --output json | jq -e ".data.members|length==2" >/dev/null'
 check "a worktree cannot belong to two topics" \
-  '{ "$HYDRA" topic attach 3002 backend/api-feat-t1 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_conflict\" and .error.details.existing_topic==\"3001\"" >/dev/null'
+  '{ "$HYDRA" topic attach 3002 backend/api-feat-t1 --output json 2>/dev/null || true; } | jq -e ".error.code==\"topic_conflict\" and .error.details.existing_topic==\"3001\"" >/dev/null'
 check "show on an unknown topic lists the known ids" \
-  '{ "$HYDRA" topic show 9999 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"topic_unknown\" and (.error.details.known|index(\"3001\")!=null)" >/dev/null'
+  '{ "$HYDRA" topic show 9999 --output json 2>/dev/null || true; } | jq -e ".error.code==\"topic_unknown\" and (.error.details.known|index(\"3001\")!=null)" >/dev/null'
 check "detaching a non-member is refused" \
-  '{ "$HYDRA" topic detach 3001 backend/api --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_unknown\"" >/dev/null'
+  '{ "$HYDRA" topic detach 3001 backend/api --output json 2>/dev/null || true; } | jq -e ".error.code==\"worktree_unknown\"" >/dev/null'
 
 # The gates, which are the reason this is not a loop over single-worktree remove.
 #
@@ -382,13 +382,13 @@ check "detaching a non-member is refused" \
 # so the --yes check must be made while the workspace is still clean or the dirty
 # gate answers first.
 check "a non-TTY removal without --yes refuses" \
-  '{ "$HYDRA" topic remove 3001 --with-worktrees --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--yes\")!=null)" >/dev/null'
+  '{ "$HYDRA" topic remove 3001 --with-worktrees --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--yes\")!=null)" >/dev/null'
 
 echo scratch > backend/api-feat-t2/scratch.txt
 check "one dirty member refuses the WHOLE removal" \
-  '{ "$HYDRA" topic remove 3001 --with-worktrees --yes --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_dirty\"" >/dev/null'
+  '{ "$HYDRA" topic remove 3001 --with-worktrees --yes --output json 2>/dev/null || true; } | jq -e ".error.code==\"worktree_dirty\"" >/dev/null'
 check "the dirty gate names the offending member" \
-  '{ "$HYDRA" topic remove 3001 --with-worktrees --yes --output json 2>&1 >/dev/null || true; } | jq -e "[.error.details.dirty[].branch]|index(\"feat/t2\")!=null" >/dev/null'
+  '{ "$HYDRA" topic remove 3001 --with-worktrees --yes --output json 2>/dev/null || true; } | jq -e "[.error.details.dirty[].branch]|index(\"feat/t2\")!=null" >/dev/null'
 check "the refused removal mutated nothing" \
   'test -d backend/api-feat-t1 && test -d backend/api-feat-t2 &&
    "$HYDRA" topic show 3001 --output json | jq -e ".data.members|length==2" >/dev/null'
@@ -419,9 +419,9 @@ echo "== 9e. start: two axes, convergent, no guessing =="
 "$HYDRA" repo add "$T/upstream" --as web --group frontend --branches main --output json >/dev/null 2>&1 || true
 
 check "start with no selector asks which repos" \
-  '{ "$HYDRA" start feat/x --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.one_of|index(\"--repos\")!=null)" >/dev/null'
+  '{ "$HYDRA" start feat/x --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.one_of|index(\"--repos\")!=null)" >/dev/null'
 check "start with a selector but nothing to name a branch asks for --branch" \
-  '{ "$HYDRA" start --repos api --topic 5001 --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--branch\")!=null)" >/dev/null'
+  '{ "$HYDRA" start --repos api --topic 5001 --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--branch\")!=null)" >/dev/null'
 check "the refused start recorded no topic" \
   '"$HYDRA" topic list --output json | jq -e "[.data.topics[].id]|index(\"5001\")==null" >/dev/null'
 
@@ -429,8 +429,12 @@ check "start creates one branch across two repos and records the topic" \
   '"$HYDRA" start marcus/feat-login --repos api,web --topic 5002 --output json 2>/dev/null | jq -e ".outcome==\"success\" and (.data.created|length)==2 and .data.branch_source==\"positional\"" >/dev/null'
 check "the topic has both members" \
   '"$HYDRA" topic show 5002 --output json | jq -e ".data.members|length==2" >/dev/null'
-check "start suggests status for the topic" \
-  '"$HYDRA" start marcus/feat-login --repos api --topic 5002 --output json 2>/dev/null | jq -e "[.next[].cmd]|index(\"hydra status --topic 5002\")!=null" >/dev/null'
+# next[] is argv plus a reason, not a command string: a caller execs it rather than
+# parsing a shell line, so a branch containing a space needs no quoting decision.
+check "start suggests status for the topic as argv" \
+  '"$HYDRA" start marcus/feat-login --repos api --topic 5002 --output json 2>/dev/null |
+   jq -e "[.next[]|select(.argv|index(\"status\"))]|length==1 and
+          (.[0].argv|index(\"5002\"))!=null and (.[0].why|length)>0" >/dev/null'
 check "re-running an identical start is convergent" \
   '"$HYDRA" start marcus/feat-login --repos api,web --topic 5002 --output json 2>/dev/null | jq -e "(.data.created|length)==0 and (.data.skipped|length)==2" >/dev/null'
 check "extending to a repo needs no branch flag" \
@@ -442,14 +446,14 @@ printf '\ndefaults:\n  branch_pattern: "{user}/{kind}-{slug}"\n' >> .hydra/confi
 check "a pattern generates the branch" \
   '"$HYDRA" start --topic 5003 --repos api --slug "Login Page" --kind feat --user marcus --output json 2>/dev/null | jq -e ".data.branch==\"marcus/feat-login-page\" and .data.branch_source==\"branch_pattern\"" >/dev/null'
 check "a pattern missing a value names its flag" \
-  '{ "$HYDRA" start --topic 5004 --repos api --kind feat --user marcus --output json 2>&1 >/dev/null || true; } | jq -e "(.error.details.missing|index(\"--slug\")!=null)" >/dev/null'
+  '{ "$HYDRA" start --topic 5004 --repos api --kind feat --user marcus --output json 2>/dev/null || true; } | jq -e "(.error.details.missing|index(\"--slug\")!=null)" >/dev/null'
 check "a positional branch is literal and the pattern never runs" \
   '"$HYDRA" start 5005 --repos api --slug login --kind feat --user marcus --output json 2>/dev/null | jq -e ".data.branch==\"5005\" and .data.branch_source==\"positional\"" >/dev/null'
 check "an unknown placeholder is a config error, not a literal branch" \
   'printf "\ndefaults:\n  branch_pattern: \"{ticket}/x\"\n" > "$T/bad.yaml" &&
    cp "$T/config.before-pattern" .hydra/config.yaml &&
    cat "$T/bad.yaml" >> .hydra/config.yaml &&
-   { "$HYDRA" start --topic 5006 --repos api --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"branch_unknown\"" >/dev/null'
+   { "$HYDRA" start --topic 5006 --repos api --output json 2>/dev/null || true; } | jq -e ".error.code==\"branch_unknown\"" >/dev/null'
 cp "$T/config.before-pattern" .hydra/config.yaml
 
 check "--dry-run creates nothing" \
@@ -505,22 +509,22 @@ check "a local path clones by default, it is not adopted" \
   '"$HYDRA" repo add "$T/loose-checkout" --as cloned --group imported --branches main --output json >/dev/null 2>&1 &&
    test -d .bare/cloned.git'
 check "--adopt with --branches is refused rather than ignored" \
-  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --group imported --branches main --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --group imported --branches main --output json 2>/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
 check "--adopt without a group asks for one" \
-  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--group\")!=null)" >/dev/null'
+  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--group\")!=null)" >/dev/null'
 check "repo add with no argument asks for one" \
-  '{ "$HYDRA" repo add --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
+  '{ "$HYDRA" repo add --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
 
 # remove unregisters and deletes NOTHING.
 check "repo remove refuses a repo with worktrees without --yes" \
-  '{ "$HYDRA" repo remove cloned --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--yes\")!=null)" >/dev/null'
+  '{ "$HYDRA" repo remove cloned --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--yes\")!=null)" >/dev/null'
 check "repo remove unregisters and reports what it kept" \
   '"$HYDRA" repo remove cloned --yes --output json | jq -e "(.data.kept|length)>=1" >/dev/null'
 check "the git data really survived being unregistered" 'test -d .bare/cloned.git'
 check "the unregistered repo is gone from repo list" \
   '"$HYDRA" repo list --output json | jq -e "[.data.repos[].alias]|index(\"cloned\")==null" >/dev/null'
 check "removing an unknown repo lists the known ones" \
-  '{ "$HYDRA" repo remove nosuchrepo --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"repo_unknown\" and (.error.details.known|index(\"api\")!=null)" >/dev/null'
+  '{ "$HYDRA" repo remove nosuchrepo --output json 2>/dev/null || true; } | jq -e ".error.code==\"repo_unknown\" and (.error.details.known|index(\"api\")!=null)" >/dev/null'
 
 # ------------------------------------------------ 9h. hydra run (step 11)
 echo "== 9h. run: argv after --, never a shell =="
@@ -529,7 +533,7 @@ check "run in one worktree by handle" \
 check "run across a selector" \
   '[ "$("$HYDRA" run --group backend --output json -- true 2>/dev/null | jq ".data.total")" -ge 1 ]'
 check "an ambiguous handle is refused" \
-  '{ "$HYDRA" run main --output json -- true 2>&1 >/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
+  '{ "$HYDRA" run main --output json -- true 2>/dev/null || true; } | jq -e ".error.code==\"worktree_name_conflict\"" >/dev/null'
 
 # The safety property: no implicit shell, so a metacharacter is a literal argument.
 check "metacharacters are NOT interpreted by a shell" \
@@ -549,7 +553,7 @@ check "the command runs inside the worktree" \
 check "a failing command exits non-zero" \
   '"$HYDRA" run backend/api --output json -- false >/dev/null 2>&1; [ "$?" != 0 ]'
 check "no command asks for one" \
-  '{ "$HYDRA" run --group backend --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
+  '{ "$HYDRA" run --group backend --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
 # hydra exits non-zero here (the command failed), so the invocation must be wrapped or
 # pipefail fails the whole assertion.
 check "--timeout kills a hung command and says so" \
@@ -560,9 +564,9 @@ echo "== 9g. every prompt has a flag, and none of them hang =="
 # A prompt that cannot be shown must name the missing argument. worktree_unknown was
 # wrong for these: nothing is unknown, nothing was named.
 check "switch with no argument asks for one" \
-  '{ "$HYDRA" switch --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"<worktree>\")!=null)" >/dev/null'
+  '{ "$HYDRA" switch --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"<worktree>\")!=null)" >/dev/null'
 check "remove with no argument asks for one" \
-  '{ "$HYDRA" remove --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
+  '{ "$HYDRA" remove --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\"" >/dev/null'
 check "needs_input exits 7" \
   '"$HYDRA" switch --output json >/dev/null 2>&1; [ "$?" = 7 ]'
 
@@ -588,16 +592,16 @@ check "config set editor persists" \
   '"$HYDRA" config set editor "e2e-editor" --output json | jq -e ".data.changed==true" >/dev/null &&
    "$HYDRA" config show --output json | jq -e ".data.editor==\"e2e-editor\"" >/dev/null'
 check "config set theme rejects an unknown name with the valid set" \
-  '{ "$HYDRA" config set theme no-such-theme --output json 2>&1 >/dev/null || true; } | jq -e "(.error.details.valid|length)>0" >/dev/null'
+  '{ "$HYDRA" config set theme no-such-theme --output json 2>/dev/null || true; } | jq -e "(.error.details.valid|length)>0" >/dev/null'
 check "config set with no value asks for it" \
-  '{ "$HYDRA" config set theme --output json 2>&1 >/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"<value>\")!=null)" >/dev/null'
+  '{ "$HYDRA" config set theme --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"<value>\")!=null)" >/dev/null'
 
 # ------------------------------------------------ 10. registry (step 2)
 echo "== 10. project registry =="
 check "the workspace registered itself" \
   '"$HYDRA" project ls --output json | jq -e ".data.projects[]|select(.name==\"demo\")|.exists" >/dev/null'
 check "--project resolves from the registry" \
-  '(cd "$T" && "$HYDRA" --project demo list --output json | jq -e ".schema==2" >/dev/null)'
+  '(cd "$T" && "$HYDRA" --project demo list --output json | jq -e ".schema==3" >/dev/null)'
 
 # ------------------------------------------------ 11. agent skill (step 9)
 echo "== 11. agent skill: emitted, installable, thin =="
@@ -652,8 +656,65 @@ check "a jq-filtered bare array is accepted too" \
   '(cd "$T/ws2" && jq -c "[.data.worktrees[0]]" "$T/captured.json" |
     "$HYDRA" apply - --output json | jq -e ".data.total==1" >/dev/null)'
 check "apply with no stdin asks for input" \
-  '{ (cd "$T/ws2" && printf "" | "$HYDRA" apply - --output json) || true; } 2>&1 >/dev/null |
+  '{ (cd "$T/ws2" && printf "" | "$HYDRA" apply - --output json) || true; } 2>/dev/null |
    jq -e ".error.code==\"needs_input\"" >/dev/null'
+
+# --------------------------------- 13. AX affordances (patch bundle)
+echo "== 13. one envelope on stdout, capture, where, discovery =="
+# The envelope now lands on STDOUT for failures too, so a caller needs one idiom.
+check "a failure envelope is on stdout, not stderr" \
+  '{ (cd "$T" && "$HYDRA" list --output json) || true; } 2>/dev/null |
+   jq -e ".outcome==\"failure\" and .error.code==\"not_in_project\"" >/dev/null'
+check "a failing command writes nothing to stderr under json" \
+  '[ -z "$( { (cd "$T" && "$HYDRA" list --output json >/dev/null) || true; } 2>&1 )" ]'
+# outcome must not claim partial when nothing at all succeeded.
+check "run reports failure, not partial, when every worktree fails" \
+  '(cd "$T/ws" && { "$HYDRA" run --repos api -- sh -c "exit 3" --output json || true; } 2>/dev/null |
+    jq -e ".outcome==\"failure\"" >/dev/null)'
+check "run attributes captured output to each worktree" \
+  '(cd "$T/ws" && "$HYDRA" run --repos api --output json -- sh -c "echo \$HYDRA_REPO" 2>/dev/null |
+    jq -e "all(.data.results[]; (.stdout|rtrimstr(\"\n\"))==.repo)" >/dev/null)'
+check "run reports a child exit code without adopting it" \
+  '(cd "$T/ws" && { "$HYDRA" run --repos api --output json -- sh -c "exit 42" || true; } 2>/dev/null |
+    jq -e "all(.data.results[]; .exit_code==42)" >/dev/null)'
+# Every command that creates a worktree says where it is.
+check "apply reports the path of what it created" \
+  '(cd "$T/ws" && "$HYDRA" list --output json 2>/dev/null | "$HYDRA" apply - --output json 2>/dev/null |
+    jq -e "all(.data.results[]; (.path|length)>0 and (.name|length)>0)" >/dev/null)'
+check "where answers inside a worktree" \
+  '(cd "$T/ws/backend/api" && "$HYDRA" where --output json 2>/dev/null |
+    jq -e ".data.in_project and .data.is_worktree and .data.repo==\"api\"" >/dev/null)'
+check "where outside a workspace succeeds and says so" \
+  '(cd "$T" && "$HYDRA" where --output json 2>/dev/null |
+    jq -e ".outcome==\"success\" and .data.in_project==false" >/dev/null)'
+check "an unknown subcommand is actionable, not internal" \
+  '{ (cd "$T" && "$HYDRA" lst --output json) || true; } 2>/dev/null |
+   jq -e ".error.code==\"unknown_command\" and (.error.details.did_you_mean|index(\"list\"))!=null
+          and ([.next[].argv[1]]|index(\"commands\"))!=null" >/dev/null'
+check "a selector matching nothing explains itself" \
+  '(cd "$T/ws" && "$HYDRA" list --filter "branch:no-such-*" --output json 2>/dev/null |
+    jq -e "(.data.worktrees|length)==0 and (.warnings|length)==1" >/dev/null)'
+check "repo branches lists a remote without cloning" \
+  '(cd "$T/ws" && "$HYDRA" repo branches "$T/upstream" --output json 2>/dev/null |
+    jq -e "(.data.branches|index(\"main\"))!=null and .data.branches_source==\"remote\"" >/dev/null)'
+check "dry-run distinguishes not-queried from none" \
+  '(cd "$T/ws" && "$HYDRA" repo add "$T/upstream" --as dr --group dg --dry-run --output json 2>/dev/null |
+    jq -e ".data.branches_source!=null and (.data.branches|type)==\"array\"" >/dev/null)'
+check "repo restore rebuilds repositories from the manifest alone" \
+  '(mkdir -p "$T/ws3/.hydra" && cp "$T/ws/.hydra/config.yaml" "$T/ws3/.hydra/config.yaml" &&
+    cd "$T/ws3" && "$HYDRA" repo restore --jobs 2 --output json 2>/dev/null |
+    jq -e ".outcome==\"success\" and .data.cloned>0" >/dev/null)'
+check "repo restore is additive on a second run" \
+  '(cd "$T/ws3" && "$HYDRA" repo restore --output json 2>/dev/null |
+    jq -e ".data.cloned==0 and .data.present>0" >/dev/null)'
+# Width is measured in CHARACTERS: the box-drawing rules are 3 bytes each in UTF-8, so
+# byte length reports a 46-wide table as 138 and the assertion would never hold.
+check "COLUMNS narrows piped output" \
+  '[ "$(cd "$T/ws" && COLUMNS=48 "$HYDRA" list --output text 2>/dev/null |
+        while IFS= read -r l; do printf "%s\n" "${#l}"; done | sort -rn | head -1)" -le 48 ]'
+check "init reports the registry it wrote to" \
+  '(mkdir -p "$T/ws4" && cd "$T/ws4" && "$HYDRA" init --project-name w4 --output json 2>/dev/null |
+    jq -e "[.warnings[]|select(test(\"projects.yaml\"))]|length==1" >/dev/null)'
 
 echo
 echo "ALL $pass ASSERTIONS PASSED"

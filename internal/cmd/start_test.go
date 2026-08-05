@@ -421,8 +421,12 @@ func TestStart_SuggestsStatusForATopic(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(envelope.Next) != 1 || envelope.Next[0].Action != "status" {
-		t.Errorf("next = %+v, want a status suggestion", envelope.Next)
+	if len(envelope.Next) != 1 {
+		t.Fatalf("next = %+v, want one suggestion", envelope.Next)
+	}
+	argv := envelope.Next[0].Argv
+	if len(argv) < 2 || argv[0] != "hydra" || argv[1] != "status" {
+		t.Errorf("argv = %v, want a hydra status invocation", argv)
 	}
 }
 

@@ -83,8 +83,14 @@ type applyItem struct {
 }
 
 type applyResultJSON struct {
-	Repo        string `json:"repo"`
-	Branch      string `json:"branch"`
+	Group  string `json:"group"`
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+	// Name and Path were both absent: apply reported that it had created a worktree
+	// without saying where, so the one command whose purpose is reproducing a
+	// workspace elsewhere could not tell a caller what it had built.
+	Name        string `json:"name"`
+	Path        string `json:"path"`
 	Topic       string `json:"topic,omitempty"`
 	Disposition string `json:"disposition"`
 	Error       string `json:"error,omitempty"`
@@ -138,6 +144,10 @@ func runApply(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		repo := repoContextFor(cfg, projectRoot, ref)
+		dirName := worktreeDirName(repo, item.Branch)
+		result.Group = repo.Group
+		result.Name = dirName
+		result.Path = worktreePath(projectRoot, repo.Group, dirName)
 
 		if applyDryRun {
 			result.Disposition = applyDryRunDisposition(repo, item)
@@ -165,23 +175,36 @@ func runApply(cmd *cobra.Command, args []string) error {
 	}
 
 	summary := applySummary(payload)
+
+	// The error rides the same envelope as the data: a caller must see the worktrees
+	// that landed and the reason the rest did not, without merging two streams.
+	var applyErr *output.Error
 	outcome := output.OutcomeSuccess
-	if payload.Failed > 0 {
+	switch payload.Failed {
+	case 0:
+	case payload.Total:
+		outcome = output.OutcomeFailure
+		applyErr = output.Errorf(output.CodeGitFailed,
+			"every worktree in the document failed").
+			WithDetail("failed", payload.Failed)
+	default:
 		outcome = output.OutcomePartial
+		applyErr = output.Errorf(output.CodePartialFailure,
+			"%d of %d worktree(s) failed", payload.Failed, payload.Total).
+			WithDetail("failed", payload.Failed)
 	}
+
 	if emitErr := emitResult(cmd, output.Result{
 		Outcome:  outcome,
 		Summary:  summary,
 		Data:     payload,
 		Warnings: warnings,
+		Err:      applyErr,
 	}, func() { printApplyText(payload, summary) }); emitErr != nil {
 		return emitErr
 	}
-
-	if payload.Failed > 0 {
-		return output.Errorf(output.CodePartialFailure,
-			"%d of %d worktree(s) failed", payload.Failed, payload.Total).
-			WithDetail("failed", payload.Failed)
+	if applyErr != nil {
+		return applyErr
 	}
 	return nil
 }

@@ -13,7 +13,13 @@ import (
 )
 
 // Schema is the envelope schema version.
-const Schema = 2
+// Schema is the ENVELOPE version. It is unrelated to the manifest's `version: "2"`,
+// which is a separate contract and unchanged.
+//
+// 3 because this release moved the failure envelope from stderr to stdout, reshaped
+// `next[]` from {action, cmd} to {argv, why}, and stopped reporting `outcome: partial`
+// when nothing at all succeeded. Each of those breaks a consumer written against 2.
+const Schema = 3
 
 // Mode selects the rendering of a command's result.
 type Mode int
@@ -94,9 +100,10 @@ type Outcome string
 const (
 	// OutcomeSuccess means every item reached its desired state.
 	OutcomeSuccess Outcome = "success"
-	// OutcomePartial means some items succeeded and some failed. It appears on a
-	// SUCCESS envelope: the data is real and must not be thrown away just because
-	// the process will also exit 4 and print an error envelope on stderr.
+	// OutcomePartial means some items succeeded and some failed. Data and error ride
+	// the SAME envelope: the data is real, the failure is real, and splitting them
+	// across two streams forced a caller to merge stdout and stderr to see both —
+	// which corrupted the JSON whenever git progress was also on stderr.
 	OutcomePartial Outcome = "partial"
 	// OutcomeFailure is carried by error envelopes.
 	OutcomeFailure Outcome = "failure"
@@ -106,26 +113,32 @@ const (
 //
 // Named next, not breadcrumbs: breadcrumbs mean where you came from. It may
 // suggest attaching after an unknown topic, but hydra must never act on it.
+//
+// Argv is an array, not a command string, so a caller can exec it without parsing a
+// shell line — quoting a branch containing a space is the caller's problem the moment
+// this is prose. Why says what the invocation is FOR, because an argv with no reason
+// attached is a guess the caller has to justify on hydra's behalf.
 type Next struct {
-	Action string `json:"action"`
-	Cmd    string `json:"cmd"`
+	Argv []string `json:"argv"`
+	Why  string   `json:"why"`
 }
 
-type successEnvelope struct {
+// envelope is the single shape every command emits, on stdout, success or failure.
+//
+// One envelope, one stream. Errors used to go to stderr, which meant a caller wanting
+// both the data and the reason reached for `2>&1` — and git's fetch progress, also on
+// stderr, then corrupted the JSON. The exit status still carries the code, and
+// `hydra commands` still publishes the code→exit table, so stderr never held anything
+// machine-readable worth keeping there.
+type envelope struct {
 	Schema   int      `json:"schema"`
 	Command  string   `json:"command"`
 	Outcome  Outcome  `json:"outcome"`
-	Summary  string   `json:"summary"`
-	Data     any      `json:"data"`
+	Summary  string   `json:"summary,omitempty"`
+	Data     any      `json:"data,omitempty"`
+	Error    *Error   `json:"error,omitempty"`
 	Next     []Next   `json:"next,omitempty"`
 	Warnings []string `json:"warnings"`
-}
-
-type errorEnvelope struct {
-	Schema  int     `json:"schema"`
-	Command string  `json:"command"`
-	Outcome Outcome `json:"outcome"`
-	Error   *Error  `json:"error"`
 }
 
 // Result is what a command emits on success.
@@ -139,9 +152,12 @@ type Result struct {
 	Data     any
 	Next     []Next
 	Warnings []string
+	// Err rides a partial: the items that landed are in Data, and this says what did
+	// not. Set it and the outcome becomes partial without a second envelope.
+	Err *Error
 }
 
-// EmitJSON writes a success envelope.
+// EmitJSON writes the envelope for a success or partial result.
 func EmitJSON(w io.Writer, cmd string, r Result) error {
 	if r.Outcome == "" {
 		r.Outcome = OutcomeSuccess
@@ -149,30 +165,41 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 	if r.Warnings == nil {
 		r.Warnings = []string{}
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	envelope := successEnvelope{
+	return encode(w, envelope{
 		Schema:   Schema,
 		Command:  cmd,
 		Outcome:  r.Outcome,
 		Summary:  r.Summary,
 		Data:     r.Data,
+		Error:    r.Err,
 		Next:     r.Next,
 		Warnings: r.Warnings,
-	}
-	if err := enc.Encode(envelope); err != nil {
-		return fmt.Errorf("failed to encode output: %w", err)
-	}
-	return nil
+	})
 }
 
-// EmitError writes an error envelope. Callers write it to stderr.
+// EmitError writes the envelope for a total failure. Callers write it to STDOUT: a
+// failure envelope is as machine-readable as a success one, and putting it on stderr
+// made the two impossible to read with one idiom.
 func EmitError(w io.Writer, cmd string, e *Error) error {
+	var next []Next
+	if e != nil {
+		next = e.Next
+	}
+	return encode(w, envelope{
+		Schema:   Schema,
+		Command:  cmd,
+		Outcome:  OutcomeFailure,
+		Error:    e,
+		Next:     next,
+		Warnings: []string{},
+	})
+}
+
+func encode(w io.Writer, e envelope) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	envelope := errorEnvelope{Schema: Schema, Command: cmd, Outcome: OutcomeFailure, Error: e}
-	if err := enc.Encode(envelope); err != nil {
-		return fmt.Errorf("failed to encode error output: %w", err)
+	if err := enc.Encode(e); err != nil {
+		return fmt.Errorf("failed to encode output: %w", err)
 	}
 	return nil
 }

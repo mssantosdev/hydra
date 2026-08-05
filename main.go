@@ -17,12 +17,16 @@ func main() {
 	}
 
 	e := output.Classify(err)
-	if cmd.ErrorsAsJSON() {
-		if emitErr := output.EmitError(os.Stderr, name, e); emitErr != nil {
+	switch {
+	case !cmd.ErrorsAsJSON():
+		fmt.Fprintf(os.Stderr, "Error: %v\n", e.Message)
+	case cmd.EnvelopeEmitted():
+		// A partial already wrote one envelope carrying both the data and this error.
+		// A second envelope on the same stream would be unparseable.
+	default:
+		if emitErr := output.EmitError(os.Stdout, name, e); emitErr != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", e.Message)
 		}
-	} else {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", e.Message)
 	}
 	os.Exit(e.Exit)
 }

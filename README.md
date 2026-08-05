@@ -290,7 +290,7 @@ Global flags also include `--project <name>`, `--config <path>`, `--verbose`, `-
 On success, stdout contains:
 
 ```json
-{"schema":2,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
+{"schema":3,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
 ```
 
 - `outcome` is `success` or `partial`. A partial outcome still carries real `data`: the items that
@@ -304,7 +304,7 @@ On success, stdout contains:
 On failure, stderr contains:
 
 ```json
-{"schema":2,"command":"add","outcome":"failure","error":{"code":"worktree_name_conflict","retryable":false,"message":"…","details":{}}}
+{"schema":3,"command":"add","outcome":"failure","error":{"code":"worktree_name_conflict","retryable":false,"message":"…","details":{}}}
 ```
 
 Branch on `error.code`, not message text. Codes are stable; messages are not.

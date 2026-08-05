@@ -84,7 +84,7 @@ func resolveTopicPathTarget() (worktreeContext, error) {
 		return worktreeContext{}, err
 	}
 
-	resolved, _, err := resolveTargets(session, Selector{Topic: pathTopic}, false)
+	resolved, _, _, err := resolveTargets(session, Selector{Topic: pathTopic}, false)
 	if err != nil {
 		return worktreeContext{}, err
 	}

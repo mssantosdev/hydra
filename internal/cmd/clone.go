@@ -153,8 +153,11 @@ func runClone(cmd *cobra.Command, args []string) error {
 			"repo":      opts.Alias,
 			"remote":    opts.URL,
 			"bare_path": cfg.BarePath(projectRoot, opts.Alias),
-			"branches":  opts.Branches,
-			"dry_run":   true,
+			"branches":  branchesOrEmpty(opts.Branches),
+			// A dry run does no network I/O, so it cannot know what the remote has.
+			// `branches: null` read as "the remote has none"; this says which it is.
+			"branches_source": branchesSource(opts),
+			"dry_run":         true,
 		}, nil, func() {
 			fmt.Println()
 			fmt.Println(styles.Label.Render("Plan (dry run):"))
@@ -535,8 +538,13 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewMultiSelect[string]().
 			Title("Branches").
-			Description("Create a worktree for each selected branch").
+			Description("Create a worktree for each selected branch (/ to filter)").
 			Options(options...).
+			// Bound the visible window. huh sets no default height, so a repository
+			// with 140 branches renders all of them at once; filtering — which huh
+			// enables by default under "/" — is the practical way through a list that
+			// long, and it is unreachable behind a wall of options.
+			Height(15).
 			Value(&selected),
 	))
 	if err := form.Run(); err != nil {
@@ -555,4 +563,27 @@ func aliasFromURL(url string) string {
 		trimmed = trimmed[idx+1:]
 	}
 	return trimmed
+}
+
+// branchesOrEmpty keeps an absent list as [] rather than null: a consumer branches on a
+// detail being present, and null is a value it would have to special-case.
+func branchesOrEmpty(branches []string) []string {
+	if branches == nil {
+		return []string{}
+	}
+	return branches
+}
+
+// branchesSource says where a branch list came from, so "not queried" is distinguishable
+// from "queried and empty".
+func branchesSource(opts *CloneOptions) string {
+	switch {
+	case len(opts.Branches) > 0:
+		return "flag"
+	case opts.AllBranches:
+		// --all resolves against the remote, which a dry run does not contact.
+		return "not-queried"
+	default:
+		return "default-branch"
+	}
 }

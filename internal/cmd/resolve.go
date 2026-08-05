@@ -144,19 +144,27 @@ type resolvedWorktree struct {
 //
 // tracking forces the expensive phase for callers that need ahead/behind/dirty
 // regardless of filtering. A derived filter turns it on by itself.
-func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree, []string, error) {
+// resolveTargets returns the matching worktrees, any warnings, and how many
+// REPOSITORIES failed outright.
+//
+// The failure count is returned explicitly because it used to be inferred as
+// `len(repos) - len(warnings)`, which silently treated every advisory warning — an
+// unresolvable --against ref, an empty selector — as a repository failure. That made a
+// healthy listing report `partial_failure` whenever the warning count happened to equal
+// the repository count, and masked real failures whenever it did not.
+func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree, []string, int, error) {
 	parsed, err := parseFilters(sel.Filter)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
 	// Validate narrowing values before doing any work, so a typo is reported as a
 	// typo rather than as an empty result.
 	if err := validateRepos(s, sel.Repos); err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	if err := validateGroup(s, sel.Group); err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
 	// Topic EXISTENCE is deliberately not checked here.
@@ -173,11 +181,14 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 	index, indexErr := newTopicIndex(s.Root)
 
 	contexts, warnings := collectWorktrees(s.Cfg, s.Root)
+	// Everything collectWorktrees reported is a repository that could not be read. Count
+	// it here, before any advisory warning is appended below.
+	repoFailures := len(warnings)
 	if indexErr != nil {
 		// Membership is unreadable. That is fatal only when it was asked about;
 		// otherwise a listing with git data intact is still worth returning.
 		if sel.Topic != "" {
-			return nil, warnings, indexErr
+			return nil, warnings, repoFailures, indexErr
 		}
 		warnings = append(warnings, fmt.Sprintf("topic state unreadable: %v", indexErr))
 	}
@@ -208,7 +219,7 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 	// --against forces the expensive phase even with no derived filter: the comparison
 	// is per worktree and needs git.
 	if !tracking && !parsed.derived() && sel.Against == "" {
-		return kept, warnings, nil
+		return kept, emptySelectionWarning(warnings, sel, len(contexts), len(kept)), repoFailures, nil
 	}
 
 	// Phase two: expensive, and only over what survived phase one.
@@ -236,7 +247,39 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 		decorateAgainst(&item, target.Context, sel.Against, &warnings)
 		out = append(out, resolvedWorktree{Context: target.Context, Item: item})
 	}
-	return out, warnings, nil
+	return out, emptySelectionWarning(warnings, sel, len(contexts), len(out)), repoFailures, nil
+}
+
+// emptySelectionWarning says so when a selector reduced a non-empty workspace to nothing.
+//
+// Zero matches is a legitimate answer — "nothing is dirty" is true and must stay exit 0 —
+// but it is indistinguishable from a typo'd glob, and a caller reading `success` with an
+// empty list concludes the workspace has no such work rather than that its selector was
+// wrong. Naming how many candidates were considered makes the two cases tellable apart
+// without turning a valid answer into an error.
+func emptySelectionWarning(warnings []string, sel Selector, candidates, kept int) []string {
+	if kept > 0 || candidates == 0 {
+		return warnings
+	}
+	var used []string
+	if sel.Topic != "" {
+		used = append(used, "--topic "+sel.Topic)
+	}
+	if len(sel.Repos) > 0 {
+		used = append(used, "--repos "+strings.Join(sel.Repos, ","))
+	}
+	if sel.Group != "" {
+		used = append(used, "--group "+sel.Group)
+	}
+	for _, f := range sel.Filter {
+		used = append(used, "--filter "+f)
+	}
+	if len(used) == 0 {
+		return warnings
+	}
+	return append(warnings, fmt.Sprintf(
+		"%s matched none of the %d worktree(s) in this project",
+		strings.Join(used, " "), candidates))
 }
 
 // decorateAgainst annotates one worktree with its position relative to REF.

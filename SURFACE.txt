@@ -69,9 +69,13 @@ repo add
   --branches                         stringSlice
   --dry-run                          bool
   --group                            string
+repo branches
 repo list (ls)
 repo remove (rm)
   --yes                              bool
+repo restore
+  --dry-run                          bool
+  --jobs                             int (default 1)
 run
   --filter                           stringArray
   --group                            string
@@ -121,6 +125,7 @@ topic remove (rm)
   --with-worktrees                   bool
   --yes                              bool
 topic show (view)
+where
 
 ## Error codes
   bare_missing                 exit 1
@@ -140,6 +145,7 @@ topic show (view)
   state_version_unsupported    exit 2
   topic_conflict               exit 1
   topic_unknown                exit 1
+  unknown_command              exit 1
   worktree_dirty               exit 5
   worktree_exists              exit 1
   worktree_name_conflict       exit 1

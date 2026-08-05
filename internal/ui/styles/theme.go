@@ -3,6 +3,8 @@ package styles
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -242,6 +244,15 @@ func StatusBadge(isClean bool, count int) string {
 
 // GetTerminalWidth returns the current terminal width, or 80 if not a terminal
 func GetTerminalWidth() int {
+	// COLUMNS wins whenever it is set and parseable, TTY or not — that is the
+	// convention, and without it a piped caller cannot control width at all: term.GetSize
+	// fails on a pipe and falls back to 80, so a fixed-width consumer had no way to ask
+	// for anything narrower.
+	if raw := os.Getenv("COLUMNS"); raw != "" {
+		if cols, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && cols > 0 {
+			return cols
+		}
+	}
 	width, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || width == 0 {
 		return 80

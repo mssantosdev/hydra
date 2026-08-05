@@ -21,14 +21,13 @@ These hold for every command. Rely on them instead of probing.
 ## Envelope
 
 ```json
-{"schema":2,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
-{"schema":2,"command":"add","outcome":"failure","error":{"code":"worktree_dirty","retryable":false,"message":"…","details":{}}}
+{"schema":3,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
+{"schema":3,"command":"add","outcome":"failure","error":{"code":"worktree_dirty","retryable":false,"message":"…","details":{}}}
 ```
 
-`outcome` is `success`, `partial` or `failure`. A **partial** rides the SUCCESS envelope on stdout
-while the error envelope goes to stderr and the process exits 4 — read both, the work that landed is
-real. `summary` is the one-line answer; `next` is a suggestion hydra never acts on. There is no
-`exit` field; the process status carries it.
+ONE envelope, on stdout, success or failure. `outcome` is `success`, `partial` or `failure`; a
+**partial** carries both `data` and `error` — the work that landed is real. `next[]` is argv plus a
+reason, never acted on. No `exit` field: the process status carries it.
 
 ## Decisions
 
@@ -43,13 +42,12 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 
 **`topic_unknown`?** Never recorded. `details.known` lists the real ids; `topic attach <id> <worktree>` records it. Do not retry, and do not guess a branch name.
 
-**`needs_input`?** Read `details.missing` (pass each) or `details.one_of` (pass any one). Never retry unchanged.
-
 **`busy`?** Another hydra holds a lock. Retry with backoff. This is the ONLY code worth retrying.
 
 **`worktree_dirty`?** Uncommitted work is in the way. For `sync`, choose `--dirty stash|reset|skip`. For `remove`, commit or pass `--force`. Never `--force` blindly.
 
-**`partial_failure` (exit 4)?** Some items worked: `data` lists them, `details.failed` names what did not. Act on the failures only.
+**Rebuilding a workspace elsewhere?** `repo restore` clones what the manifest declares
+(additive, `--jobs N`); `apply -` restores a captured worktree set. Repos and worktrees are separate.
 
 **Workspace looks wrong?** `doctor --output json` first. `checks[].fixable` says whether
 `doctor --fix` can repair it.
@@ -60,7 +58,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 |---|---|---|
 | `init` | create `.hydra/config.yaml` here | `--project-name` |
 | `new` | bootstrap a project and its first repo | `--local`, `--remote-url` |
-| `repo` | `add <url\|path>` (`--adopt`), `list`, `remove` | `--group`, `--branches`, `--as` |
+| `repo` | `add` (`--adopt`), `list`, `remove`, `branches <url\|alias>`, `restore` | `--group`, `--branches`, `--as`, `--jobs` |
 | `add` | one worktree for one branch | `--as`, `--from` |
 | `start` | one branch across repositories; records a topic | `--repos`, `--topic`, `--slug`, `--kind` |
 | `apply` | create the worktrees described by JSON on stdin | `-`, `--dry-run` |
@@ -69,6 +67,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 | `list` | list worktrees | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
 | `status` | tracking, dirtiness, merged-ness vs a ref | `--topic`, `--filter`, `--against REF` |
 | `path` | print one worktree's absolute path | `--topic` |
+| `where` | where hydra thinks it is; works outside a workspace | — |
 | `switch` | change directory to a worktree (TTY) | `--cd` |
 | `run` | run a command per worktree; argv after `--` | `--topic`, `--jobs`, `--timeout` |
 | `sync` | fast-forward worktrees from upstream | `--dirty`, `--yes` |
@@ -106,6 +105,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 | `busy` | 6 | a lock was held — **the only retryable code** |
 | `needs_input` | 7 | a value is missing; `details.missing`/`one_of` name it |
 | `git_failed` | 1 | an underlying git invocation failed |
+| `unknown_command` | 1 | no such subcommand; `details.did_you_mean`/`available` list real ones |
 | `internal` | 1 | anything unclassified, including a bad flag value |
 
 ## Anti-patterns

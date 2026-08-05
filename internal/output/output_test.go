@@ -138,7 +138,7 @@ func TestEmitJSONCarriesPartialOutcomeAndNext(t *testing.T) {
 		Outcome: OutcomePartial,
 		Summary: "1 pulled, 1 failed",
 		Data:    map[string]any{"total": 2},
-		Next:    []Next{{Action: "status", Cmd: "hydra status"}},
+		Next:    []Next{{Argv: []string{"hydra", "status"}, Why: "see what landed"}},
 	})
 	if err != nil {
 		t.Fatalf("EmitJSON: %v", err)
@@ -154,8 +154,16 @@ func TestEmitJSONCarriesPartialOutcomeAndNext(t *testing.T) {
 	if envelope.Outcome != string(OutcomePartial) {
 		t.Errorf("outcome = %q, want %q", envelope.Outcome, OutcomePartial)
 	}
-	if len(envelope.Next) != 1 || envelope.Next[0].Cmd != "hydra status" {
-		t.Errorf("next = %v, want the suggested command", envelope.Next)
+	if len(envelope.Next) != 1 {
+		t.Fatalf("next = %v, want one suggestion", envelope.Next)
+	}
+	// argv, not a command string: a caller must be able to exec it without parsing a
+	// shell line.
+	if got := envelope.Next[0].Argv; len(got) != 2 || got[0] != "hydra" || got[1] != "status" {
+		t.Errorf("argv = %v, want [hydra status]", got)
+	}
+	if envelope.Next[0].Why == "" {
+		t.Error("a suggestion without a reason is a guess the caller has to justify")
 	}
 }
 
@@ -258,8 +266,9 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		// "another hydra is mid-write, retry me" from a real failure.
 		CodeBusy: 6,
 		// needs_input replaces blocking on a prompt when output is machine-readable.
-		CodeNeedsInput: 7,
-		CodeInternal:   1,
+		CodeNeedsInput:     7,
+		CodeUnknownCommand: 1,
+		CodeInternal:       1,
 	}
 
 	got := ExitCodes()

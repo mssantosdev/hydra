@@ -94,12 +94,23 @@ type runResultJSON struct {
 	Path     string `json:"path"`
 	Topic    string `json:"topic,omitempty"`
 	ExitCode int    `json:"exit_code"`
-	// Stdout and stderr are NOT captured into the envelope. A build log can be
-	// megabytes, and a caller that wants it can redirect; what belongs here is the
-	// outcome. Output streams through to the terminal as it happens.
-	Failed bool   `json:"failed"`
-	Error  string `json:"error,omitempty"`
-	MS     int64  `json:"duration_ms"`
+	// Stdout and stderr ARE captured under --output json, because a fan-out runner
+	// that reports only exit codes is an exit-code poller: with several worktrees the
+	// passthrough output arrives unattributed, and under --jobs it interleaves
+	// mid-line, so no caller can tell which worktree said what. Under a TTY the
+	// streams still pass through live, where a human is watching them arrive.
+	//
+	// stdout keeps its HEAD and stderr its TAIL: a compiler prints the useful part
+	// first, while an error is the last thing written before a non-zero exit.
+	Stdout      string `json:"stdout,omitempty"`
+	Stderr      string `json:"stderr,omitempty"`
+	StdoutBytes int64  `json:"stdout_bytes"`
+	StderrBytes int64  `json:"stderr_bytes"`
+	StdoutTrunc bool   `json:"stdout_truncated,omitempty"`
+	StderrTrunc bool   `json:"stderr_truncated,omitempty"`
+	Failed      bool   `json:"failed"`
+	Error       string `json:"error,omitempty"`
+	MS          int64  `json:"duration_ms"`
 }
 
 type runJSON struct {
@@ -157,6 +168,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 		if id, ok := runTopics[result.Target.Key()]; ok {
 			entry.Topic = id
 		}
+		if c := takeCapture(result.Target.Key()); c.StdoutBytes > 0 || c.StderrBytes > 0 {
+			entry.Stdout, entry.StdoutBytes, entry.StdoutTrunc = c.Stdout, c.StdoutBytes, c.StdoutTrunc
+			entry.Stderr, entry.StderrBytes, entry.StderrTrunc = c.Stderr, c.StderrBytes, c.StderrTrunc
+		}
 		if result.Disposition == fanout.Failed {
 			entry.Failed = true
 			entry.Error = result.Reason
@@ -169,35 +184,44 @@ func runRun(cmd *cobra.Command, args []string) error {
 		payload.Results = append(payload.Results, entry)
 	}
 	runTopics = nil
+	resetCaptures()
 
 	summary := runSummary(payload)
+
+	// The outcome has to know whether ANYTHING landed. Deriving it from `Failed > 0`
+	// reported "partial" when every worktree failed, so a caller reading stdout
+	// concluded some work succeeded when none had.
+	var runErr *output.Error
 	outcome := output.OutcomeSuccess
-	if payload.Failed > 0 {
+	switch payload.Failed {
+	case 0:
+	case payload.Total:
+		outcome = output.OutcomeFailure
+		runErr = output.Errorf(output.CodeGitFailed,
+			"the command failed in every worktree").
+			WithDetail("command", command).
+			WithDetail("failed", failedRunTargets(payload))
+	default:
 		outcome = output.OutcomePartial
+		runErr = output.Errorf(output.CodePartialFailure,
+			"the command failed in %d of %d worktrees", payload.Failed, payload.Total).
+			WithDetail("command", command).
+			WithDetail("failed", failedRunTargets(payload))
 	}
+
 	if emitErr := emitResult(cmd, output.Result{
 		Outcome:  outcome,
 		Summary:  summary,
 		Data:     payload,
 		Warnings: warnings,
+		Err:      runErr,
 	}, func() { printRunText(payload, summary) }); emitErr != nil {
 		return emitErr
 	}
-
-	switch payload.Failed {
-	case 0:
-		return nil
-	case payload.Total:
-		return output.Errorf(output.CodeGitFailed,
-			"the command failed in every worktree").
-			WithDetail("command", command).
-			WithDetail("failed", payload.Failed)
-	default:
-		return output.Errorf(output.CodePartialFailure,
-			"the command failed in %d of %d worktrees", payload.Failed, payload.Total).
-			WithDetail("command", command).
-			WithDetail("failed", failedRunTargets(payload))
+	if runErr != nil {
+		return runErr
 	}
+	return nil
 }
 
 // splitRunArgs separates an optional worktree handle from the command after --.
@@ -254,7 +278,7 @@ func runTargets(handle string) ([]fanout.Target, []string, error) {
 
 	// tracking=false: running a command needs no ahead/behind, and paying for a git
 	// call per worktree before doing the real work is waste.
-	resolved, warnings, err := resolveTargets(session, selector, false)
+	resolved, warnings, _, err := resolveTargets(session, selector, false)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -291,14 +315,24 @@ func runOne(ctx context.Context, t fanout.Target, command []string) fanout.ItemR
 		"HYDRA_PATH="+t.Path,
 	)
 
-	// Streams pass through rather than being captured. A build log can be megabytes,
-	// and a caller watching a long run needs to see it as it happens. Under
-	// --output json, stdout would corrupt the envelope, so it goes to stderr.
-	proc.Stdout = os.Stderr
-	if !jsonMode() {
-		proc.Stdout = os.Stdout
+	// Under a TTY the streams pass straight through: a human watching a long run needs
+	// to see it arrive. Under --output json they are CAPTURED per worktree instead,
+	// because passthrough output from several worktrees is unattributable — and with
+	// --jobs it interleaves mid-line, so no caller can reconstruct who wrote what.
+	if jsonMode() {
+		out, errOut := &headWriter{}, &tailWriter{}
+		proc.Stdout, proc.Stderr = out, errOut
+		defer func() {
+			o, ob, ot := out.captured()
+			e, eb, et := errOut.captured()
+			recordCapture(t.Key(), capturedOutput{
+				Stdout: o, StdoutBytes: ob, StdoutTrunc: ot,
+				Stderr: e, StderrBytes: eb, StderrTrunc: et,
+			})
+		}()
+	} else {
+		proc.Stdout, proc.Stderr = os.Stdout, os.Stderr
 	}
-	proc.Stderr = os.Stderr
 
 	// WaitDelay bounds the wait for inherited pipes after a timeout kill. Without it a
 	// grandchild holding stdout keeps hydra waiting long past the deadline.

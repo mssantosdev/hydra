@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -50,7 +51,6 @@ var (
 		"project":    true,
 		// commands describes hydra itself, so requiring a workspace would make the
 		// surface undiscoverable from anywhere a caller has not set one up yet.
-		// ("clone" is gone — "repo add" needs a project, so it is NOT listed here.)
 		"commands": true,
 	}
 
@@ -76,6 +76,13 @@ default whenever stdout is not a terminal), so scripts and agents never scrape t
 			log.SetVerbose(verboseFlag)
 
 			if skipsProject(cmd) {
+				return nil
+			}
+			// `where` reports project resolution, so it has to ATTEMPT the load and
+			// tolerate absence. Listing it as project-less would skip loading
+			// entirely and make it answer "no workspace" while standing in one.
+			if cmd.Name() == "where" {
+				_ = loadProject()
 				return nil
 			}
 			return loadProject()
@@ -194,7 +201,63 @@ func Execute() (string, error) {
 	if executed != nil {
 		name = commandName(executed)
 	}
-	return name, err
+	return name, classifyUnknownCommand(err)
+}
+
+// classifyUnknownCommand turns cobra's unknown-command error into something a caller can
+// act on.
+//
+// Cobra reports a typo as `internal`, with its "Did you mean this?" suggestion buried in
+// the prose of the message. That is the error a zero-context agent is most likely to hit
+// first, and the recovery — hydra's own published surface — was undiscoverable from it:
+// the suggestion could not be read without parsing English, and nothing pointed at
+// `hydra commands`.
+func classifyUnknownCommand(err error) error {
+	if err == nil || !strings.HasPrefix(err.Error(), "unknown command") {
+		return err
+	}
+
+	var names []string
+	for _, c := range rootCmd.Commands() {
+		if c.IsAvailableCommand() {
+			names = append(names, c.Name())
+		}
+	}
+	sort.Strings(names)
+
+	wrapped := output.Errorf(output.CodeUnknownCommand, "%s", firstLine(err.Error())).
+		WithDetail("available", names)
+	if guesses := suggestionsIn(err.Error()); len(guesses) > 0 {
+		wrapped = wrapped.WithDetail("did_you_mean", guesses)
+	}
+	return wrapped.WithNext(output.Next{
+		Argv: []string{"hydra", "commands", "--output", "json"},
+		Why:  "list every command and its flags, plus the error-code table",
+	})
+}
+
+// firstLine keeps cobra's one-line summary and drops the multi-line suggestion prose,
+// which is carried as structured detail instead.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// suggestionsIn extracts the names cobra listed under "Did you mean this?".
+func suggestionsIn(msg string) []string {
+	_, tail, ok := strings.Cut(msg, "Did you mean this?")
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(tail, "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // ErrorsAsJSON reports whether a failure should be rendered as a JSON envelope.
@@ -285,10 +348,18 @@ func emit(cmd *cobra.Command, summary string, data any, warnings []string, text 
 	return emitResult(cmd, output.Result{Summary: summary, Data: data, Warnings: warnings}, text)
 }
 
+// envelopeEmitted records that a JSON envelope already reached stdout, so main does
+// not append a second one for the same command.
+var envelopeEmitted bool
+
+// EnvelopeEmitted reports whether a command already wrote its envelope.
+func EnvelopeEmitted() bool { return envelopeEmitted }
+
 // emitResult is for commands that carry more than a summary — a partial outcome, or
 // a next suggestion.
 func emitResult(cmd *cobra.Command, result output.Result, text func()) error {
 	if jsonMode() {
+		envelopeEmitted = true
 		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), result)
 	}
 	for _, warning := range result.Warnings {

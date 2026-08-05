@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/output"
@@ -29,6 +30,21 @@ func runPayload(t *testing.T, args ...string) runJSON {
 	rootCmd.SetArgs(append([]string{"run"}, args...))
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("run %v: %v", args, err)
+	}
+	var payload runJSON
+	decodeJSONData(t, stdout, &payload)
+	return payload
+}
+
+// runFailingPayload is for commands expected to exit non-zero: the envelope still
+// carries the per-worktree results, which is the whole point of capture.
+func runFailingPayload(t *testing.T, args ...string) runJSON {
+	t.Helper()
+	resetCommandState(t)
+	stdout, _ := resetCommandIO()
+	rootCmd.SetArgs(append([]string{"run"}, args...))
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatalf("run %v: expected a failure", args)
 	}
 	var payload runJSON
 	decodeJSONData(t, stdout, &payload)
@@ -275,5 +291,76 @@ func TestRun_ReportsTopicPerResult(t *testing.T) {
 	}
 	if payload.Results[0].Topic != "2072958" {
 		t.Errorf("topic = %q, want 2072958", payload.Results[0].Topic)
+	}
+}
+
+// Capture is what makes fan-out legible: with several worktrees, passthrough output
+// arrives unattributed and under --jobs it interleaves mid-line, so a caller cannot tell
+// which worktree produced which line.
+func TestRun_CapturesOutputPerWorktree(t *testing.T) {
+	resetCommandState(t)
+	runEnv(t)
+
+	payload := runPayload(t, "--repos", "api,web", "--output", "json",
+		"--", "sh", "-c", "echo $HYDRA_REPO")
+
+	if payload.Total != 2 {
+		t.Fatalf("total = %d, want 2", payload.Total)
+	}
+	for _, r := range payload.Results {
+		if got := strings.TrimSpace(r.Stdout); got != r.Repo {
+			t.Errorf("%s captured %q, want its own name", r.Repo, got)
+		}
+		if r.StdoutBytes == 0 {
+			t.Errorf("%s reported no stdout bytes", r.Repo)
+		}
+	}
+}
+
+// A failing child's reason must reach the envelope, otherwise a caller sees only an
+// exit code and has to re-run to find out why.
+func TestRun_CapturesStderrOfAFailingChild(t *testing.T) {
+	resetCommandState(t)
+	runEnv(t)
+
+	payload := runFailingPayload(t, "--repos", "api", "--output", "json",
+		"--", "sh", "-c", "echo boom >&2; exit 7")
+
+	got := payload.Results[0]
+	if got.ExitCode != 7 {
+		t.Errorf("exit_code = %d, want 7", got.ExitCode)
+	}
+	if !strings.Contains(got.Stderr, "boom") {
+		t.Errorf("stderr = %q, want it to carry the child's message", got.Stderr)
+	}
+	if !got.Failed {
+		t.Error("failed must be true")
+	}
+}
+
+// stdout keeps its HEAD and stderr its TAIL, and both report the true size. Capping
+// stderr at the head would discard the last thing written before a non-zero exit, which
+// is exactly the diagnostic that makes a failure legible.
+func TestRun_TruncatesStdoutHeadAndStderrTail(t *testing.T) {
+	resetCommandState(t)
+	runEnv(t)
+
+	payload := runPayload(t, "--repos", "api", "--output", "json",
+		"--", "sh", "-c", "seq 1 30000; seq 1 30000 >&2")
+
+	got := payload.Results[0]
+	if !got.StdoutTrunc || !got.StderrTrunc {
+		t.Fatalf("expected both streams truncated, got out=%v err=%v",
+			got.StdoutTrunc, got.StderrTrunc)
+	}
+	if got.StdoutBytes <= int64(len(got.Stdout)) {
+		t.Errorf("stdout_bytes %d must exceed the retained %d",
+			got.StdoutBytes, len(got.Stdout))
+	}
+	if !strings.HasPrefix(got.Stdout, "1\n2\n") {
+		t.Errorf("stdout kept %q..., want the head", got.Stdout[:12])
+	}
+	if !strings.HasSuffix(strings.TrimSpace(got.Stderr), "30000") {
+		t.Error("stderr must keep the tail, where a failure reason lands")
 	}
 }
