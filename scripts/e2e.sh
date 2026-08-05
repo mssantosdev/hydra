@@ -745,5 +745,17 @@ check "re-running repo add converges and clears that repository's failure" \
     { "$HYDRA" doctor --output json || true; } 2>/dev/null |
     jq -e "[.data.checks[]|select(.id==\"bare_unregistered\" and .repo==\"orphan\")]|length==0" >/dev/null)'
 
+# --------------------- 15. usage mistakes and zero-match scope (0.3.4)
+echo "== 15. a usage mistake is recoverable, and scope survives an empty match =="
+check "too many arguments quotes the usage line and points at help" \
+  '(cd "$T/ws" && { "$HYDRA" path api stage --output json || true; } 2>/dev/null |
+    jq -e "(.error.details.usage|length)>0 and ([.next[].argv[-1]]|index(\"--help\"))!=null" >/dev/null)'
+check "an unknown flag is guided the same way" \
+  '(cd "$T/ws" && { "$HYDRA" list --no-such-flag --output json || true; } 2>/dev/null |
+    jq -e "(.next|length)>=1" >/dev/null)'
+check "a zero-match query still reports which project it queried" \
+  '(cd "$T/ws" && "$HYDRA" list --filter "branch:no-such-thing-*" --output json 2>/dev/null |
+    jq -e "(.data.worktrees|length)==0 and (.data.project|length)>0 and (.data.root|length)>0" >/dev/null)'
+
 echo
 echo "ALL $pass ASSERTIONS PASSED"

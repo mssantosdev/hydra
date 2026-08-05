@@ -195,8 +195,13 @@ func absDir(configPath string) string { return config.ProjectRoot(configPath) }
 
 // Execute runs the root command, returning the command path that ran so the
 // caller can label the error envelope.
+// executedCmd is the command cobra resolved, kept so a usage error can name it and quote
+// its own usage line rather than the root's.
+var executedCmd *cobra.Command
+
 func Execute() (string, error) {
 	executed, err := rootCmd.ExecuteC()
+	executedCmd = executed
 	name := ""
 	if executed != nil {
 		name = commandName(executed)
@@ -213,8 +218,11 @@ func Execute() (string, error) {
 // the suggestion could not be read without parsing English, and nothing pointed at
 // `hydra commands`.
 func classifyUnknownCommand(err error) error {
-	if err == nil || !strings.HasPrefix(err.Error(), "unknown command") {
+	if err == nil {
 		return err
+	}
+	if !strings.HasPrefix(err.Error(), "unknown command") {
+		return withUsageGuidance(err)
 	}
 
 	var names []string
@@ -539,4 +547,38 @@ func buildInfoVersion() (version, commit, builtAt string) {
 		}
 	}
 	return version, commit, builtAt
+}
+
+// withUsageGuidance attaches the offending command's usage line and a pointer at its help
+// to cobra's argument and flag errors.
+//
+// These stay `internal`, which the contract documents as the unclassified catch-all
+// including a bad flag value — but `hydra path a b` reporting only
+// "accepts at most 1 arg(s), received 2" reads as hydra breaking rather than as the caller
+// mis-typing, and offers nothing to act on. The code is unchanged; the recovery is not.
+func withUsageGuidance(err error) error {
+	msg := err.Error()
+	usageish := strings.Contains(msg, "arg(s)") ||
+		strings.Contains(msg, "unknown flag") ||
+		strings.Contains(msg, "invalid argument") ||
+		strings.Contains(msg, "unknown shorthand flag")
+	if !usageish {
+		return err
+	}
+
+	// executedCmd is set by Execute before the error surfaces, so the guidance names the
+	// command the caller actually ran rather than the root.
+	name, usage := "hydra", ""
+	if executedCmd != nil {
+		name = executedCmd.CommandPath()
+		usage = executedCmd.UseLine()
+	}
+	wrapped := output.Wrap(output.CodeInternal, err, "%s", msg)
+	if usage != "" {
+		wrapped = wrapped.WithDetail("usage", usage)
+	}
+	return wrapped.WithNext(output.Next{
+		Argv: append(strings.Fields(name), "--help"),
+		Why:  "show this command's arguments and flags",
+	})
 }

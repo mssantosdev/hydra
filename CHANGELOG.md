@@ -9,6 +9,41 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.4] - 2026-08-05
+
+Both found by handing the installed binary to four agents with no prior knowledge of hydra.
+
+### Fixed
+
+- **A usage mistake now carries its own recovery.** `hydra path a b` reported nothing but
+  `accepts at most 1 arg(s), received 2`, which reads as hydra breaking rather than as the
+  caller mis-typing. Argument-count, unknown-flag and invalid-argument errors now attach the
+  offending command's own usage line as `details.usage` and a `next[]` pointing at its help:
+
+  ```json
+  {"error":{"code":"internal","details":{"usage":"hydra path [<worktree-name>] [flags]"}},
+   "next":[{"argv":["hydra","path","--help"],"why":"show this command's arguments and flags"}]}
+  ```
+
+  The code stays `internal`, which the contract already documents as the unclassified
+  catch-all including a bad flag value. What changed is that it is now actionable.
+
+- **A zero-match query no longer blanks the project scope.** `list --filter branch:nope-*`
+  returned `"project": ""` and `"root": ""`, which a caller cannot tell apart from "not in a
+  project" and cannot use to locate the workspace it just queried. The text listing still
+  omits an empty project, so a narrowed view never prints a heading with nothing under it.
+
+### Verified, not changed
+
+Reported by the same round and checked to be correct as-is:
+
+- `--output text` does force text when stdout is not a terminal.
+- The unsuffixed worktree directory follows the remote's default branch, not the position of
+  a branch in `--branches`. Two agents independently believed it was positional, so the rule
+  is under-documented even though the behaviour is right.
+
+[0.3.4]: https://github.com/mssantosdev/hydra/compare/v0.3.3...v0.3.4
+
 ## [0.3.3] - 2026-08-05
 
 ### Breaking
