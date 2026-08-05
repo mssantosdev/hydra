@@ -9,6 +9,59 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.2] - 2026-08-05
+
+### Fixed
+
+- **Concurrent `repo add` silently lost registrations.** Running several `repo add`
+  invocations at once against remote repositories registered only some of them. Every
+  invocation reported `outcome: success`, every bare repository was cloned, and the
+  manifest ended up with half the entries:
+
+  ```
+  four concurrent repo add  ->  all four report success
+  .bare/                    ->  4 repositories cloned
+  .hydra/config.yaml        ->  2 registered
+  ```
+
+  `Config.Save` marshals the caller's in-memory manifest over the whole file, so two
+  processes that both loaded it before either finished cloning each wrote their own stale
+  view — and the second erased the first. A clone takes seconds, which is what makes the
+  window wide enough to lose reliably; the same test with local fixtures passes because the
+  window is microseconds.
+
+  `config.Update` now takes a lock, re-reads the manifest, applies the mutation and writes
+  — the same shape `.hydra/state.yaml` has used since 0.2.0, which the manifest never got.
+  Contention reports `busy`, the one retryable code. The lock is a separate `config.lock`
+  because writing replaces the manifest and swaps its inode.
+
+  `doctor` did detect the aftermath, as `bare_unregistered` and `worktree_unregistered`
+  warnings; it is not a silent loss once you look. Recovery was, and still is, re-running
+  the same `repo add`, which is convergent.
+
+- **`repo restore` guessed `main` for a repository whose manifest entry had no default
+  branch**, then failed with `branch "main" does not exist on origin` on repositories whose
+  branches are `prod` and `stage` — presenting a guess back as the user's own
+  configuration. An absent default branch now means "resolve the remote's HEAD", which is
+  what `repo add` already does when given no `--branches`.
+
+- **`repo restore`'s summary understated what it had done.** It reported only the repository
+  count, which read as completion; a workspace restored from a manifest deliberately has
+  one worktree per repository rather than the set the source had open. The summary now says
+  `default-branch worktrees only`, alongside the `next[]` that already points at `apply -`.
+
+### Verified, not changed
+
+Reported by the same testing and checked to be correct as-is:
+
+- stdout carries pure JSON during a clone — git's progress is on stderr, and the reports to
+  the contrary came from merging the two streams.
+- The unsuffixed worktree directory follows the remote's default branch, not the order of
+  `--branches`, so `--branches stage,prod` does not silently swap which one gets the bare
+  name.
+
+[0.3.2]: https://github.com/mssantosdev/hydra/compare/v0.3.1...v0.3.2
+
 ## [0.3.1] - 2026-08-05
 
 ### Fixed
