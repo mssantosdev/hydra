@@ -9,6 +9,120 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.0] - 2026-08-05
+
+The release that makes hydra correct the caller instead of letting a wrong assumption stand.
+
+Everything here was found by building a real 13-repository, 24-worktree workspace against live
+remotes and recording every point where the tool allowed a mistaken belief to survive. Two of the
+results are bugs that predate this work; three of the findings turned out to be wrong and are
+recorded as such below, because they were wrong in a way worth remembering.
+
+### Breaking
+
+The **envelope** version is now `schema: 3`. The manifest's own `version: "2"` is unchanged and needs
+no edit — they are separate contracts.
+
+- **The failure envelope moved from stderr to stdout.** One envelope, one stream, success or failure.
+  Errors were on stderr and so was git's fetch progress, so a caller wanting both the data and the
+  reason reached for `cmd 2>&1 | jq` — which corrupted the JSON on the *success* path. The exit status
+  still carries the code and `hydra commands` still publishes the code→exit table, so stderr never
+  held anything machine-readable worth keeping there. Read stdout; you no longer need to merge
+  streams. Our own end-to-end suite lost 38 uses of the `2>&1 >/dev/null` dance.
+
+- **`next[]` is `{argv, why}`, not `{action, cmd}`.** A caller execs the array instead of parsing a
+  shell line, so a branch name containing a space stops being the caller's quoting problem. `why`
+  is required: a suggested invocation with no stated reason is a guess the caller has to justify on
+  hydra's behalf.
+
+- **`outcome` no longer reports `partial` when nothing succeeded.** If every item failed the outcome
+  is `failure`. Code treating `partial` as "some of it worked" was, in that case, being lied to.
+
+### Fixed
+
+- **`run` reported `outcome: partial` when every worktree failed** — stdout claimed work had landed
+  when none had, while stderr said `git_failed` and the process exited 1. The outcome is now derived
+  from whether anything actually landed.
+
+- **A healthy listing could report `partial_failure`.** `list` computed success as
+  `len(repos) - len(warnings)`, so any advisory warning — an unresolvable `--against` ref, an empty
+  selector — was counted as a failed repository. The check tripped whenever those two numbers
+  coincided and masked real failures whenever they did not. Repository failures are now counted
+  explicitly rather than inferred.
+
+### Added
+
+- **`hydra run` captures per-worktree `stdout` and `stderr`.** It was an exit-code poller: output from
+  several worktrees arrived unattributed, and under `--jobs` it interleaved mid-line, so no caller
+  could tell which worktree said what. Each result now carries the output with `*_bytes` and
+  `*_truncated`. stdout keeps its **head** and stderr its **tail**, because the reason a command
+  failed is the last thing it writes before a non-zero exit. Under a TTY the streams still pass
+  through live. There is no `--capture` flag: it would be a mode, and hydra has none.
+
+- **`hydra where`** answers "where am I" — workspace root, manifest, and, inside a worktree, its group,
+  repo, branch and topic. Outside a workspace it **succeeds** with `in_project: false`, because that
+  is the answer a caller dropped into an unknown directory needs; failing would make "no workspace"
+  indistinguishable from "broken workspace".
+
+- **`hydra repo branches <url|alias>`** lists a remote's branches without cloning, so `--branches` can
+  be chosen rather than guessed. Auditing 14 repositories by hand previously meant 67 seconds of
+  `git ls-remote`.
+
+- **`hydra repo restore`** rebuilds every repository the committed manifest declares, **additive only**
+  — it never removes, never rewrites a remote, and reports disagreement as `warnings[]`. `--jobs N`
+  clones concurrently, which is the actual fix for thirteen repositories taking eight minutes one
+  `repo add` at a time. The manifest records repositories, not the worktrees you had open, so its
+  `next[]` points at `apply -` for that half.
+
+- **`unknown_command`** (exit 1) replaces `internal` for a mistyped subcommand, carrying
+  `details.did_you_mean` and `details.available` as data instead of cobra's English prose, plus a
+  `next[]` pointing at `hydra commands --output json`. That is the error a caller with no prior
+  knowledge of hydra is most likely to hit first, and the recovery was previously undiscoverable
+  from it.
+
+- **`apply` reports `group`, `name` and `path`.** It reported having created a worktree without saying
+  where — in the one command whose entire purpose is reproducing a workspace elsewhere. `start` gains
+  `name`, the handle every other command accepts. A contract test now holds those fields across all
+  three worktree-reporting shapes and was verified to fail when one drifts.
+
+- **A selector that matches nothing says how many candidates it considered**, so a typo'd glob is
+  distinguishable from a true empty. It stays exit 0: "nothing is dirty" is a correct answer, not an
+  error.
+
+### Changed
+
+- `COLUMNS` is honoured whenever set and parseable, TTY or not. `term.GetSize` fails on a pipe and
+  fell back to 80, so a piped caller had no way to ask for anything narrower.
+- The interactive branch picker bounds its list to 15 rows. `huh` sets no default height, so a
+  repository with 140 branches rendered all of them before you could reach the filter — which `huh`
+  already enables under `/`, and which matches case-insensitive substrings.
+- `hydra init` reports the registry path it wrote to, so a throwaway workspace no longer accumulates
+  an entry in the real global config with no hint that `HYDRA_CONFIG_DIR` exists.
+
+### Retracted findings
+
+Recorded because they were wrong, and because two external reviews ranked this bundle on the first
+of them:
+
+- *"`start` returns counts, not worktrees"* — **false.** It already returned full objects with `path`
+  in `created[]`/`skipped[]`/`failed[]`. The claim came from reading `.data|keys`, seeing `created`,
+  and assuming an integer.
+- *"a bad `--branches` value offers no guidance"* — **false.** It already failed with `branch_unknown`
+  carrying `details.available`.
+- *"unknown `--topic`, `--repos` or `--group` silently return an empty list"* — **false.** All three
+  already failed with the known values attached. Only `--filter` returned an empty success, which is
+  legitimate.
+
+### Verified, not changed
+
+- `prune` already drops a registry entry whose root exists but has no `.hydra/config.yaml`.
+- A child's exit code never becomes hydra's: `run` exits from its own code table and reports the
+  child's in `results[].exit_code`.
+- Four concurrent writers and eight concurrent readers on one workspace all succeed; the state lock
+  does not thrash. Stale-lock recovery after a crash remains untested.
+
+[0.3.0]: https://github.com/mssantosdev/hydra/compare/v0.2.0...v0.3.0
+
 ## [0.2.0] - 2026-08-05
 
 The release that gives hydra a **unit of work**. Before this, the only noun was the worktree: you
