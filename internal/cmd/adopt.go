@@ -123,10 +123,15 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 		return output.Wrap(output.CodeGitFailed, err, "failed to initialize bare repository")
 	}
 
-	cfg.SetRepo(adoptGroup, alias, config.Repo{Remote: remoteURL, DefaultBranch: branch})
-	if err := cfg.Save(projectConfigPath); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to save project config")
+	// Same locked read-modify-write as a clone: adopting is reached through the same
+	// `repo add` front door, so it is exposed to the same concurrent-registration race.
+	if err := config.Update(projectRoot, func(live *config.Config) error {
+		live.SetRepo(adoptGroup, alias, config.Repo{Remote: remoteURL, DefaultBranch: branch})
+		return nil
+	}); err != nil {
+		return classifyManifestErr(err)
 	}
+	cfg.SetRepo(adoptGroup, alias, config.Repo{Remote: remoteURL, DefaultBranch: branch})
 
 	repo := repoContextFor(cfg, projectRoot, config.RepoRef{Group: adoptGroup, Alias: alias, Repo: cfg.Groups[adoptGroup][alias]})
 	candidates, err := collectAdoptCandidates(checkoutPath, remoteURL, branch)

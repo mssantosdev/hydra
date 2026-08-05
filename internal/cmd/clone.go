@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -287,10 +288,17 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 				WithDetail("requested_remote", opts.URL)
 		}
 	} else {
-		c.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL})
-		if err := c.Save(configPath); err != nil {
-			return result, nil, output.Wrap(output.CodeInternal, err, "failed to save config")
+		// Locked read-modify-write, not Save: a clone takes seconds, so two concurrent
+		// `repo add` runs both hold a manifest loaded BEFORE either finished, and
+		// whichever saved second silently erased the other's entry while reporting
+		// success. Update re-reads inside the lock so each registration merges.
+		if err := config.Update(root, func(live *config.Config) error {
+			live.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL})
+			return nil
+		}); err != nil {
+			return result, nil, classifyManifestErr(err)
 		}
+		c.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL})
 	}
 
 	bareExisted := false
@@ -334,10 +342,13 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 	}
 
 	// Record the resolved default branch now that the fetch has actually happened.
-	c.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL, DefaultBranch: defaultBranch})
-	if err := c.Save(configPath); err != nil {
-		return result, warnings, output.Wrap(output.CodeInternal, err, "failed to save config")
+	if err := config.Update(root, func(live *config.Config) error {
+		live.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL, DefaultBranch: defaultBranch})
+		return nil
+	}); err != nil {
+		return result, warnings, classifyManifestErr(err)
 	}
+	c.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL, DefaultBranch: defaultBranch})
 
 	branches, err := resolveCloneBranches(opts, repo, defaultBranch)
 	if err != nil {
@@ -586,4 +597,14 @@ func branchesSource(opts *CloneOptions) string {
 	default:
 		return "default-branch"
 	}
+}
+
+// classifyManifestErr maps manifest contention onto the retryable code, so a caller can
+// tell "another hydra is mid-write, try again" from a real failure.
+func classifyManifestErr(err error) error {
+	var busy *config.ErrManifestBusy
+	if errors.As(err, &busy) {
+		return output.Wrap(output.CodeBusy, err, "%s", busy.Error())
+	}
+	return output.Wrap(output.CodeInternal, err, "failed to save config")
 }
