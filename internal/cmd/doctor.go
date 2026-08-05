@@ -170,12 +170,32 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	failures := countDoctorFailures(reports)
-	if err := emit(cmd, doctorSummaryLine(reports, failures), payload, warnings, func() { printDoctorText(reports) }); err != nil {
+
+	// The outcome has to agree with the exit status. doctor used to emit
+	// `outcome: success` with no error object and then exit 4, which is the same
+	// contradiction schema 3 removed from `run`: a caller reading the envelope saw a
+	// clean run while the process reported failure. The checks are real data either
+	// way, so the error rides the same envelope rather than replacing it.
+	var doctorErr *output.Error
+	outcome := output.OutcomeSuccess
+	if failures > 0 {
+		outcome = output.OutcomePartial
+		doctorErr = output.Errorf(output.CodePartialFailure,
+			"%d health check(s) failed", failures).
+			WithDetail("failed", failures)
+	}
+
+	if err := emitResult(cmd, output.Result{
+		Outcome:  outcome,
+		Summary:  doctorSummaryLine(reports, failures),
+		Data:     payload,
+		Warnings: warnings,
+		Err:      doctorErr,
+	}, func() { printDoctorText(reports) }); err != nil {
 		return err
 	}
-	if failures > 0 {
-		return output.Errorf(output.CodePartialFailure,
-			"%d health check(s) failed; re-run with --output json for details", failures)
+	if doctorErr != nil {
+		return doctorErr
 	}
 	return nil
 }
@@ -302,12 +322,27 @@ func diagnoseBareDir(cfg *config.Config, bareRoot string) []doctorCheck {
 			continue
 		}
 		alias := strings.TrimSuffix(name, ".git")
+
+		// FAIL, not warn. `.bare/` is hydra's own directory — nothing else puts a bare
+		// repository there — so an unregistered one is real state hydra cannot see, not
+		// a note. It means an interrupted clone, or a lost manifest write. Either way
+		// `list`, `status`, `run` and `sync` all silently omit a repository that exists
+		// on disk, and a warning was too quiet for that.
+		//
+		// The remote is read off the bare repo so the recovery names itself: re-running
+		// `repo add` with that URL is convergent and completes the registration in
+		// place, which is what it does after an interrupted clone.
+		remote := bareOriginURL(filepath.Join(bareRoot, name))
+		recovery := "hydra repo add <url> --as " + alias + " --group <group>"
+		if remote != "" {
+			recovery = "hydra repo add " + remote + " --as " + alias + " --group <group>"
+		}
 		checks = append(checks, doctorCheck{
 			ID:     checkBareUnregistered,
-			Status: "warn",
+			Status: "fail",
 			Message: fmt.Sprintf(
-				"%s is not registered in the manifest (left by an interrupted clone?); run \"hydra repo add <path> --adopt\" to register it or delete %s",
-				name, filepath.Join(bareRoot, name)),
+				"%s exists on disk but is not in the manifest, so hydra cannot see it; run %q to register it, or delete %s",
+				name, recovery, filepath.Join(bareRoot, name)),
 			Repo: alias,
 		})
 	}
@@ -780,4 +815,13 @@ func printDoctorText(reports []doctorReport) {
 		fmt.Printf("\n%s\n\n", styles.Dimmed.Render(fmt.Sprintf("ok=%d warn=%d fail=%d fixed=%d",
 			report.Summary.OK, report.Summary.Warn, report.Summary.Fail, report.Summary.Fixed)))
 	}
+}
+
+// bareOriginURL reads a bare repository's origin, so doctor can name the exact command
+// that recovers it rather than leaving the caller to find the URL.
+//
+// A failure is not reported: the check is already a failure, and a missing origin only
+// means the suggestion falls back to a placeholder.
+func bareOriginURL(barePath string) string {
+	return strings.TrimSpace(git.GetConfig(barePath, "remote.origin.url"))
 }

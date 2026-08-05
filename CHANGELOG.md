@@ -9,6 +9,40 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.3] - 2026-08-05
+
+### Breaking
+
+- **An unregistered bare repository now FAILS `doctor` instead of warning.** `.bare/` is
+  hydra's own directory — nothing else puts a bare repository there — so one that is absent
+  from the manifest is real state hydra cannot see, not a note. `list`, `status`, `run` and
+  `sync` all silently omit that repository. A warning was too quiet for that, and a script
+  gating on `doctor` exiting 0 would have shipped straight past it.
+
+  A worktree-shaped directory that is not registered stays a **warning**: that one can
+  legitimately be something of yours that hydra was never asked to manage.
+
+  The failure now reads the bare repository's `origin` and names the exact recovery, so the
+  fix is copyable rather than something to work out:
+
+  ```
+  ci-ops.git exists on disk but is not in the manifest, so hydra cannot see it;
+  run "hydra repo add vs-ssh.../arvia-ci-ops --as ci-ops --group <group>" to register it
+  ```
+
+  That command is convergent — it completes the registration in place rather than
+  re-cloning.
+
+### Fixed
+
+- **`doctor`'s outcome now agrees with its exit status.** With a failing check it emitted
+  `outcome: success` and no error object, then exited 4. That is precisely the contradiction
+  schema 3 removed from `run`: the envelope said clean while the process said otherwise. It
+  now reports `outcome: partial` with `partial_failure`, and the checks stay in `data` where
+  a caller needs them.
+
+[0.3.3]: https://github.com/mssantosdev/hydra/compare/v0.3.2...v0.3.3
+
 ## [0.3.2] - 2026-08-05
 
 ### Fixed

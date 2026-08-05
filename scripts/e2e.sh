@@ -716,5 +716,34 @@ check "init reports the registry it wrote to" \
   '(mkdir -p "$T/ws4" && cd "$T/ws4" && "$HYDRA" init --project-name w4 --output json 2>/dev/null |
     jq -e "[.warnings[]|select(test(\"projects.yaml\"))]|length==1" >/dev/null)'
 
+# ------------------------- 14. an unregistered bare repo is a failure (0.3.3)
+echo "== 14. hydra cannot silently omit a repository it has on disk =="
+# Reproduce the aftermath of a lost manifest write: bare and worktree on disk, no entry.
+(cd "$T/ws" && "$HYDRA" repo add "$T/upstream" --as orphan --group og --branches main \
+  --output json >/dev/null 2>&1) || true
+ORPHAN_CFG="$T/ws/.hydra/config.yaml"
+python3 - "$ORPHAN_CFG" <<'PYEOF'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+p.write_text(re.sub(r"    og:\n(?:        .*\n|            .*\n)+", "", p.read_text()))
+PYEOF
+check "an unregistered bare repo fails doctor, it is not a note" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --output json || true; } 2>/dev/null |
+    jq -e "[.data.checks[]|select(.id==\"bare_unregistered\" and .status==\"fail\")]|length>=1" >/dev/null)'
+check "doctor outcome agrees with its exit status" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --output json || true; } 2>/dev/null |
+    jq -e ".outcome==\"partial\" and .error.code==\"partial_failure\" and (.data.checks|length)>0" >/dev/null)'
+check "the failure names the remote so the recovery is copyable" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --output json || true; } 2>/dev/null |
+    jq -e "[.data.checks[]|select(.id==\"bare_unregistered\")|.message|test(\"repo add .*upstream\")]|any" >/dev/null)'
+# Only THIS repository's check must clear. The shared workspace legitimately carries other
+# findings by now, and asserting a globally clean doctor would couple this to every
+# section above it.
+check "re-running repo add converges and clears that repository's failure" \
+  '(cd "$T/ws" && { "$HYDRA" repo add "$T/upstream" --as orphan --group og --branches main \
+     --output json >/dev/null 2>&1 || true; } &&
+    { "$HYDRA" doctor --output json || true; } 2>/dev/null |
+    jq -e "[.data.checks[]|select(.id==\"bare_unregistered\" and .repo==\"orphan\")]|length==0" >/dev/null)'
+
 echo
 echo "ALL $pass ASSERTIONS PASSED"
