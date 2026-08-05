@@ -209,7 +209,7 @@ func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 	if !hasWorktrees {
 		_, _ = fmt.Fprintln(out, styles.Dimmed.Render("  No worktrees found."))
 		_, _ = fmt.Fprintln(out)
-		_, _ = fmt.Fprintln(out, "  Run 'hydra clone <url>' to add a repository.")
+		_, _ = fmt.Fprintln(out, "  Run 'hydra repo add <url>' to add a repository.")
 	}
 }
 

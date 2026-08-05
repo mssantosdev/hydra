@@ -47,7 +47,7 @@ EXIT CODES
 
 SEE ALSO
   hydra doctor - Diagnose issues before pruning
-  hydra adopt - Import an existing checkout`,
+  hydra repo add <path> --adopt - track an existing checkout`,
 	RunE: runPrune,
 }
 

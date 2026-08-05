@@ -177,7 +177,7 @@ func resolveAddTarget(args []string) (string, string, error) {
 		repos := cfg.Repos()
 		if len(repos) == 0 {
 			return "", "", output.Errorf(output.CodeRepoUnknown,
-				"no repos registered; run \"hydra clone <url>\" first")
+				"no repos registered; run \"hydra repo add <url>\" first")
 		}
 		options := make([]huh.Option[string], 0, len(repos))
 		for _, ref := range repos {

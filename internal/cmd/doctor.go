@@ -76,7 +76,7 @@ EXIT CODES
 
 SEE ALSO
   hydra prune - Remove stale worktree registrations and empty group dirs
-  hydra adopt - Import an existing checkout into the workspace`,
+  hydra repo add <path> --adopt - track an existing checkout`,
 	RunE: runDoctor,
 }
 
@@ -306,7 +306,7 @@ func diagnoseBareDir(cfg *config.Config, bareRoot string) []doctorCheck {
 			ID:     checkBareUnregistered,
 			Status: "warn",
 			Message: fmt.Sprintf(
-				"%s is not registered in the manifest (left by an interrupted clone?); run \"hydra adopt\" to register it or delete %s",
+				"%s is not registered in the manifest (left by an interrupted clone?); run \"hydra repo add <path> --adopt\" to register it or delete %s",
 				name, filepath.Join(bareRoot, name)),
 			Repo: alias,
 		})

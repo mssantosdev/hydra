@@ -39,9 +39,9 @@ WHEN TO USE
   • Adding repos when config migration is out of scope
 
 EXAMPLES
-  hydra adopt ../legacy-api --group backend
-  hydra adopt ../legacy-api --group backend --alias api --branch main
-  hydra adopt ../legacy-api --group backend --output json
+  hydra repo add ../legacy-api --adopt --group backend
+  hydra repo add ../legacy-api --adopt --group backend --alias api --branch main
+  hydra repo add ../legacy-api --adopt --group backend --output json
 
 FLAGS
   --group <name>    Group directory (required)
@@ -55,7 +55,7 @@ EXIT CODES
 
 SEE ALSO
   hydra doctor - Validate the workspace after adopting
-  hydra clone - Clone a fresh repository into hydra`,
+  hydra repo add <url> - clone a fresh repository into the workspace`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAdopt,
 }

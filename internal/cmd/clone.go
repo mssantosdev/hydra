@@ -69,16 +69,16 @@ WHEN TO USE
 
 EXAMPLES
   # Clone and pick branches interactively
-  $ hydra clone git@github.com:acme/api.git
+  $ hydra repo add git@github.com:acme/api.git
 
   # Non-interactive: name the alias, group, and branches
-  $ hydra clone git@github.com:acme/api.git --alias api --group backend --branches main,stage
+  $ hydra repo add git@github.com:acme/api.git --alias api --group backend --branches main,stage
 
   # Every branch on origin
-  $ hydra clone git@github.com:acme/api.git --alias api --group backend --all
+  $ hydra repo add git@github.com:acme/api.git --alias api --group backend --all
 
   # Show what would happen
-  $ hydra clone git@github.com:acme/api.git --dry-run
+  $ hydra repo add git@github.com:acme/api.git --dry-run
 
 FLAGS
   --alias <name>       repo alias; also the bare filename and worktree dir base name
@@ -101,7 +101,7 @@ EXIT CODES
 
 SEE ALSO
   • hydra new    - bootstrap a new project and its first repo
-  • hydra adopt  - import an existing local checkout
+  • hydra repo add <path> --adopt - track an existing local checkout
   • hydra add    - add another worktree later`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runClone,
@@ -254,7 +254,7 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 }
 
 // performClone creates the bare repository and the selected worktrees. It is the
-// shared engine behind `hydra clone` and `hydra new --remote`.
+// shared engine behind `hydra repo add` and `hydra new --remote`.
 func performClone(opts *CloneOptions, c *config.Config, configPath, root string) (cloneResult, []string, error) {
 	result := cloneResult{
 		Project:  c.Project,

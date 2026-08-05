@@ -57,7 +57,7 @@ EXIT CODES
 
 SEE ALSO
   hydra init - Initialize configuration in an existing directory
-  hydra clone - Add another repository to a project`,
+  hydra repo add - add another repository to the workspace`,
 	RunE: runNew,
 }
 

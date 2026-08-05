@@ -62,7 +62,7 @@ func createProjectRoot(baseDir, projectPath string) (string, string, *config.Con
 }
 
 // createProjectRootAt writes a schema v2 .hydra/config.yaml directly into an existing
-// directory, which is how `hydra init` and a bare `hydra clone` create a workspace
+// directory, which is how `hydra init` and a bare `hydra repo add` create a workspace
 // in place rather than in a subdirectory.
 func createProjectRootAt(root, projectName string) (string, string, *config.Config, error) {
 	abs, err := filepath.Abs(root)

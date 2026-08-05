@@ -35,11 +35,11 @@ DESCRIPTION
   addressed by name with --project.
 
   init creates an EMPTY workspace: no repos, no worktrees. Add repositories with
-  "hydra clone <url>" for a remote, or "hydra adopt <path>" to import a checkout
+  "hydra repo add <url>" for a remote, or "hydra repo add <path> --adopt" for a checkout
   you already have on disk.
 
 WHEN TO USE
-  • Starting a workspace you will populate with "hydra clone"
+  • Starting a workspace you will populate with "hydra repo add"
   • Turning an existing directory into a hydra project
 
 EXAMPLES
@@ -61,8 +61,8 @@ EXIT CODES
   1  General error (directory not writable, workspace already exists)
 
 SEE ALSO
-  • hydra clone   - add a remote repository to the workspace
-  • hydra adopt   - import an existing local checkout
+  • hydra repo add        - add a repository to the workspace
+  • hydra repo add --adopt - track an existing local checkout
   • hydra new     - bootstrap a project and its first repo in one step
   • hydra project - manage the global project registry`,
 	Args: cobra.NoArgs,
@@ -113,8 +113,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Layout:  %s/<alias>.git holds git data; worktrees are siblings under <group>/\n", created.Paths.BareDir)
 		fmt.Println()
 		fmt.Println(styles.Label.Render("Next:"))
-		fmt.Println("  hydra clone <url> --alias <alias> --group <group>")
-		fmt.Println("  hydra adopt <path> --group <group>")
+		fmt.Println("  hydra repo add <url> --as <alias> --group <group>")
+		fmt.Println("  hydra repo add <path> --adopt --group <group>")
 	})
 }
 
