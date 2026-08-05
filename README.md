@@ -143,6 +143,7 @@ Complete documentation is in [`docs/`](docs/):
   - [Topics and execution](docs/commands/topics-and-execution.md) — topics, `start`, `run`, and `apply`
   - [Project Bootstrap](docs/commands/project-bootstrap.md) — `new`, `init`, `repo add`, `repo add --adopt`
 - **[Configuration](docs/configuration.md)** — `.hydra/config.yaml` schema v2
+- **[CHANGELOG.md](CHANGELOG.md)** — release notes, including breaking changes and how to migrate
 
 For AI agents and automation, use the embedded skill contract:
 
