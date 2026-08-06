@@ -1,0 +1,63 @@
+# Publish docs/guide.html as the whole site.
+#
+# Why a workflow rather than "Deploy from a branch": the legacy branch builder failed on this
+# repository with "Multiple artifacts named github-pages were unexpectedly found for this
+# workflow run", then left the Pages deployment stuck reporting `building` and finally
+# `errored`. This path uses the supported upload-pages-artifact/deploy-pages pair, publishes
+# exactly one artifact, and needs no gh-pages branch at all.
+#
+# Requires Settings -> Pages -> Source: "GitHub Actions" (one manual toggle; the REST API
+# call for it needs a token scope the maintainer's PAT does not carry).
+#
+# Only the guide is published. Pointing Pages at /docs would serve every markdown file in
+# that tree at its own URL: harmless on a public repo, since those files are already
+# readable, but it publishes pages nobody reviewed and ties a docs edit to a site deploy.
+name: pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - docs/guide.html
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a newer publish supersede one already in flight rather than queueing behind it, but
+# never cancel a run that is mid-deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage the guide as the site root
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp docs/guide.html _site/index.html
+          # .nojekyll stops Jekyll from touching a file that is already final HTML.
+          touch _site/.nojekyll
+          # Fail loudly rather than publishing an empty or truncated page.
+          test -s _site/index.html
+          grep -q '</html>' _site/index.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>hydra — worktrees across repositories</title>
-<script>document.documentElement.className="js";</script>
+<script>(function(){var d=document.documentElement;d.className="js";var m=location.search.match(/[?&]lang=(en|pt-BR)/);if(m)d.lang=m[1];else try{var s=localStorage.getItem("hydra-guide-lang");if(s==="en"||s==="pt-BR")d.lang=s;}catch(e){}})();</script>
 <meta name="description" content="Technical guide to hydra: multi-repository git worktree management with a machine-readable output contract. For developers and AI agents.">
 <style>
 /* ======================================================================
@@ -209,6 +209,12 @@ figcaption code,.colophon code,.keys code{background:none;padding:0;color:var(--
     text-transform:uppercase;color:var(--mute)}
   .plate{font-size:11.5px;padding:12px 13px}
 }
+html[lang="en"]    [lang="pt-BR"] { display: none }
+html[lang="pt-BR"] [lang="en"]    { display: none }
+.lang-sw{display:flex;gap:8px;padding-right:20px;margin:-18px 0 18px}
+.lang-sw button{font-family:inherit;font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:none;border:0;color:var(--mute);cursor:pointer;padding:0}
+.lang-sw button.on{color:var(--blue)}
+.lang-sw button:hover{color:var(--fg)}
 </style>
 </head>
 <body>
@@ -223,8 +229,10 @@ glyph plus a word, never a colour and never a badge. Panels are bordered, flush 
 carry no shadow, because a shadow would make output into an object.
 STORY: A developer sees a real multi-repo workspace catalogued, reads the verbatim command that
 produced it, and installs; an agent jumps to the contract and gets codes, exits and invariants.
+The page is bilingual (EN / pt-BR) with English as the no-JS default.
 VIEWPORT: Sticky section index left, marked with the board's own ▸ cursor; one hairline under the
-strip, the title, two declared reading paths; then the workspace itself. No hero.
+strip, the title, two declared reading paths, and a language switcher; then the workspace itself.
+No hero. English is the no-JS default.
 FORM: Terminal document, candidate 4 of 7 re-skinned after review, seed key 630164d4, mode read.
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
 -->
@@ -233,18 +241,23 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <aside class="index">
     <div class="brand">hydra</div>
     <div class="ver">v0.3.9 &middot; schema 3</div>
+    <div class="lang-sw" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="pt-BR" aria-pressed="false">PT-BR</button>
+    </div>
     <nav id="nav">
-      <a href="#worktrees"><span class="n">01</span>worktrees</a>
-      <a href="#install"><span class="n">02</span>install</a>
-      <a href="#model"><span class="n">03</span>the model</a>
-      <a href="#firstrun"><span class="n">04</span>first run</a>
-      <a href="#interactive"><span class="n">05</span>interactive</a>
-      <a href="#topic"><span class="n">06</span>a unit of work</a>
-      <a href="#current"><span class="n">07</span>staying current</a>
-      <a href="#contract"><span class="n">08</span>the contract</a>
-      <a href="#agents"><span class="n">09</span>for agents</a>
-      <a href="#recovery"><span class="n">10</span>recovery</a>
-      <a href="#surface"><span class="n">11</span>full surface</a>
+      <a href="#worktrees"><span class="n">01</span><span lang="en">worktrees</span><span lang="pt-BR">worktrees</span></a>
+      <a href="#install"><span class="n">02</span><span lang="en">install</span><span lang="pt-BR">instalação</span></a>
+      <a href="#model"><span class="n">03</span><span lang="en">the model</span><span lang="pt-BR">o modelo</span></a>
+      <a href="#firstrun"><span class="n">04</span><span lang="en">first run</span><span lang="pt-BR">primeira execução</span></a>
+      <a href="#interactive"><span class="n">05</span><span lang="en">interactive</span><span lang="pt-BR">interativo</span></a>
+      <a href="#topic"><span class="n">06</span><span lang="en">a unit of work</span><span lang="pt-BR">uma unidade de trabalho</span></a>
+      <a href="#current"><span class="n">07</span><span lang="en">staying current</span><span lang="pt-BR">mantendo-se atualizado</span></a>
+      <a href="#contract"><span class="n">08</span><span lang="en">the contract</span><span lang="pt-BR">o contrato</span></a>
+      <a href="#agents"><span class="n">09</span><span lang="en">for agents</span><span lang="pt-BR">para agentes</span></a>
+      <a href="#recovery"><span class="n">10</span><span lang="en">recovery</span><span lang="pt-BR">recuperação</span></a>
+      <a href="#surface"><span class="n">11</span><span lang="en">full surface</span><span lang="pt-BR">superfície completa</span></a>
+      <a href="#configuration"><span class="n">12</span><span lang="en">configuration</span><span lang="pt-BR">configuração</span></a>
     </nav>
     <div class="foot">go install<br>mssantosdev/hydra</div>
   </aside>
@@ -253,37 +266,43 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
     <header class="masthead">
       <div class="strip">
-        <span>worktrees across repositories</span>
+        <span><span lang="en">worktrees across repositories</span><span lang="pt-BR">worktrees entre repositórios</span></span>
         <span>github.com/mssantosdev/hydra</span>
       </div>
-      <h1>Git gives you one worktree in one repository. <em>A unit of work rarely stays in one.</em></h1>
-      <p class="sub">hydra records which worktree, on which branch, in which repository, belongs to
+      <h1><span lang="en">Git gives you one worktree in one repository. <em>A unit of work rarely stays in one.</em></span><span lang="pt-BR">O Git oferece um worktree por repositório. <em>Uma unidade de trabalho raramente fica em um só.</em></span></h1>
+      <p class="sub"><span lang="en">hydra records which worktree, on which branch, in which repository, belongs to
         which piece of work, and it <b>records</b> that rather than inferring it from a branch
         name. It owns identity, layout, freshness and reporting. It never merges, never rebases,
-        never resolves a conflict, and never talks to a forge.</p>
+        never resolves a conflict, and never talks to a forge.</span><span lang="pt-BR">O hydra registra qual worktree, em qual branch, em qual repositório, pertence a
+        qual unidade de trabalho, e <b>registra</b> isso em vez de inferir a partir do nome da branch.
+        Ele cuida de identidade, layout, atualização e relatórios. Nunca faz merge, nunca faz rebase,
+        nunca resolve conflito e nunca fala com um forge.</span></p>
 
       <div class="paths">
         <div>
-          <h3>if you are a developer</h3>
-          <p>Read down. Every panel is verbatim output from a real run, including its exit
-            status. Start at <a href="#install">install</a>.</p>
+          <h3><span lang="en">if you are a developer</span><span lang="pt-BR">se você é desenvolvedor</span></h3>
+          <p><span lang="en">Read down. Every panel is verbatim output from a real run, including its exit
+            status. Start at <a href="#install">install</a>.</span><span lang="pt-BR">Leia para baixo. Cada painel é saída literal de uma execução real, incluindo o
+            status de saída. Comece em <a href="#install">instalação</a>.</span></p>
         </div>
         <div>
-          <h3>if you are an agent</h3>
-          <p>Skip to <a href="#contract">the contract</a> for the envelope, the 23 error codes and
-            their exit statuses. Then run <code>hydra skill</code>.</p>
+          <h3><span lang="en">if you are an agent</span><span lang="pt-BR">se você é um agente</span></h3>
+          <p><span lang="en">Skip to <a href="#contract">the contract</a> for the envelope, the 23 error codes and
+            their exit statuses. Then run <code>hydra skill</code>.</span><span lang="pt-BR">Pule para <a href="#contract">o contrato</a> para o envelope, os 23 códigos de erro e
+            seus status de saída. Depois execute <code>hydra skill</code>.</span></p>
         </div>
       </div>
     </header>
 
     <!-- ================================================== 01 ============ -->
     <section id="worktrees" class="rv">
-      <div class="sh"><span class="num">&sect; 01</span><h2>The workspace</h2>
-        <span class="aside">hydra status &middot; hydra list</span></div>
+      <div class="sh"><span class="num">&sect; 01</span><h2><span lang="en">The workspace</span><span lang="pt-BR">O workspace</span></h2>
+        <span class="aside"><span lang="en">hydra status &middot; hydra list</span><span lang="pt-BR">hydra status &middot; hydra list</span></span></div>
 
-      <p>A workspace is a project holding groups of repositories. Every worktree is a real sibling
+      <p><span lang="en">A workspace is a project holding groups of repositories. Every worktree is a real sibling
         directory, never hidden inside a <code>.git</code>. This is the whole workspace in
-        one view.</p>
+        one view.</span><span lang="pt-BR">Um workspace é um projeto que agrupa repositórios. Cada worktree é um diretório irmão real,
+        nunca escondido dentro de um <code>.git</code>. Esta é a visão completa do workspace.</span></p>
 
       <div class="reg stack">
         <table>
@@ -303,14 +322,17 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       </div>
 
       <div class="mnote">
-        <span class="lbl">synthetic data</span>
-        <p><code>checkout-api</code>, <code>storefront-web</code>, <code>billing-worker</code> and
-          <code>PAY-4417</code> are invented fixtures. The commands and their output are real.</p>
+        <span class="lbl"><span lang="en">synthetic data</span><span lang="pt-BR">dados sintéticos</span></span>
+        <p><span lang="en"><code>checkout-api</code>, <code>storefront-web</code>, <code>billing-worker</code> and
+          <code>PAY-4417</code> are invented fixtures. The commands and their output are real.</span><span lang="pt-BR"><code>checkout-api</code>, <code>storefront-web</code>, <code>billing-worker</code> e
+          <code>PAY-4417</code> são fixtures inventados. Os comandos e suas saídas são reais.</span></p>
       </div>
 
-      <p>The same view as the tool draws it. Two worktrees carry the topic <code>PAY-4417</code>;
+      <p><span lang="en">The same view as the tool draws it. Two worktrees carry the topic <code>PAY-4417</code>;
         one of them is dirty, and neither has been pushed, so their upstream reads
-        <code>local-only</code> rather than a fabricated remote.</p>
+        <code>local-only</code> rather than a fabricated remote.</span><span lang="pt-BR">A mesma visão que a ferramenta desenha. Dois worktrees carregam o tópico <code>PAY-4417</code>;
+        um deles está sujo, e nenhum foi enviado ao remoto, então o upstream aparece como
+        <code>local-only</code> em vez de um remoto fabricado.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra status --output text</b>
@@ -329,11 +351,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
  storefront-web      <span class="bl">main               </span><span class="dim">origin/main   </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
  storefront-web-st…  <span class="bl">stage              </span><span class="dim">origin/stage  </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
 </div>
-        <figcaption><span>plate 1 &middot; <span class="v">verbatim</span> &middot; the table above is this, typeset</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 1 &middot; <span class="v">verbatim</span> &middot; the table above is this, typeset</span><span lang="pt-BR">placa 1 &middot; <span class="v">literal</span> &middot; a tabela acima é isto, diagramado</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p><code>list</code> is the narrower view of the same rows: grouped by group, without the
-        upstream column and without the counts line.</p>
+      <p><span lang="en"><code>list</code> is the narrower view of the same rows: grouped by group, without the
+        upstream column and without the counts line.</span><span lang="pt-BR"><code>list</code> é a visão mais estreita das mesmas linhas: agrupada por grupo, sem a
+        coluna upstream e sem a linha de totais.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra list --output text</b>
@@ -350,54 +373,62 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
  storefront-web                    <span class="bl">main               </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
  storefront-web-stage              <span class="bl">stage              </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
 </div>
-        <figcaption><span>plate 2 &middot; <span class="v">verbatim</span> &middot; <code>&#9656;</code> marks a group</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 2 &middot; <span class="v">verbatim</span> &middot; <code>&#9656;</code> marks a group</span><span lang="pt-BR">placa 2 &middot; <span class="v">literal</span> &middot; <code>&#9656;</code> marca um grupo</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
     </section>
 
     <!-- ================================================== 02 ============ -->
     <section id="install" class="rv">
-      <div class="sh"><span class="num">&sect; 02</span><h2>Install</h2>
-        <span class="aside">one binary, no cgo</span></div>
+      <div class="sh"><span class="num">&sect; 02</span><h2><span lang="en">Install</span><span lang="pt-BR">Instalação</span></h2>
+        <span class="aside"><span lang="en">one binary, no cgo</span><span lang="pt-BR">um binário, sem cgo</span></span></div>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>go install github.com/mssantosdev/hydra@latest</b>
 <span class="p">$</span> <b>hydra --version</b>
 <span class="hi">v0.3.9</span>
 </div>
-        <figcaption><span>plate 3 &middot; requires go 1.24+</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 3 &middot; requires go 1.24+</span><span lang="pt-BR">placa 3 &middot; requer go 1.24+</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p>It builds with <code>CGO_ENABLED=0</code>, so there is no toolchain to install on the
-        target and no database to provision. State is two YAML files and git itself.</p>
+      <p><span lang="en">It builds with <code>CGO_ENABLED=0</code>, so there is no toolchain to install on the
+        target and no database to provision. State is two YAML files and git itself.</span><span lang="pt-BR">Compila com <code>CGO_ENABLED=0</code>, então não há toolchain para instalar no
+        destino nem banco de dados para provisionar. O estado são dois arquivos YAML e o próprio git.</span></p>
 
       <div class="mnote">
-        <span class="lbl">appearance</span>
-        <p>The default theme is <code>terminal</code>: every colour is an ANSI slot and no
+        <span class="lbl"><span lang="en">appearance</span><span lang="pt-BR">aparência</span></span>
+        <p><span lang="en">The default theme is <code>terminal</code>: every colour is an ANSI slot and no
           background is painted, so hydra inherits the palette your terminal already has rather
           than imposing one. <code>hydra config set theme hydra</code> selects the fixed palette
           instead &mdash; the one this page is drawn in &mdash; and <code>contrib/</code> carries
-          generated Ghostty and omp themes if you would rather move the terminal to hydra.</p>
+          generated Ghostty and omp themes if you would rather move the terminal to hydra.</span><span lang="pt-BR">O tema padrão é <code>terminal</code>: cada cor é um slot ANSI e nenhum
+          fundo é pintado, então o hydra herda a paleta que seu terminal já tem em vez de
+          impor uma. <code>hydra config set theme hydra</code> seleciona a paleta fixa
+          &mdash; a mesma desta página &mdash; e <code>contrib/</code> traz temas Ghostty e omp
+          gerados se você preferir mover o terminal para o hydra.</span></p>
       </div>
 
-      <p><strong>Shell integration is optional but wanted.</strong> A child process cannot change
+      <p><span lang="en"><strong>Shell integration is optional but wanted.</strong> A child process cannot change
         its parent's directory, so <code>hydra switch</code> prints a path and exits 0 on its own.
-        With the helper installed it changes directory instead.</p>
+        With the helper installed it changes directory instead.</span><span lang="pt-BR"><strong>A integração com o shell é opcional, mas desejável.</strong> Um processo filho não pode mudar
+        o diretório do pai, então <code>hydra switch</code> imprime um caminho e sai com 0 sozinho.
+        Com o helper instalado, ele muda de diretório.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra init-shell</b>       <span class="dim"># installs the helper and a loader block</span>
 <span class="p">$</span> <b>hydra switch checkout-api-stage</b>
 </div>
-        <figcaption><span>plate 4 &middot; without the helper, exit 3 <code>shell_helper_missing</code></span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 4 &middot; without the helper, exit 3 <code>shell_helper_missing</code></span><span lang="pt-BR">placa 4 &middot; sem o helper, saída 3 <code>shell_helper_missing</code></span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
     </section>
 
     <!-- ================================================== 03 ============ -->
     <section id="model" class="rv">
-      <div class="sh"><span class="num">&sect; 03</span><h2>The model</h2>
-        <span class="aside">project → group → repo → worktree</span></div>
+      <div class="sh"><span class="num">&sect; 03</span><h2><span lang="en">The model</span><span lang="pt-BR">O modelo</span></h2>
+        <span class="aside"><span lang="en">project → group → repo → worktree</span><span lang="pt-BR">projeto → grupo → repo → worktree</span></span></div>
 
-      <p>Four nouns, and a fifth laid over them. Git data lives once, in a bare repository under
-        <code>.bare/</code>. Every worktree is a plain directory you can <code>cd</code> into.</p>
+      <p><span lang="en">Four nouns, and a fifth laid over them. Git data lives once, in a bare repository under
+        <code>.bare/</code>. Every worktree is a plain directory you can <code>cd</code> into.</span><span lang="pt-BR">Quatro substantivos, e um quinto sobreposto. Os dados do git vivem uma vez, em um repositório bare em
+        <code>.bare/</code>. Cada worktree é um diretório simples no qual você pode dar <code>cd</code>.</span></p>
 
       <div class="tree">shop<span class="c">/</span>                                  <span class="c"># project — one workspace</span>
 ├── .hydra<span class="c">/</span>
@@ -412,22 +443,26 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     └── <span class="k">checkout-api-feat-split-tender</span><span class="c">/</span>  <span class="c">← topic PAY-4417</span>
 </div>
 
-      <p>A <strong>topic</strong> is the fifth noun: identity layered over worktrees. It is not a
+      <p><span lang="en">A <strong>topic</strong> is the fifth noun: identity layered over worktrees. It is not a
         mode and not a lifecycle. Unlabelled worktrees stay first-class forever, and
-        <code>hydra topic attach</code> promotes work you already started, with no migration.</p>
+        <code>hydra topic attach</code> promotes work you already started, with no migration.</span><span lang="pt-BR">Um <strong>tópico</strong> é o quinto substantivo: identidade sobreposta aos worktrees. Não é um
+        modo nem um ciclo de vida. Worktrees sem rótulo permanecem de primeira classe para sempre, e
+        <code>hydra topic attach</code> promove trabalho que você já começou, sem migração.</span></p>
 
       <div class="mnote">
-        <span class="lbl">a deliberate refusal</span>
-        <p>Membership is <strong>recorded, never inferred</strong>. hydra will not parse
+        <span class="lbl"><span lang="en">a deliberate refusal</span><span lang="pt-BR">uma recusa deliberada</span></span>
+        <p><span lang="en">Membership is <strong>recorded, never inferred</strong>. hydra will not parse
           <code>feat/PAY-4417-split</code> and guess. Branch naming is a team convention, and a tool
-          that guesses at it is wrong on the day the convention changes.</p>
+          that guesses at it is wrong on the day the convention changes.</span><span lang="pt-BR">A associação é <strong>registrada, nunca inferida</strong>. O hydra não vai analisar
+          <code>feat/PAY-4417-split</code> e adivinhar. Nomear branches é convenção de equipe, e uma ferramenta
+          que adivinha erra no dia em que a convenção muda.</span></p>
       </div>
     </section>
 
     <!-- ================================================== 04 ============ -->
     <section id="firstrun" class="rv">
-      <div class="sh"><span class="num">&sect; 04</span><h2>First run</h2>
-        <span class="aside">init, repo add</span></div>
+      <div class="sh"><span class="num">&sect; 04</span><h2><span lang="en">First run</span><span lang="pt-BR">Primeira execução</span></h2>
+        <span class="aside"><span lang="en">init, repo add</span><span lang="pt-BR">init, repo add</span></span></div>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra init --project-name shop</b>
@@ -441,11 +476,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   hydra repo add &lt;url&gt; --as &lt;alias&gt; --group &lt;group&gt;
   hydra repo add &lt;path&gt; --adopt --group &lt;group&gt;
 </div>
-        <figcaption><span>plate 5 &middot; <span class="v">verbatim</span> &middot; every command ends by naming what comes next</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 5 &middot; <span class="v">verbatim</span> &middot; every command ends by naming what comes next</span><span lang="pt-BR">placa 5 &middot; <span class="v">literal</span> &middot; cada comando termina indicando o próximo passo</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p>Now register a repository. One command clones the bare repo, records it in the manifest,
-        and materialises a worktree per branch you named.</p>
+      <p><span lang="en">Now register a repository. One command clones the bare repo, records it in the manifest,
+        and materialises a worktree per branch you named.</span><span lang="pt-BR">Agora registre um repositório. Um comando clona o bare repo, registra no manifesto
+        e materializa um worktree por branch que você nomeou.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra repo add git@github.com:acme/checkout-api.git \
@@ -461,28 +497,33 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   ./services/checkout-api        <span class="dim">(main)</span>
   ./services/checkout-api-stage  <span class="dim">(stage)</span>
 </div>
-        <figcaption><span>plate 6 &middot; <span class="v">verbatim</span> &middot; git progress goes to stderr, so stdout stays parseable</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 6 &middot; <span class="v">verbatim</span> &middot; git progress goes to stderr, so stdout stays parseable</span><span lang="pt-BR">placa 6 &middot; <span class="v">literal</span> &middot; progresso do git vai para stderr, stdout permanece parseável</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
       <div class="mnote">
-        <span class="lbl">naming</span>
-        <p>The unsuffixed directory is the repository's <strong>default branch</strong>, not the
-          first one you listed in <code>--branches</code>. Order does not decide the layout.</p>
+        <span class="lbl"><span lang="en">naming</span><span lang="pt-BR">nomes</span></span>
+        <p><span lang="en">The unsuffixed directory is the repository's <strong>default branch</strong>, not the
+          first one you listed in <code>--branches</code>. Order does not decide the layout.</span><span lang="pt-BR">O diretório sem sufixo é a <strong>branch padrão</strong> do repositório, não a
+          primeira listada em <code>--branches</code>. A ordem não define o layout.</span></p>
       </div>
 
-      <p>Already have a checkout you don't want to re-clone? <code>hydra repo add &lt;path&gt;
-        --adopt</code> tracks it in place.</p>
+      <p><span lang="en">Already have a checkout you don't want to re-clone? <code>hydra repo add &lt;path&gt;
+        --adopt</code> tracks it in place.</span><span lang="pt-BR">Já tem um checkout que não quer clonar de novo? <code>hydra repo add &lt;path&gt;
+        --adopt</code> rastreia no lugar.</span></p>
     </section>
 
     <!-- ================================================== 05 ============ -->
     <section id="interactive" class="rv">
-      <div class="sh"><span class="num">&sect; 05</span><h2>Interactive routes</h2>
-        <span class="aside">the human surface</span></div>
+      <div class="sh"><span class="num">&sect; 05</span><h2><span lang="en">Interactive routes</span><span lang="pt-BR">Rotas interativas</span></h2>
+        <span class="aside"><span lang="en">the human surface</span><span lang="pt-BR">a superfície humana</span></span></div>
 
-      <p>Run a mutating command with no arguments on a terminal and it asks. The forms are the
+      <p><span lang="en">Run a mutating command with no arguments on a terminal and it asks. The forms are the
         human-facing route, not a fallback: <code>new</code>, <code>add</code>, <code>sync</code>,
         <code>config</code>, <code>remove</code>, <code>switch</code>, <code>topic</code> and
-        <code>repo add</code> all have one.</p>
+        <code>repo add</code> all have one.</span><span lang="pt-BR">Execute um comando mutável sem argumentos em um terminal e ele pergunta. Os formulários são a
+        rota voltada ao humano, não um fallback: <code>new</code>, <code>add</code>, <code>sync</code>,
+        <code>config</code>, <code>remove</code>, <code>switch</code>, <code>topic</code> e
+        <code>repo add</code> têm um.</span></p>
 
       <figure>
         <div class="plate form"><span class="p">$</span> <b>hydra add</b>
@@ -492,7 +533,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ┃   services/checkout-api
 ┃   services/storefront-web
 </div>
-        <figcaption><span>plate 7 &middot; <span class="v">observed in a pty</span></span><span>step 1 of 2</span></figcaption>
+        <figcaption><span><span lang="en">plate 7 &middot; <span class="v">observed in a pty</span></span><span lang="pt-BR">placa 7 &middot; <span class="v">observado em um pty</span></span></span><span><span lang="en">step 1 of 2</span><span lang="pt-BR">passo 1 de 2</span></span></figcaption>
       </figure>
 
       <figure>
@@ -500,11 +541,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ┃ <span class="vi">&gt;</span> + new branch…
 ┃   prod
 </div>
-        <figcaption><span>plate 8 &middot; <span class="v">observed</span> &middot; main and stage are absent because they already have worktrees</span><span>step 2 of 2</span></figcaption>
+        <figcaption><span><span lang="en">plate 8 &middot; <span class="v">observed</span> &middot; main and stage are absent because they already have worktrees</span><span lang="pt-BR">placa 8 &middot; <span class="v">observado</span> &middot; main e stage estão ausentes porque já têm worktrees</span></span><span><span lang="en">step 2 of 2</span><span lang="pt-BR">passo 2 de 2</span></span></figcaption>
       </figure>
 
-      <p>Only <code>prod</code> is offered. hydra filters out branches that already have a worktree,
-        so the list is what you can actually create, not everything that exists.</p>
+      <p><span lang="en">Only <code>prod</code> is offered. hydra filters out branches that already have a worktree,
+        so the list is what you can actually create, not everything that exists.</span><span lang="pt-BR">Só <code>prod</code> é oferecido. O hydra filtra branches que já têm worktree,
+        então a lista é o que você pode criar de fato, não tudo que existe.</span></p>
 
       <figure>
         <div class="plate"><span class="ok">✓</span> Worktree created
@@ -516,13 +558,16 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <span class="dim">cd services/checkout-api-prod</span>
 <span class="dim">hydra switch checkout-api-prod</span>
 </div>
-        <figcaption><span>plate 9 &middot; <span class="v">verbatim</span> &middot; it hands back both ways to get there</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 9 &middot; <span class="v">verbatim</span> &middot; it hands back both ways to get there</span><span lang="pt-BR">placa 9 &middot; <span class="v">literal</span> &middot; devolve os dois caminhos para chegar</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p>Reporting has a route of its own. Run <code>hydra status</code> bare on a terminal and it
+      <p><span lang="en">Reporting has a route of its own. Run <code>hydra status</code> bare on a terminal and it
         opens a full-screen board instead of printing: browse, filter, and leave with a path. Every
         refresh re-reads git rather than patching the screen, so it cannot drift from disk.
-        <code>hydra ui</code> survives as a hidden, deprecated alias of the same thing.</p>
+        <code>hydra ui</code> survives as a hidden, deprecated alias of the same thing.</span><span lang="pt-BR">O relatório tem rota própria. Execute <code>hydra status</code> sem argumentos em um terminal e ele
+        abre um painel em tela cheia em vez de imprimir: navegue, filtre e saia com um caminho. Cada
+        refresh re-lê o git em vez de patchar a tela, então não desvia do disco.
+        <code>hydra ui</code> sobrevive como alias oculto e depreciado do mesmo.</span></p>
 
       <figure>
         <div class="plate form"><span class="p">$</span> <b>hydra status</b>
@@ -537,36 +582,46 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <span class="dim">1/2  9 worktree(s)                                                        as of 2026-08-06T14:44:03Z</span>
 <span class="dim">filter </span><span class="hi">dirty</span><span class="dim"> · ↑↓ move · enter print path · y copy · / filter · d dirty · r refresh · q quit</span>
 </div>
-        <figcaption><span>plate 10 &middot; <span class="v">observed in a pty</span> at 100 columns &middot; filtered to dirty, freshness dated in the footer</span><span>cd "$(hydra status)"</span></figcaption>
+        <figcaption><span><span lang="en">plate 10 &middot; <span class="v">observed in a pty</span> at 100 columns &middot; filtered to dirty, freshness dated in the footer</span><span lang="pt-BR">placa 10 &middot; <span class="v">observado em um pty</span> com 100 colunas &middot; filtrado a dirty, atualização datada no rodapé</span></span><span>cd "$(hydra status)"</span></figcaption>
       </figure>
-      <p class="keys"><kbd>↑</kbd><kbd>↓</kbd> move &nbsp; <kbd>enter</kbd> print path &nbsp;
+      <p class="keys"><span lang="en"><kbd>↑</kbd><kbd>↓</kbd> move &nbsp; <kbd>enter</kbd> print path &nbsp;
         <kbd>y</kbd> copy path &nbsp; <kbd>/</kbd> filter &nbsp; <kbd>d</kbd> dirty &nbsp;
-        <kbd>r</kbd> refresh &nbsp; <kbd>q</kbd> quit</p>
+        <kbd>r</kbd> refresh &nbsp; <kbd>q</kbd> quit</span><span lang="pt-BR"><kbd>↑</kbd><kbd>↓</kbd> mover &nbsp; <kbd>enter</kbd> imprimir caminho &nbsp;
+        <kbd>y</kbd> copiar caminho &nbsp; <kbd>/</kbd> filtrar &nbsp; <kbd>d</kbd> dirty &nbsp;
+        <kbd>r</kbd> atualizar &nbsp; <kbd>q</kbd> sair</span></p>
 
-      <p>The board draws on stderr and prints only the chosen path on stdout, which is why
+      <p><span lang="en">The board draws on stderr and prints only the chosen path on stdout, which is why
         <code>cd "$(hydra status)"</code> composes. Quitting with <code>q</code> chooses nothing,
-        prints nothing, and still exits 0.</p>
+        prints nothing, and still exits 0.</span><span lang="pt-BR">O painel desenha em stderr e imprime só o caminho escolhido em stdout, por isso
+        <code>cd "$(hydra status)"</code> compõe. Sair com <code>q</code> não escolhe nada,
+        não imprime nada e ainda sai com 0.</span></p>
 
-      <p>The filter words are the same ones <code>--filter</code> takes:
+      <p><span lang="en">The filter words are the same ones <code>--filter</code> takes:
         <code>dirty</code>, <code>behind</code> and <code>branch:&lt;glob&gt;</code>, where
         <code>*</code> does not cross a <code>/</code>. What you learn here types into a
-        script unchanged, and a test pins the two together.</p>
+        script unchanged, and a test pins the two together.</span><span lang="pt-BR">As palavras de filtro são as mesmas que <code>--filter</code> aceita:
+        <code>dirty</code>, <code>behind</code> e <code>branch:&lt;glob&gt;</code>, onde
+        <code>*</code> não cruza <code>/</code>. O que você aprende aqui digita em um
+        script sem mudança, e um teste fixa os dois juntos.</span></p>
 
       <div class="mnote">
-        <span class="lbl">still open</span>
-        <p>The board browses and selects; it does not mutate. Acting on a selection still means
+        <span class="lbl"><span lang="en">still open</span><span lang="pt-BR">ainda em aberto</span></span>
+        <p><span lang="en">The board browses and selects; it does not mutate. Acting on a selection still means
           dropping to <code>sync</code>, <code>remove</code> or <code>add</code>, which have their
-          own forms. Wiring those in is the next increment.</p>
+          own forms. Wiring those in is the next increment.</span><span lang="pt-BR">O painel navega e seleciona; não muta. Agir sobre uma seleção ainda significa
+          ir a <code>sync</code>, <code>remove</code> ou <code>add</code>, que têm seus
+          próprios formulários. Integrar isso é o próximo incremento.</span></p>
       </div>
     </section>
 
     <!-- ================================================== 06 ============ -->
     <section id="topic" class="rv">
-      <div class="sh"><span class="num">&sect; 06</span><h2>A unit of work</h2>
-        <span class="aside">start, topic, run</span></div>
+      <div class="sh"><span class="num">&sect; 06</span><h2><span lang="en">A unit of work</span><span lang="pt-BR">Uma unidade de trabalho</span></h2>
+        <span class="aside"><span lang="en">start, topic, run</span><span lang="pt-BR">start, topic, run</span></span></div>
 
-      <p>One branch, several repositories, one command. The topic id is whatever you already use:
-        a ticket, an incident, a name.</p>
+      <p><span lang="en">One branch, several repositories, one command. The topic id is whatever you already use:
+        a ticket, an incident, a name.</span><span lang="pt-BR">Uma branch, vários repositórios, um comando. O id do tópico é o que você já usa:
+        um ticket, um incidente, um nome.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra start feat/split-tender \
@@ -577,7 +632,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <span class="bl">new</span>  billing-worker     ./services/billing-worker-feat-split-tender
   <span class="bl">new</span>  checkout-api       ./services/checkout-api-feat-split-tender
 </div>
-        <figcaption><span>plate 11 &middot; <span class="v">verbatim</span> &middot; convergent: run it twice and the second is a no-op at exit 0</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 11 &middot; <span class="v">verbatim</span> &middot; convergent: run it twice and the second is a no-op at exit 0</span><span lang="pt-BR">placa 11 &middot; <span class="v">literal</span> &middot; convergente: executar duas vezes e a segunda é no-op com saída 0</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
       <figure>
@@ -590,12 +645,14 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   billing-worker           <span class="bl">feat/split-tender</span>            <span class="ok">present</span>
   checkout-api             <span class="bl">feat/split-tender</span>            <span class="ok">present</span>
 </div>
-        <figcaption><span>plate 12 &middot; <span class="v">verbatim</span> &middot; <code>present</code> means the directory is on disk, checked now</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 12 &middot; <span class="v">verbatim</span> &middot; <code>present</code> means the directory is on disk, checked now</span><span lang="pt-BR">placa 12 &middot; <span class="v">literal</span> &middot; <code>present</code> significa que o diretório está no disco, verificado agora</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p>Then act on the whole topic at once. Everything after <code>--</code> is handed to exec
+      <p><span lang="en">Then act on the whole topic at once. Everything after <code>--</code> is handed to exec
         directly. There is <strong>no implicit shell</strong>, so no quoting surprises. Pass
-        <code>-- sh -c '…'</code> when you want one.</p>
+        <code>-- sh -c '…'</code> when you want one.</span><span lang="pt-BR">Depois atue no tópico inteiro de uma vez. Tudo após <code>--</code> vai direto ao exec.
+        Não há <strong>shell implícito</strong>, então sem surpresas de aspas. Passe
+        <code>-- sh -c '…'</code> quando quiser um.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra run --topic PAY-4417 --output text -- git rev-parse --abbrev-ref HEAD</b>
@@ -607,30 +664,37 @@ feat/split-tender
   <span class="ok">ok</span>   billing-worker/feat/split-tender <span class="dim">3ms</span>
   <span class="ok">ok</span>   checkout-api/feat/split-tender <span class="dim">3ms</span>
 </div>
-        <figcaption><span>plate 13 &middot; <span class="v">verbatim</span> &middot; child output is attributed per worktree</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 13 &middot; <span class="v">verbatim</span> &middot; child output is attributed per worktree</span><span lang="pt-BR">placa 13 &middot; <span class="v">literal</span> &middot; saída filha atribuída por worktree</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p>Selectors <strong>intersect</strong>: <code>--topic</code>, <code>--repos</code>,
+      <p><span lang="en">Selectors <strong>intersect</strong>: <code>--topic</code>, <code>--repos</code>,
         <code>--group</code>, <code>--all</code> and
         <code>--filter dirty|behind|branch:&lt;glob&gt;</code> narrow together rather than
-        competing. A selector that matches nothing is an empty result, not a silent everything.</p>
+        competing. A selector that matches nothing is an empty result, not a silent everything.</span><span lang="pt-BR">Seletores <strong>intersectam</strong>: <code>--topic</code>, <code>--repos</code>,
+        <code>--group</code>, <code>--all</code> e
+        <code>--filter dirty|behind|branch:&lt;glob&gt;</code> restringem juntos em vez de
+        competir. Um seletor sem match é resultado vazio, não tudo silenciosamente.</span></p>
     </section>
 
     <!-- ================================================== 07 ============ -->
     <section id="current" class="rv">
-      <div class="sh"><span class="num">&sect; 07</span><h2>Staying current</h2>
-        <span class="aside">sync, and dated freshness</span></div>
+      <div class="sh"><span class="num">&sect; 07</span><h2><span lang="en">Staying current</span><span lang="pt-BR">Mantendo-se atualizado</span></h2>
+        <span class="aside"><span lang="en">sync, and dated freshness</span><span lang="pt-BR">sync e atualização datada</span></span></div>
 
       <div class="mnote">
-        <span class="lbl">the one thing to understand</span>
-        <p>hydra <strong>does not fetch to answer a query</strong>. So <code>behind: 0</code> means
+        <span class="lbl"><span lang="en">the one thing to understand</span><span lang="pt-BR">o essencial</span></span>
+        <p><span lang="en">hydra <strong>does not fetch to answer a query</strong>. So <code>behind: 0</code> means
           &ldquo;as of the last fetch&rdquo;, and every count is stamped with
           <code>upstream_as_of</code> taken from the bare repo's <code>FETCH_HEAD</code>. A dated
-          answer beats a confident one.</p>
+          answer beats a confident one.</span><span lang="pt-BR">O hydra <strong>não faz fetch para responder uma consulta</strong>. Então <code>behind: 0</code> significa
+          &ldquo;desde o último fetch&rdquo;, e cada contagem traz
+          <code>upstream_as_of</code> do <code>FETCH_HEAD</code> do bare repo. Uma resposta datada
+          vale mais que uma confiante.</span></p>
       </div>
 
-      <p><code>hydra sync</code> is where fetching happens. On a terminal it shows you what has
-        updates and lets you choose.</p>
+      <p><span lang="en"><code>hydra sync</code> is where fetching happens. On a terminal it shows you what has
+        updates and lets you choose.</span><span lang="pt-BR"><code>hydra sync</code> é onde o fetch ocorre. Em um terminal mostra o que tem
+        atualizações e deixa você escolher.</span></p>
 
       <figure>
         <div class="plate form"><span class="ok"> ✓ </span> Found 2 worktree(s) with available updates
@@ -644,13 +708,15 @@ feat/split-tender
 ┃ <span class="vi">&gt;</span> <span class="ok">✓</span> checkout-api    main            1        clean
 ┃   <span class="ok">✓</span> storefront-web  main            1        clean
 </div>
-        <figcaption><span>plate 14 &middot; <span class="v">observed in a pty</span></span><span>clean rows pre-selected</span></figcaption>
+        <figcaption><span><span lang="en">plate 14 &middot; <span class="v">observed in a pty</span></span><span lang="pt-BR">placa 14 &middot; <span class="v">observado em um pty</span></span></span><span><span lang="en">clean rows pre-selected</span><span lang="pt-BR">linhas limpas pré-selecionadas</span></span></figcaption>
       </figure>
-      <p class="keys"><kbd>x</kbd> toggle &nbsp; <kbd>↑</kbd><kbd>↓</kbd> move &nbsp; <kbd>/</kbd> filter
-        &nbsp; <kbd>enter</kbd> submit &nbsp; <kbd>ctrl+a</kbd> select none</p>
+      <p class="keys"><span lang="en"><kbd>x</kbd> toggle &nbsp; <kbd>↑</kbd><kbd>↓</kbd> move &nbsp; <kbd>/</kbd> filter
+        &nbsp; <kbd>enter</kbd> submit &nbsp; <kbd>ctrl+a</kbd> select none</span><span lang="pt-BR"><kbd>x</kbd> alternar &nbsp; <kbd>↑</kbd><kbd>↓</kbd> mover &nbsp; <kbd>/</kbd> filtrar
+        &nbsp; <kbd>enter</kbd> enviar &nbsp; <kbd>ctrl+a</kbd> desmarcar tudo</span></p>
 
-      <p>A dirty worktree is treated differently, and visibly so: its marker is <code>•</code> where
-        a clean one is <code>✓</code>, and it is <strong>not</strong> pre-selected.</p>
+      <p><span lang="en">A dirty worktree is treated differently, and visibly so: its marker is <code>•</code> where
+        a clean one is <code>✓</code>, and it is <strong>not</strong> pre-selected.</span><span lang="pt-BR">Um worktree sujo é tratado diferente, e visivelmente: o marcador é <code>•</code> onde
+        um limpo é <code>✓</code>, e <strong>não</strong> é pré-selecionado.</span></p>
 
       <figure>
         <div class="plate form">┃ <span class="vi">&gt;</span> <span class="wn">•</span> checkout-api    main            1        <span class="wn">! 1 changes</span>
@@ -662,11 +728,12 @@ feat/split-tender
 ┃   Discard all changes (reset --hard)
 ┃   Skip this worktree
 </div>
-        <figcaption><span>plate 15 &middot; <span class="v">observed</span> &middot; asked per worktree, never assumed</span><span>3 explicit outcomes</span></figcaption>
+        <figcaption><span><span lang="en">plate 15 &middot; <span class="v">observed</span> &middot; asked per worktree, never assumed</span><span lang="pt-BR">placa 15 &middot; <span class="v">observado</span> &middot; perguntado por worktree, nunca assumido</span></span><span><span lang="en">3 explicit outcomes</span><span lang="pt-BR">3 desfechos explícitos</span></span></figcaption>
       </figure>
 
-      <p>Verified rather than asserted: with a local edit present and the branch one commit behind,
-        the stash path fast-forwarded the worktree and the edit was still there afterwards.</p>
+      <p><span lang="en">Verified rather than asserted: with a local edit present and the branch one commit behind,
+        the stash path fast-forwarded the worktree and the edit was still there afterwards.</span><span lang="pt-BR">Verificado em vez de afirmado: com edição local e branch um commit atrás,
+        o caminho stash fez fast-forward do worktree e a edição ainda estava lá depois.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra sync --yes --output json | jq -c '{outcome,summary}'</b>
@@ -675,21 +742,24 @@ feat/split-tender
 <span class="p">$</span> <b>hydra sync --yes; echo "exit $?"</b>
 <span class="dim">exit 4</span>
 </div>
-        <figcaption><span>plate 16 &middot; a fetch failure on one remote is a <span class="v">partial</span>, never a silent success</span><span class="xp">exit 4</span></figcaption>
+        <figcaption><span><span lang="en">plate 16 &middot; a fetch failure on one remote is a <span class="v">partial</span>, never a silent success</span><span lang="pt-BR">placa 16 &middot; falha de fetch em um remoto é <span class="v">partial</span>, nunca sucesso silencioso</span></span><span class="xp"><span lang="en">exit 4</span><span lang="pt-BR">saída 4</span></span></figcaption>
       </figure>
 
-      <p>One unreachable remote does not stop the reachable ones from pulling, and the failure is
+      <p><span lang="en">One unreachable remote does not stop the reachable ones from pulling, and the failure is
         still reported. The exit status is derived from the envelope, so a command cannot print
-        <code>partial</code> and exit 0.</p>
+        <code>partial</code> and exit 0.</span><span lang="pt-BR">Um remoto inacessível não impede os acessíveis de fazer pull, e a falha ainda é
+        reportada. O status de saída vem do envelope, então um comando não pode imprimir
+        <code>partial</code> e sair com 0.</span></p>
     </section>
 
     <!-- ================================================== 08 ============ -->
     <section id="contract" class="rv">
-      <div class="sh"><span class="num">&sect; 08</span><h2>The contract</h2>
-        <span class="aside">for anything that parses</span></div>
+      <div class="sh"><span class="num">&sect; 08</span><h2><span lang="en">The contract</span><span lang="pt-BR">O contrato</span></h2>
+        <span class="aside"><span lang="en">for anything that parses</span><span lang="pt-BR">para quem parseia</span></span></div>
 
-      <p class="wide">One envelope, on stdout, per invocation. <code>--output json</code> is implied
-        whenever stdout is not a terminal, so a pipe already gets JSON without asking.</p>
+      <p class="wide"><span lang="en">One envelope, on stdout, per invocation. <code>--output json</code> is implied
+        whenever stdout is not a terminal, so a pipe already gets JSON without asking.</span><span lang="pt-BR">Um envelope, em stdout, por invocação. <code>--output json</code> é implícito
+        quando stdout não é um terminal, então um pipe já recebe JSON sem pedir.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra path nonexistent --output json</b>
@@ -705,15 +775,18 @@ feat/split-tender
   <span class="bl">"warnings"</span>: []
 }
 </div>
-        <figcaption><span>plate 17 &middot; <span class="v">verbatim</span></span><span class="xe">exit 1</span></figcaption>
+        <figcaption><span><span lang="en">plate 17 &middot; <span class="v">verbatim</span></span><span lang="pt-BR">placa 17 &middot; <span class="v">literal</span></span></span><span class="xe"><span lang="en">exit 1</span><span lang="pt-BR">saída 1</span></span></figcaption>
       </figure>
 
-      <p><strong>Branch on <code>error.code</code>, never on message wording.</strong> Codes are
+      <p><span lang="en"><strong>Branch on <code>error.code</code>, never on message wording.</strong> Codes are
         stable across versions; messages are not. There is no <code>exit</code> field in the
-        envelope; the process status carries it.</p>
+        envelope; the process status carries it.</span><span lang="pt-BR"><strong>Branch em <code>error.code</code>, nunca na mensagem.</strong> Códigos são
+        estáveis entre versões; mensagens não. Não há campo <code>exit</code> no
+        envelope; o status do processo carrega isso.</span></p>
 
-      <p>An unrecognised command answers with the whole surface and a next step rather than a
-        stack trace:</p>
+      <p><span lang="en">An unrecognised command answers with the whole surface and a next step rather than a
+        stack trace:</span><span lang="pt-BR">Um comando não reconhecido responde com a superfície inteira e um próximo passo em vez de
+        stack trace:</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra clone --output json</b>
@@ -731,81 +804,86 @@ feat/split-tender
   ]
 }
 </div>
-        <figcaption><span>plate 18 &middot; <span class="v">verbatim</span> &middot; <code>next[]</code> is argv plus a reason, never auto-run</span><span class="xe">exit 1</span></figcaption>
+        <figcaption><span><span lang="en">plate 18 &middot; <span class="v">verbatim</span> &middot; <code>next[]</code> is argv plus a reason, never auto-run</span><span lang="pt-BR">placa 18 &middot; <span class="v">literal</span> &middot; <code>next[]</code> é argv mais um motivo, nunca auto-run</span></span><span class="xe"><span lang="en">exit 1</span><span lang="pt-BR">saída 1</span></span></figcaption>
       </figure>
 
-      <h3 class="h3">23 codes, 8 exit statuses</h3>
+      <h3 class="h3"><span lang="en">23 codes, 8 exit statuses</span><span lang="pt-BR">23 códigos, 8 status de saída</span></h3>
 
       <div class="exits">
-        <div><div class="e ok">0</div><div class="n">success</div>
-          <ul><li>also a convergent no-op</li></ul></div>
-        <div><div class="e">1</div><div class="n">general failure</div>
+        <div><div class="e ok">0</div><div class="n"><span lang="en">success</span><span lang="pt-BR">sucesso</span></div>
+          <ul><li><span lang="en">also a convergent no-op</span><span lang="pt-BR">também um no-op convergente</span></li></ul></div>
+        <div><div class="e">1</div><div class="n"><span lang="en">general failure</span><span lang="pt-BR">falha geral</span></div>
           <ul><li>bare_missing</li><li>branch_provider_failed</li><li>branch_unknown</li><li>git_failed</li><li>hook_failed</li><li>internal</li><li>project_exists</li><li>repo_unknown</li><li>topic_conflict</li><li>topic_unknown</li><li>unknown_command</li><li>worktree_exists</li><li>worktree_name_conflict</li><li>worktree_unknown</li></ul></div>
-        <div><div class="e">2</div><div class="n">wrong place / version</div>
+        <div><div class="e">2</div><div class="n"><span lang="en">wrong place / version</span><span lang="pt-BR">lugar / versão errada</span></div>
           <ul><li>config_version_unsupported</li><li>not_in_project</li><li>project_unknown</li><li>state_version_unsupported</li></ul></div>
-        <div><div class="e">3</div><div class="n">shell helper</div>
+        <div><div class="e">3</div><div class="n"><span lang="en">shell helper</span><span lang="pt-BR">helper de shell</span></div>
           <ul><li>shell_helper_missing</li></ul></div>
-        <div><div class="e wn">4</div><div class="n">partial</div>
-          <ul><li>partial_failure</li><li class="q">data <em>and</em> error both real</li></ul></div>
-        <div><div class="e er">5</div><div class="n">refused, work protected</div>
+        <div><div class="e wn">4</div><div class="n"><span lang="en">partial</span><span lang="pt-BR">parcial</span></div>
+          <ul><li>partial_failure</li><li class="q"><span lang="en">data <em>and</em> error both real</span><span lang="pt-BR">data <em>e</em> error ambos reais</span></li></ul></div>
+        <div><div class="e er">5</div><div class="n"><span lang="en">refused, work protected</span><span lang="pt-BR">recusado, trabalho protegido</span></div>
           <ul><li>worktree_dirty</li></ul></div>
-        <div><div class="e bl">6</div><div class="n">retry this one</div>
-          <ul><li class="rt">busy — the only retryable code</li></ul></div>
-        <div><div class="e">7</div><div class="n">needs input</div>
-          <ul><li>needs_input</li><li class="q">names it in details.missing</li></ul></div>
+        <div><div class="e bl">6</div><div class="n"><span lang="en">retry this one</span><span lang="pt-BR">tente este</span></div>
+          <ul><li class="rt"><span lang="en">busy — the only retryable code</span><span lang="pt-BR">busy — o único código retryable</span></li></ul></div>
+        <div><div class="e">7</div><div class="n"><span lang="en">needs input</span><span lang="pt-BR">precisa de entrada</span></div>
+          <ul><li>needs_input</li><li class="q"><span lang="en">names it in details.missing</span><span lang="pt-BR">nome em details.missing</span></li></ul></div>
       </div>
 
-      <p><code>hydra commands --output json</code> publishes this table, so nothing above needs to
-        be hardcoded from this page.</p>
+      <p><span lang="en"><code>hydra commands --output json</code> publishes this table, so nothing above needs to
+        be hardcoded from this page.</span><span lang="pt-BR"><code>hydra commands --output json</code> publica esta tabela, então nada acima precisa ser
+        hardcoded nesta página.</span></p>
     </section>
 
     <!-- ================================================== 09 ============ -->
     <section id="agents" class="rv">
-      <div class="sh"><span class="num">&sect; 09</span><h2>For agents</h2>
-        <span class="aside">hydra skill</span></div>
+      <div class="sh"><span class="num">&sect; 09</span><h2><span lang="en">For agents</span><span lang="pt-BR">Para agentes</span></h2>
+        <span class="aside"><span lang="en">hydra skill</span><span lang="pt-BR">hydra skill</span></span></div>
 
-      <p>hydra ships its own agent contract. Print it and hand it over; it is versioned with the
-        binary, so it cannot drift from the tool the way a pasted prompt does.</p>
+      <p><span lang="en">hydra ships its own agent contract. Print it and hand it over; it is versioned with the
+        binary, so it cannot drift from the tool the way a pasted prompt does.</span><span lang="pt-BR">O hydra traz seu próprio contrato de agente. Imprima e entregue; é versionado com o
+        binário, então não desvia da ferramenta como um prompt colado.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra skill</b>            <span class="dim"># the embedded contract, ~120 lines</span>
 <span class="p">$</span> <b>hydra commands --output json</b>  <span class="dim"># every command, flag, code and exit</span>
 </div>
-        <figcaption><span>plate 19 &middot; two commands are the whole onboarding</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 19 &middot; two commands are the whole onboarding</span><span lang="pt-BR">placa 19 &middot; dois comandos bastam para onboarding</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p>Its invariants, verbatim, because they are what makes probing unnecessary:</p>
+      <p><span lang="en">Its invariants, verbatim, because they are what makes probing unnecessary:</span><span lang="pt-BR">Suas invariantes, literais, porque são o que torna sondagem desnecessária:</span></p>
 
       <div class="reg">
         <table>
-          <thead><tr><th>#</th><th>invariant</th></tr></thead>
+          <thead><tr><th>#</th><th><span lang="en">invariant</span><span lang="pt-BR">invariante</span></th></tr></thead>
           <tbody>
-            <tr><td class="up">1</td><td class="wrap"><code>--output json</code> (default when stdout is not a terminal) emits one envelope. Never scrape text.</td></tr>
-            <tr><td class="up">2</td><td class="wrap">Branch on <code>error.code</code>, never on message wording. Codes are stable; messages are not.</td></tr>
-            <tr><td class="up">3</td><td class="wrap">Every command is <strong>convergent</strong>: doing it twice is a no-op that exits 0, reported as <code>skipped</code>.</td></tr>
-            <tr><td class="up">4</td><td class="wrap">Nothing is inferred from a branch name. Topic membership is recorded, never guessed.</td></tr>
-            <tr><td class="up">5</td><td class="wrap">A missing value is <code>needs_input</code> (exit 7) naming it in <code>details.missing</code>. hydra never blocks on a prompt when output is machine-readable.</td></tr>
-            <tr><td class="up">6</td><td class="wrap">A handle matching several worktrees is an error, never a silent first match.</td></tr>
-            <tr><td class="up">7</td><td class="wrap"><code>hydra commands --output json</code> publishes the whole surface and the code&rarr;exit table.</td></tr>
+            <tr><td class="up">1</td><td class="wrap"><span lang="en"><code>--output json</code> (default when stdout is not a terminal) emits one envelope. Never scrape text.</span><span lang="pt-BR"><code>--output json</code> (padrão quando stdout não é terminal) emite um envelope. Nunca scrape texto.</span></td></tr>
+            <tr><td class="up">2</td><td class="wrap"><span lang="en">Branch on <code>error.code</code>, never on message wording. Codes are stable; messages are not.</span><span lang="pt-BR">Branch em <code>error.code</code>, nunca na mensagem. Códigos estáveis; mensagens não.</span></td></tr>
+            <tr><td class="up">3</td><td class="wrap"><span lang="en">Every command is <strong>convergent</strong>: doing it twice is a no-op that exits 0, reported as <code>skipped</code>.</span><span lang="pt-BR">Cada comando é <strong>convergente</strong>: fazer duas vezes é no-op com saída 0, reportado como <code>skipped</code>.</span></td></tr>
+            <tr><td class="up">4</td><td class="wrap"><span lang="en">Nothing is inferred from a branch name. Topic membership is recorded, never guessed.</span><span lang="pt-BR">Nada é inferido do nome da branch. Associação a tópico é registrada, nunca adivinhada.</span></td></tr>
+            <tr><td class="up">5</td><td class="wrap"><span lang="en">A missing value is <code>needs_input</code> (exit 7) naming it in <code>details.missing</code>. hydra never blocks on a prompt when output is machine-readable.</span><span lang="pt-BR">Valor ausente é <code>needs_input</code> (saída 7) nomeando em <code>details.missing</code>. O hydra nunca bloqueia em prompt com saída legível por máquina.</span></td></tr>
+            <tr><td class="up">6</td><td class="wrap"><span lang="en">A handle matching several worktrees is an error, never a silent first match.</span><span lang="pt-BR">Handle que casa vários worktrees é erro, nunca primeiro match silencioso.</span></td></tr>
+            <tr><td class="up">7</td><td class="wrap"><span lang="en"><code>hydra commands --output json</code> publishes the whole surface and the code&rarr;exit table.</span><span lang="pt-BR"><code>hydra commands --output json</code> publica a superfície inteira e a tabela code&rarr;exit.</span></td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="mnote">
-        <span class="lbl">why this is safe in a loop</span>
-        <p>The destructive operations are not in hydra's vocabulary. It cannot merge, rebase,
+        <span class="lbl"><span lang="en">why this is safe in a loop</span><span lang="pt-BR">por que é seguro em loop</span></span>
+        <p><span lang="en">The destructive operations are not in hydra's vocabulary. It cannot merge, rebase,
           resolve a conflict or push. The worst a wrong call does is create or remove a worktree,
-          and removal refuses on uncommitted work with exit 5.</p>
+          and removal refuses on uncommitted work with exit 5.</span><span lang="pt-BR">As operações destrutivas não estão no vocabulário do hydra. Não pode fazer merge, rebase,
+          resolver conflito ou push. O pior de uma chamada errada é criar ou remover worktree,
+          e remoção recusa trabalho não commitado com saída 5.</span></p>
       </div>
     </section>
 
     <!-- ================================================== 10 ============ -->
     <section id="recovery" class="rv">
-      <div class="sh"><span class="num">&sect; 10</span><h2>Recovery</h2>
-        <span class="aside">doctor, prune, repo restore</span></div>
+      <div class="sh"><span class="num">&sect; 10</span><h2><span lang="en">Recovery</span><span lang="pt-BR">Recuperação</span></h2>
+        <span class="aside"><span lang="en">doctor, prune, repo restore</span><span lang="pt-BR">doctor, prune, repo restore</span></span></div>
 
-      <p>Interrupted clones, worktrees deleted behind hydra's back, stale registrations.
-        <code>doctor</code> audits the manifest against the disk and says what it can repair.</p>
+      <p><span lang="en">Interrupted clones, worktrees deleted behind hydra's back, stale registrations.
+        <code>doctor</code> audits the manifest against the disk and says what it can repair.</span><span lang="pt-BR">Clones interrompidos, worktrees removidos sem o hydra, registros obsoletos.
+        <code>doctor</code> audita o manifesto contra o disco e diz o que pode reparar.</span></p>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra doctor --output text</b>
@@ -816,61 +894,155 @@ feat/split-tender
 
 <span class="dim">ok=61 warn=2 fail=0 fixed=0</span>
 </div>
-        <figcaption><span>plate 20 &middot; <span class="v">verbatim</span>, tail &middot; the check count scales with repos and worktrees</span><span class="x0">exit 0</span></figcaption>
+        <figcaption><span><span lang="en">plate 20 &middot; <span class="v">verbatim</span>, tail &middot; the check count scales with repos and worktrees</span><span lang="pt-BR">placa 20 &middot; <span class="v">literal</span>, final &middot; a contagem de checks escala com repos e worktrees</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
-      <p>A warning is not a failure: a dirty worktree is your work, correctly left alone. Failures
-        get <code>--fix</code>, and each one names the exact command that repairs it.</p>
+      <p><span lang="en">A warning is not a failure: a dirty worktree is your work, correctly left alone. Failures
+        get <code>--fix</code>, and each one names the exact command that repairs it.</span><span lang="pt-BR">Aviso não é falha: worktree sujo é seu trabalho, corretamente deixado. Falhas
+        recebem <code>--fix</code>, e cada uma nomea o comando exato que repara.</span></p>
 
       <div class="reg">
         <table>
-          <thead><tr><th>command</th><th>what it is for</th></tr></thead>
+          <thead><tr><th><span lang="en">command</span><span lang="pt-BR">comando</span></th><th><span lang="en">what it is for</span><span lang="pt-BR">para que serve</span></th></tr></thead>
           <tbody>
-            <tr><td class="br">doctor --fix</td><td class="wrap">Repair what is mechanically repairable; report the rest with a runnable command.</td></tr>
-            <tr><td class="br">prune</td><td class="wrap">Drop registrations whose worktrees are gone. Leaves files alone.</td></tr>
-            <tr><td class="br">repo restore</td><td class="wrap">Rebuild repositories from the manifest alone: the recovery path after a lost clone.</td></tr>
-            <tr><td class="br">apply -</td><td class="wrap">Read <code>hydra list --output json</code> on stdin and recreate that workspace elsewhere.</td></tr>
+            <tr><td class="br">doctor --fix</td><td class="wrap"><span lang="en">Repair what is mechanically repairable; report the rest with a runnable command.</span><span lang="pt-BR">Repara o que é mecanicamente reparável; reporta o resto com comando executável.</span></td></tr>
+            <tr><td class="br">prune</td><td class="wrap"><span lang="en">Drop registrations whose worktrees are gone. Leaves files alone.</span><span lang="pt-BR">Remove registros cujos worktrees sumiram. Não toca arquivos.</span></td></tr>
+            <tr><td class="br">repo restore</td><td class="wrap"><span lang="en">Rebuild repositories from the manifest alone: the recovery path after a lost clone.</span><span lang="pt-BR">Reconstrói repositórios só do manifesto: caminho de recuperação após clone perdido.</span></td></tr>
+            <tr><td class="br">apply -</td><td class="wrap"><span lang="en">Read <code>hydra list --output json</code> on stdin and recreate that workspace elsewhere.</span><span lang="pt-BR">Lê <code>hydra list --output json</code> em stdin e recria o workspace em outro lugar.</span></td></tr>
           </tbody>
         </table>
       </div>
 
-      <p><code>apply</code> is the pair to <code>list</code>: the output of one is the input of the
-        other, which is how a workspace gets reproduced on another machine.</p>
+      <p><span lang="en"><code>apply</code> is the pair to <code>list</code>: the output of one is the input of the
+        other, which is how a workspace gets reproduced on another machine.</span><span lang="pt-BR"><code>apply</code> é o par de <code>list</code>: a saída de um é a entrada do
+        outro, e assim o workspace é reproduzido em outra máquina.</span></p>
     </section>
 
     <!-- ================================================== 11 ============ -->
     <section id="surface" class="rv">
-      <div class="sh"><span class="num">&sect; 11</span><h2>Full surface</h2>
-        <span class="aside">40 commands</span></div>
+      <div class="sh"><span class="num">&sect; 11</span><h2><span lang="en">Full surface</span><span lang="pt-BR">Superfície completa</span></h2>
+        <span class="aside"><span lang="en">40 commands</span><span lang="pt-BR">40 comandos</span></span></div>
 
       <div class="reg">
         <table>
-          <thead><tr><th>group</th><th>commands</th></tr></thead>
+          <thead><tr><th><span lang="en">group</span><span lang="pt-BR">grupo</span></th><th><span lang="en">commands</span><span lang="pt-BR">comandos</span></th></tr></thead>
           <tbody>
-            <tr><td class="br">workspace</td><td class="wrap"><code>init</code> <code>where</code> <code>project add|ls|rm</code> <code>config show|set</code></td></tr>
-            <tr><td class="br">repositories</td><td class="wrap"><code>repo add</code> <code>repo list</code> <code>repo branches</code> <code>repo remove</code> <code>repo restore</code></td></tr>
-            <tr><td class="br">worktrees</td><td class="wrap"><code>add</code> <code>new</code> <code>list</code> <code>status</code> <code>switch</code> <code>path</code> <code>remove</code> <code>prune</code></td></tr>
-            <tr><td class="br">units of work</td><td class="wrap"><code>start</code> <code>topic list|show|attach|detach|remove</code></td></tr>
-            <tr><td class="br">execution</td><td class="wrap"><code>run</code> <code>sync</code> <code>apply</code></td></tr>
-            <tr><td class="br">integration</td><td class="wrap"><code>skill</code> <code>commands</code> <code>hooks ls|run</code> <code>completion</code> <code>init-shell</code></td></tr>
-            <tr><td class="br">health</td><td class="wrap"><code>doctor</code></td></tr>
+            <tr><td class="br"><span lang="en">workspace</span><span lang="pt-BR">workspace</span></td><td class="wrap"><code>init</code> <code>where</code> <code>project add|ls|rm</code> <code>config show|set</code></td></tr>
+            <tr><td class="br"><span lang="en">repositories</span><span lang="pt-BR">repositórios</span></td><td class="wrap"><code>repo add</code> <code>repo list</code> <code>repo branches</code> <code>repo remove</code> <code>repo restore</code></td></tr>
+            <tr><td class="br"><span lang="en">worktrees</span><span lang="pt-BR">worktrees</span></td><td class="wrap"><code>add</code> <code>new</code> <code>list</code> <code>status</code> <code>switch</code> <code>path</code> <code>remove</code> <code>prune</code></td></tr>
+            <tr><td class="br"><span lang="en">units of work</span><span lang="pt-BR">unidades de trabalho</span></td><td class="wrap"><code>start</code> <code>topic list|show|attach|detach|remove</code></td></tr>
+            <tr><td class="br"><span lang="en">execution</span><span lang="pt-BR">execução</span></td><td class="wrap"><code>run</code> <code>sync</code> <code>apply</code></td></tr>
+            <tr><td class="br"><span lang="en">integration</span><span lang="pt-BR">integração</span></td><td class="wrap"><code>skill</code> <code>commands</code> <code>hooks ls|run</code> <code>completion</code> <code>init-shell</code></td></tr>
+            <tr><td class="br"><span lang="en">health</span><span lang="pt-BR">saúde</span></td><td class="wrap"><code>doctor</code></td></tr>
           </tbody>
         </table>
       </div>
 
-      <p>Global flags apply everywhere: <code>--output</code>, <code>--project</code>,
+      <p><span lang="en">Global flags apply everywhere: <code>--output</code>, <code>--project</code>,
         <code>--config</code>, <code>--no-hooks</code>, <code>--verbose</code>. Hooks fire on
         <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>,
         <code>post_remove</code> and <code>post_sync</code>; a failing hook never deletes a
-        correctly created worktree.</p>
+        correctly created worktree.</span><span lang="pt-BR">Flags globais aplicam em tudo: <code>--output</code>, <code>--project</code>,
+        <code>--config</code>, <code>--no-hooks</code>, <code>--verbose</code>. Hooks disparam em
+        <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>,
+        <code>post_remove</code> e <code>post_sync</code>; um hook com falha nunca remove um
+        worktree criado corretamente.</span></p>
+    </section>
+
+    <!-- ================================================== 12 ============ -->
+    <section id="configuration" class="rv">
+      <div class="sh"><span class="num">&sect; 12</span><h2><span lang="en">Configuration</span><span lang="pt-BR">Configuração</span></h2>
+        <span class="aside"><span lang="en">manifest &middot; global config &middot; hooks</span><span lang="pt-BR">manifesto &middot; config global &middot; hooks</span></span></div>
+
+      <h3 class="h3"><span lang="en">Three files, three jobs</span><span lang="pt-BR">Três arquivos, três funções</span></h3>
+
+      <p><span lang="en"><strong><code>.hydra/config.yaml</code></strong> is the project manifest, in the workspace. It describes repos, groups and branches. It is world-readable and meant to be committed and shared; a teammate reproduces the workspace from it.</span><span lang="pt-BR"><strong><code>.hydra/config.yaml</code></strong> é o manifesto do projeto, no workspace. Descreve repositórios, grupos e branches. É legível por todos e deve ser versionado e compartilhado; um colega reproduz o workspace a partir dele.</span></p>
+
+      <p><span lang="en">The <strong>global config</strong> holds per-user preferences (theme, editor):</span><span lang="pt-BR">A <strong>config global</strong> guarda preferências por usuário (tema, editor):</span></p>
+      <ul style="margin:0 0 14px;padding-left:20px;max-width:70ch;font-size:14px;line-height:1.6">
+        <li><span lang="en">Linux: <code>~/.config/hydra/config.yaml</code></span><span lang="pt-BR">Linux: <code>~/.config/hydra/config.yaml</code></span></li>
+        <li><span lang="en">macOS: <code>~/Library/Application Support/hydra/config.yaml</code></span><span lang="pt-BR">macOS: <code>~/Library/Application Support/hydra/config.yaml</code></span></li>
+        <li><span lang="en">Windows: <code>%APPDATA%/hydra/config.yaml</code></span><span lang="pt-BR">Windows: <code>%APPDATA%/hydra/config.yaml</code></span></li>
+      </ul>
+      <p><span lang="en"><strong><code>projects.yaml</code></strong> sits beside it: the global registry mapping project names to workspace roots. Machine state, not hand-edited.</span><span lang="pt-BR"><strong><code>projects.yaml</code></strong> fica ao lado: o registro global que mapeia nomes de projeto às raízes do workspace. Estado da máquina, não editado manualmente.</span></p>
+
+      <figure>
+        <div class="plate">version: <span class="hi">"2"</span>                    <span class="dim"># must be exactly "2"</span>
+project: shop
+paths:
+  bare_dir: <span class="hi">".bare"</span>           <span class="dim"># git data only — never work here</span>
+groups:
+  backend:
+    api:
+      remote: git@github.com:org/my-api.git
+      default_branch: main    <span class="dim"># unsuffixed worktree dir is this branch</span>
+    worker:
+      remote: git@github.com:org/my-worker.git
+defaults:
+  base_branch: ""             <span class="dim"># fallback when creating a branch without --from</span>
+hooks:
+  post_add:
+    - run: make setup
+  post_sync:
+    - run: echo "synced"
+      optional: true</div>
+        <figcaption><span><span lang="en">manifest &middot; every key from the schema</span><span lang="pt-BR">manifesto &middot; cada chave do schema</span></span></figcaption>
+      </figure>
+
+      <h3 class="h3"><span lang="en">Worktree directory naming</span><span lang="pt-BR">Nomes de diretório de worktree</span></h3>
+      <p><span lang="en">The unsuffixed directory is the repository's <strong>default branch</strong>, not the first entry in <code>--branches</code>. Order does not decide the layout.</span><span lang="pt-BR">O diretório sem sufixo é a <strong>branch padrão</strong> do repositório, não a primeira entrada em <code>--branches</code>. A ordem não define o layout.</span></p>
+
+      <h3 class="h3"><span lang="en"><code>hydra config</code></span><span lang="pt-BR"><code>hydra config</code></span></h3>
+      <p><span lang="en">On a TTY, <code>hydra config</code> opens an interactive form. <code>hydra config show</code> prints current settings; <code>hydra config set theme &lt;name&gt;</code> and <code>hydra config set editor &lt;cmd&gt;</code> set them directly.</span><span lang="pt-BR">Em um TTY, <code>hydra config</code> abre um formulário interativo. <code>hydra config show</code> imprime as configurações atuais; <code>hydra config set theme &lt;name&gt;</code> e <code>hydra config set editor &lt;cmd&gt;</code> definem diretamente.</span></p>
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra config show</b>
+theme: terminal
+editor: vim
+
+<span class="p">$</span> <b>hydra config set theme hydra</b>
+<span class="p">$</span> <b>hydra config set editor "code --wait"</b></div>
+        <figcaption><span><span lang="en">global preferences, outside the project manifest</span><span lang="pt-BR">preferências globais, fora do manifesto do projeto</span></span></figcaption>
+      </figure>
+
+      <h3 class="h3"><span lang="en">Themes</span><span lang="pt-BR">Temas</span></h3>
+      <p><span lang="en">Seven registered names: <code>terminal</code>, <code>hydra</code>, <code>tokyonight</code>, <code>catppuccin</code>, <code>dracula</code>, <code>nord</code>, <code>onedark</code>. <code>terminal</code> is the default because every colour is an ANSI slot and no background is painted, so hydra inherits the palette you already configured; that works over SSH and in tmux and follows a live theme change. <code>hydra config set theme hydra</code> selects the first-party palette. <code>contrib/ghostty/hydra</code> and <code>contrib/omp/hydra.json</code> are generated from it by <code>scripts/gen-themes.py</code> for the reverse direction.</span><span lang="pt-BR">Sete nomes registrados: <code>terminal</code>, <code>hydra</code>, <code>tokyonight</code>, <code>catppuccin</code>, <code>dracula</code>, <code>nord</code>, <code>onedark</code>. <code>terminal</code> é o padrão porque cada cor é um slot ANSI e nenhum fundo é pintado, então o hydra herda a paleta que você já configurou; funciona via SSH e em tmux e segue uma troca de tema ao vivo. <code>hydra config set theme hydra</code> seleciona a paleta própria. <code>contrib/ghostty/hydra</code> e <code>contrib/omp/hydra.json</code> são gerados a partir dela por <code>scripts/gen-themes.py</code> na direção inversa.</span></p>
+
+      <h3 class="h3"><span lang="en">Hooks</span><span lang="pt-BR">Hooks</span></h3>
+      <p><span lang="en">Declarative shell commands at lifecycle events: <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>, <code>post_remove</code>, <code>post_sync</code>. A failing hook never deletes a correctly created worktree.</span><span lang="pt-BR">Comandos shell declarativos em eventos do ciclo de vida: <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>, <code>post_remove</code>, <code>post_sync</code>. Um hook com falha nunca remove um worktree criado corretamente.</span></p>
+      <p><span lang="en">Each hook receives:</span><span lang="pt-BR">Cada hook recebe:</span> <code>HYDRA_EVENT</code>, <code>HYDRA_PROJECT</code>, <code>HYDRA_PROJECT_ROOT</code>, <code>HYDRA_GROUP</code>, <code>HYDRA_REPO</code>, <code>HYDRA_BRANCH</code>, <code>HYDRA_WORKTREE_PATH</code>, <code>HYDRA_BARE_PATH</code>.</p>
+      <figure>
+        <div class="plate">hooks:
+  post_add:
+    - run: npm install</div>
+        <figcaption><span><span lang="en">example from the field reference</span><span lang="pt-BR">exemplo da referência de campos</span></span></figcaption>
+      </figure>
+      <p><span lang="en"><code>hydra hooks ls</code> lists configured hooks; <code>hydra hooks run &lt;event&gt;</code> runs one manually. Pass <code>--no-hooks</code> on any command to skip them all.</span><span lang="pt-BR"><code>hydra hooks ls</code> lista os hooks configurados; <code>hydra hooks run &lt;event&gt;</code> executa um manualmente. Passe <code>--no-hooks</code> em qualquer comando para ignorar todos.</span></p>
+
+      <h3 class="h3"><span lang="en">Environment</span><span lang="pt-BR">Ambiente</span></h3>
+      <p><span lang="en">Variables hydra reads from the environment (not the hook exports above):</span><span lang="pt-BR">Variáveis que o hydra lê do ambiente (não as exportadas pelos hooks acima):</span></p>
+      <div class="reg stack">
+        <table>
+          <thead><tr><th><span lang="en">variable</span><span lang="pt-BR">variável</span></th><th><span lang="en">role</span><span lang="pt-BR">função</span></th></tr></thead>
+          <tbody>
+            <tr><td class="br" data-l="variable">HYDRA_OUTPUT</td><td class="wrap" data-l="role"><span lang="en">Override default output mode (<code>auto</code>, <code>json</code>, or <code>text</code>).</span><span lang="pt-BR">Substitui o modo de saída padrão (<code>auto</code>, <code>json</code> ou <code>text</code>).</span></td></tr>
+            <tr><td class="br" data-l="variable">HYDRA_CONFIG_DIR</td><td class="wrap" data-l="role"><span lang="en">Override global config directory (and <code>projects.yaml</code> beside it).</span><span lang="pt-BR">Substitui o diretório de config global (e o <code>projects.yaml</code> ao lado).</span></td></tr>
+            <tr><td class="br" data-l="variable">HYDRA_SHELL_HELPER</td><td class="wrap" data-l="role"><span lang="en">When set to <code>1</code>, <code>hydra switch</code> changes directory instead of only printing a path.</span><span lang="pt-BR">Com <code>1</code>, <code>hydra switch</code> muda de diretório em vez de só imprimir um caminho.</span></td></tr>
+            <tr><td class="br" data-l="variable">HYDRA_SWITCH_OUTPUT_FILE</td><td class="wrap" data-l="role"><span lang="en">File path for switch output when the shell helper is active.</span><span lang="pt-BR">Caminho de arquivo para a saída do switch com o helper de shell ativo.</span></td></tr>
+            <tr><td class="br" data-l="variable">NO_COLOR</td><td class="wrap" data-l="role"><span lang="en">Disables colour in text mode when present.</span><span lang="pt-BR">Desativa cores no modo texto quando definida.</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p><span lang="en">Full field reference: <a class="ref" href="configuration.md">configuration.md</a>.</span><span lang="pt-BR">Referência completa de campos: <a class="ref" href="configuration.md">configuration.md</a>.</span></p>
     </section>
 
     <div class="colophon">
       <b>hydra</b> &middot; <a href="https://github.com/mssantosdev/hydra">github.com/mssantosdev/hydra</a>
       &middot; <code>go install github.com/mssantosdev/hydra@latest</code><br>
-      Every panel on this page is verbatim output from a real run. Repository names and the
-      topic id are synthetic fixtures; the commands are not.<br>
-      This document has no external requests, no analytics, and no fonts to download.
+      <span lang="en">Every panel on this page is verbatim output from a real run. Repository names and the
+      topic id are synthetic fixtures; the commands are not.</span><span lang="pt-BR">Cada painel nesta página é saída literal de uma execução real. Os nomes de repositório e o
+      id do tópico são fixtures sintéticos; os comandos não são.</span><br>
+      <span lang="en">This document has no external requests, no analytics, and no fonts to download.</span><span lang="pt-BR">Este documento não faz requisições externas, não usa analytics e não baixa fontes.</span>
     </div>
 
   </main>
@@ -878,6 +1050,26 @@ feat/split-tender
 
 <script>
 (function(){
+
+  // language UI: lang set pre-render in <head>; persist only on explicit switch
+  var langBtns = Array.prototype.slice.call(document.querySelectorAll('.lang-sw button'));
+  function syncLangUI(l){
+    langBtns.forEach(function(b){
+      var on = b.getAttribute('data-lang') === l;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  syncLangUI(document.documentElement.lang);
+  langBtns.forEach(function(b){
+    b.addEventListener('click', function(){
+      var l = b.getAttribute('data-lang');
+      document.documentElement.lang = l;
+      syncLangUI(l);
+      try { localStorage.setItem('hydra-guide-lang', l); } catch(e){}
+    });
+  });
+
   var links = Array.prototype.slice.call(document.querySelectorAll('#nav a'));
   var secs  = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
 
