@@ -1,6 +1,13 @@
 package browser
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
+	"github.com/mssantosdev/hydra/internal/ui/styles"
+)
 
 // The filter vocabulary is shared with --filter on the non-interactive commands. A human
 // who learns `dirty` here must get the same rows from `hydra list --filter dirty`, or the
@@ -129,4 +136,35 @@ func indexOf(h, n string) int {
 		}
 	}
 	return -1
+}
+
+// The register must render from the RESOLVED theme, not from a package default.
+//
+// themes.Current sat at its initialiser for the entire process because loadTheme never
+// published to it; only the interactive `config` form wrote it, inside its own process.
+// Reading it here made this the one view that ignored the user's configured theme, so it
+// drew a different palette than `list` and `status` in the same terminal. Asserting on
+// styles.* is the point: those are what every other view reads.
+func TestViewRendersFromTheResolvedPalette(t *testing.T) {
+	origGreen, origBlue := styles.Green, styles.Blue
+	t.Cleanup(func() { styles.Green, styles.Blue = origGreen, origBlue })
+
+	// Sentinels no theme in the catalog uses.
+	styles.Green, styles.Blue = lipgloss.Color("#010203"), lipgloss.Color("#040506")
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	m := &model{
+		loaded: true, width: 100, height: 24, project: "p",
+		rows: []Row{{Repo: "api", Name: "api", Branch: "main", Upstream: "origin/main"}},
+	}
+	m.applyFilter()
+	m.cursor = -1 // keep the row unselected so its own colours render
+	out := m.View()
+
+	if !contains(out, "1;2;3") && !contains(out, "010203") {
+		t.Errorf("the clean status did not use styles.Green; the view is reading a different source\n%q", out)
+	}
+	if !contains(out, "4;5;6") && !contains(out, "040506") {
+		t.Errorf("the branch did not use styles.Blue; the view is reading a different source\n%q", out)
+	}
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/mssantosdev/hydra/internal/ui/themes"
+	"github.com/mssantosdev/hydra/internal/ui/styles"
 )
 
 // The register on screen. Column widths are computed from the real content rather than
@@ -17,18 +17,24 @@ func (m *model) View() string {
 		return ""
 	}
 
-	t := themes.Current
+	// Read the RESOLVED colours, not themes.Current. themes.Current is a package
+	// initialiser that loadTheme() never syncs from config — only the interactive
+	// `config` form writes it, and only inside its own process. Reading it here made
+	// this the one view that ignored the user's theme, so it rendered a different
+	// palette than `list` and `status` in the same terminal.
 	var (
-		dim    = lipgloss.NewStyle().Foreground(t.Muted)
-		hi     = lipgloss.NewStyle().Foreground(t.Highlight).Bold(true)
-		lbl    = lipgloss.NewStyle().Foreground(t.Muted)
-		accent = lipgloss.NewStyle().Foreground(t.Primary)
-		okS    = lipgloss.NewStyle().Foreground(t.Success)
-		warnS  = lipgloss.NewStyle().Foreground(t.Warning)
-		errS   = lipgloss.NewStyle().Foreground(t.Error)
-		topicS = lipgloss.NewStyle().Foreground(t.Secondary)
-		selS   = lipgloss.NewStyle().Foreground(t.Highlight).Background(t.Border).Bold(true)
-		rule   = lipgloss.NewStyle().Foreground(t.Border)
+		dim    = lipgloss.NewStyle().Foreground(styles.FgComment)
+		hi     = lipgloss.NewStyle().Foreground(styles.FgBright).Bold(true)
+		lbl    = lipgloss.NewStyle().Foreground(styles.FgComment)
+		accent = lipgloss.NewStyle().Foreground(styles.Blue)
+		okS    = lipgloss.NewStyle().Foreground(styles.Green)
+		warnS  = lipgloss.NewStyle().Foreground(styles.Yellow)
+		errS   = lipgloss.NewStyle().Foreground(styles.Red)
+		topicS = lipgloss.NewStyle().Foreground(styles.Purple)
+		// Reverse video for the cursor, so the selection uses the reader's own
+		// background instead of a hex this program does not own.
+		selS = lipgloss.NewStyle().Reverse(true)
+		rule = lipgloss.NewStyle().Foreground(styles.FgComment)
 	)
 
 	var b strings.Builder
@@ -72,7 +78,7 @@ func (m *model) View() string {
 	}
 	wName = min(wName, budget)
 
-	head := fmt.Sprintf("%-*s  %-*s  %-*s  %-*s  %s",
+	head := fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %s",
 		wName, "WORKTREE", wBranch, "BRANCH", wUp, "UPSTREAM", wTopic, "TOPIC", "STATUS")
 	b.WriteString(lbl.Render(head) + "\n")
 
@@ -112,18 +118,20 @@ func (m *model) View() string {
 			st += dim.Render(fmt.Sprintf("  ↑%d", r.Ahead))
 		}
 
-		if vi == m.cursor {
-			plain := strings.Join([]string{name, branch, up, tp, state}, "  ")
-			b.WriteString(selS.Render(padRight(plain, m.clampWidth())) + "\n")
-			continue
-		}
-
 		topicCell := dim.Render(tp)
 		if r.Topic != "" {
 			topicCell = topicS.Render(tp)
 		}
-		cells := []string{name, accent.Render(branch), dim.Render(up), topicCell, st}
-		b.WriteString(strings.Join(cells, "  ") + "\n")
+
+		gutter := "  "
+		nameCell := name
+		if vi == m.cursor {
+			gutter = selS.Render("\u25b8") + " "
+			nameCell = hi.Render(name)
+		}
+
+		cells := []string{nameCell, accent.Render(branch), dim.Render(up), topicCell, st}
+		b.WriteString(gutter + strings.Join(cells, "  ") + "\n")
 	}
 
 	// footer: position, freshness, keys
@@ -139,7 +147,7 @@ func (m *model) View() string {
 	if m.mode == modeFilter {
 		b.WriteString(hi.Render("/"+m.filter) + dim.Render("▏  enter accept · esc clear") + "\n")
 	} else {
-		keys := []string{"↑↓ move", "enter switch", "/ filter", "d dirty", "r refresh", "q quit"}
+		keys := []string{"↑↓ move", "enter print path", "/ filter", "d dirty", "r refresh", "q quit"}
 		if m.filter != "" {
 			keys = append([]string{"filter " + hi.Render(m.filter)}, keys...)
 		}

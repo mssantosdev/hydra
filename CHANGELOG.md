@@ -43,6 +43,24 @@ is permanently bound to different content in the Go checksum database, so it can
   This is browse-and-select only. Acting on a selection still means dropping to the existing
   `sync`, `remove` or `add` forms; wiring those in is the next increment.
 
+  Four defects found by using it and fixed before release:
+
+  - **It ignored the configured theme entirely.** It read `themes.Current`, a package
+    initialiser that `loadTheme` never published to — only the interactive `config` form
+    wrote it, inside its own process. So it drew a hardcoded palette while `list` and
+    `status` drew the user's, in the same terminal. It now reads the resolved `styles.*`
+    colours, `loadTheme` publishes to `themes.Current` so the trap cannot bite the next
+    reader, and a test fails if the source is switched back. Verified by measuring the RGB
+    escapes emitted under two themes.
+  - **The selection painted a hardcoded background colour**, forcing this program's palette
+    onto a terminal whose background it does not own. It now uses reverse video.
+  - **The selected row rendered monochrome**, so the one row under the cursor was the only
+    row with no status colour. A gutter caret marks the cursor instead.
+  - **The footer said `enter switch`, and it does not switch.** A child process cannot change
+    its parent's directory; that is why `hydra switch` exists with a shell helper. It printed
+    a path and claimed otherwise. Relabelled `enter print path`; `cd "$(hydra ui)"` is the
+    composition that actually moves you.
+
 - **A first-party `hydra` theme, now the default.** The tool shipped five borrowed community
   palettes (tokyonight, catppuccin, dracula, nord, onedark) and none of its own, so its face
   was someone else's design decision. The new palette's role names are shared with
@@ -69,6 +87,22 @@ is permanently bound to different content in the Go checksum database, so it can
   message and `details.valid` are already correct and actionable; only the code is wrong.
   Fixing it properly needs a distinct code for caller error, which is an API addition and a
   versioning decision, so it is recorded rather than quietly patched.
+
+- **Writing any YAML state file destroys unknown keys and every comment.** Four call sites
+  marshal a closed Go struct over the whole file: `config/config.go:109` (the project
+  manifest), `config/global/config.go:116` (global settings), `config/registry/registry.go:60`
+  and `topic/topic.go:347`. `config/update.go` inherits it through `Save`.
+
+  The manifest case is the serious one, because `.hydra/config.yaml` is documented as the
+  shareable, committable file. Reproduced: a manifest carrying `# Team manifest — reviewed in
+  PR #412`, a `ci:` block and an `owners:` list loses all three to a single
+  `hydra repo remove`, producing a silent deletion in a reviewed diff.
+
+  Not fixed here deliberately: it is unrelated to this release's work, and the fix needs a
+  decision rather than a patch. A `map` round-trip would save unknown keys but still destroy
+  comments, so it wants `yaml.Node`; and preserving unknowns unconditionally would resurrect
+  fields that a future schema migration means to drop, so the rule has to be "preserve within
+  the same schema version, and let an explicit migration remove them".
 
 ## [0.3.9] - 2026-08-06
 
