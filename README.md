@@ -369,6 +369,22 @@ hydra config
 # - onedark
 ```
 
+Matching your terminal and tools to it:
+
+```bash
+python3 scripts/gen-themes.py --install
+```
+
+That regenerates `contrib/` from the palette and installs for the current user:
+
+| target | path | activate |
+|---|---|---|
+| Ghostty | `~/.config/ghostty/themes/hydra` | `theme = hydra` in `~/.config/ghostty/config` |
+| omp | `~/.omp/agent/themes/hydra.json` | `theme.dark: hydra` in `~/.omp/agent/config.yml` |
+
+Both files are generated from `internal/ui/themes/themes.go`, never hand-written, and
+`make gate` fails if they drift from it.
+
 The `hydra` theme is not just another entry in the list: its role names (`Primary`,
 `Success`, `Warning`, `Error`, …) are the same ones the HTML guide renders from, so the
 tool and its documentation are one design system in two media rather than two palettes
