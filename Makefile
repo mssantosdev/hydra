@@ -63,19 +63,26 @@ pages:
 	@# Pages sourced from /docs would serve every .md in that tree as its own URL — harmless
 	@# on a public repo, but it publishes pages nobody reviewed and couples a docs edit to a
 	@# site deploy. This keeps the published surface to exactly the one file.
+	@#
+	@# Publishes from HEAD, never the working tree: `make pages` mid-edit would publish a
+	@# half-finished page, and the published artifact should correspond to a commit.
+	@#
+	@# Appends to gh-pages rather than force-pushing. A force-push produced overlapping
+	@# uploads in one deploy-pages run ("Multiple artifacts named github-pages", count 3)
+	@# and the deployment failed while the Pages API kept reporting "building".
 	@set -e; \
 	tmp=$$(mktemp -d); \
-	cp docs/guide.html $$tmp/index.html; \
+	git show HEAD:docs/guide.html > $$tmp/index.html; \
 	touch $$tmp/.nojekyll; \
 	email=$$(git config user.email); name=$$(git config user.name); \
 	origin=$$(git remote get-url origin); rev=$$(git rev-parse --short HEAD); \
-	cd $$tmp && git init -q -b gh-pages . && git add -A && \
+	cd $$tmp && git init -q -b gh-pages . && \
+	git fetch -q "$$origin" gh-pages && git reset -q --mixed FETCH_HEAD; \
+	git add -A && \
 	git -c user.email="$$email" -c user.name="$$name" \
 	    commit -q -m "publish guide from $$rev" && \
-	git push -q --force "$$origin" gh-pages:gh-pages; \
+	git push -q "$$origin" gh-pages:gh-pages; \
 	rm -rf $$tmp
-	@echo "published -> https://mssantosdev.github.io/hydra/"
-
 themes:
 	python3 scripts/gen-themes.py
 
