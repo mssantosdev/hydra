@@ -22,22 +22,25 @@ var (
 	// Hydra is the default theme and the only first-party one: every other entry
 	// here is a borrowed community palette. Its hues are archival — accession-stamp
 	// red, ledger ochre, verdigris, filing-tab blue, date-stamp violet — carried on a
-	// near-black ground that reads as the negative of filing-card stock. The web guide
+	// neutral greyscale ground and text ramp. The palette previously ran a warm ink
+	// family (hue 38-45) over a blue-violet ground (hue 230), 190 degrees apart, so the
+	// chrome read yellow and every panel read blue. Chrome is now neutral and colour is
+	// reserved for the five roles that carry meaning. The web guide
 	// renders from the same role names against a light ground, so the tool and its
 	// documentation are one system in two media rather than two palettes that resemble
 	// each other.
 	Hydra = Theme{
 		Name:       "hydra",
-		Background: "#15161b",
-		Foreground: "#cfcabc",
+		Background: "#1a1a1a",
+		Foreground: "#c8c8c6",
 		Primary:    "#7fa8c9",
 		Secondary:  "#9a8cc0",
 		Success:    "#7faf85",
 		Warning:    "#c9a54a",
 		Error:      "#d2604a",
-		Muted:      "#6f6a5f",
-		Border:     "#2a2b33",
-		Highlight:  "#e8e4d8",
+		Muted:      "#6e6e6c",
+		Border:     "#2c2c2c",
+		Highlight:  "#eaeae8",
 	}
 	// TokyoNight is a borrowed community palette (dark blue-based)
 	TokyoNight = Theme{

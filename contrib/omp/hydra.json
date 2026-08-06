@@ -2,25 +2,25 @@
   "$schema": "https://oh-my-pi.dev/theme-schema.json",
   "name": "hydra",
   "vars": {
-    "bg": "#15161b",
-    "fg": "#cfcabc",
+    "bg": "#1a1a1a",
+    "fg": "#c8c8c6",
     "primary": "#7fa8c9",
     "secondary": "#9a8cc0",
     "success": "#7faf85",
     "warning": "#c9a54a",
     "error": "#d2604a",
-    "muted": "#6f6a5f",
-    "border": "#2a2b33",
-    "highlight": "#e8e4d8",
+    "muted": "#6e6e6c",
+    "border": "#2c2c2c",
+    "highlight": "#eaeae8",
     "cyan": "#78b1ab",
-    "dim": "#56524b",
-    "bgLift": "#1d1e25",
-    "bgSunk": "#0f1013",
-    "bgSuccess": "#242b2a",
-    "bgError": "#2f2022",
-    "bgUser": "#20252c",
-    "bgCustom": "#22222c",
-    "selected": "#424142"
+    "dim": "#555555",
+    "bgLift": "#242424",
+    "bgSunk": "#121212",
+    "bgSuccess": "#282f29",
+    "bgError": "#342421",
+    "bgUser": "#292929",
+    "bgCustom": "#222222",
+    "selected": "#434342"
   },
   "colors": {
     "accent": "primary",
@@ -92,8 +92,8 @@
     "statusLineSubagents": "secondary"
   },
   "export": {
-    "pageBg": "#0f1013",
-    "cardBg": "#15161b",
-    "infoBg": "#1d1e25"
+    "pageBg": "#121212",
+    "cardBg": "#1a1a1a",
+    "infoBg": "#242424"
   }
 }

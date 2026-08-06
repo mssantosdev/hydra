@@ -207,8 +207,8 @@ def omp(pal: dict[str, str], dv: dict[str, str]) -> str:
         "bgSunk": shift(bg, dv=-0.03),
         "bgSuccess": mix(bg, pal["Success"], 0.14),
         "bgError": mix(bg, pal["Error"], 0.14),
-        "bgUser": mix(bg, pal["Primary"], 0.10),
-        "bgCustom": mix(bg, pal["Secondary"], 0.10),
+        "bgUser": shift(bg, dv=0.06),
+        "bgCustom": shift(bg, dv=0.03),
         "selected": dv["selection"],
     }
 
