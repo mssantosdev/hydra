@@ -27,8 +27,9 @@ permissions:
   pages: write
   id-token: write
 
-# Let a newer publish supersede one already in flight rather than queueing behind it, but
-# never cancel a run that is mid-deploy.
+# Publishes queue rather than superseding each other: cancel-in-progress would risk killing a
+# run that is already mid-deploy, and a half-finished Pages deploy leaves the site reporting
+# "building" indefinitely — which happened on this repo. Queueing is the safe trade.
 concurrency:
   group: pages
   cancel-in-progress: false
