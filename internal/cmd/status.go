@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/mssantosdev/hydra/internal/output"
 	"strings"
 
 	"github.com/mssantosdev/hydra/internal/ui/styles"
@@ -100,9 +101,40 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		data = statusProjectPayload{Summary: statusSummaryJSON{}, Worktrees: []worktreeJSON{}}
 	}
 
-	return emit(cmd, statusSummaryLine(payloads, grandTotal), data, warnings, func() {
+	// Do not claim "all clean" while a warning says the workspace is broken. The counts
+	// describe the worktrees status could INSPECT, and a registered worktree missing from
+	// disk is not among them — so the summary has to say that rather than describing a
+	// subset as if it were the whole.
+	summaryLine := statusSummaryLine(payloads, grandTotal)
+	if output.HasFault(warnings) {
+		summaryLine += "; workspace has unreported problems, run hydra doctor"
+	}
+
+	// A partial outcome must come with a matching exit status, or the contradiction is
+	// simply inverted: outcome partial under exit 0 is as misleading to a caller gating on
+	// the exit code as outcome success under exit 4 was to one reading the envelope.
+	var statusErr *output.Error
+	if output.HasFault(warnings) {
+		statusErr = output.Errorf(output.CodePartialFailure,
+			"%d worktree(s) could not be inspected", countFaults(warnings)).
+			WithDetail("warnings", warnings)
+	}
+
+	if emitErr := emitResult(cmd, output.Result{
+		Summary:  summaryLine,
+		Data:     data,
+		Warnings: warnings,
+		Next:     statusFaultNext(warnings),
+		Err:      statusErr,
+	}, func() {
 		renderStatusText(cmd, statusAll, payloads)
-	})
+	}); emitErr != nil {
+		return emitErr
+	}
+	if statusErr != nil {
+		return statusErr
+	}
+	return nil
 }
 
 // statusSummaryLine renders the one-line answer for the envelope.
@@ -219,4 +251,27 @@ func upstreamLabelJSON(item worktreeJSON) string {
 		return fmt.Sprintf("%s +%d/-%d", *item.Upstream, item.Ahead, item.Behind)
 	}
 	return *item.Upstream
+}
+
+// statusFaultNext points at doctor when status could not inspect everything it was asked
+// about, so the follow-up arrives without the caller knowing to look for it.
+func statusFaultNext(warnings []string) []output.Next {
+	if !output.HasFault(warnings) {
+		return nil
+	}
+	return []output.Next{{
+		Argv: []string{"hydra", "doctor", "--output", "json"},
+		Why:  "diagnose the worktrees status could not inspect",
+	}}
+}
+
+// countFaults counts the warnings that describe a workspace integrity problem.
+func countFaults(warnings []string) int {
+	n := 0
+	for _, w := range warnings {
+		if output.HasFault([]string{w}) {
+			n++
+		}
+	}
+	return n
 }

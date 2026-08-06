@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -227,7 +228,15 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 	for _, target := range kept {
 		item, err := target.Context.withTracking()
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: %v", target.Context.Qualified(), err))
+			// Coded, so a consumer can branch on it. The git text is kept because it
+			// names the cause, but it arrived verbatim and in the system locale, which
+			// nothing downstream could match.
+			code := output.CodeGitFailed
+			if _, statErr := os.Stat(target.Context.Path); statErr != nil {
+				code = output.CodeWorktreeUnknown
+			}
+			warnings = append(warnings, fmt.Sprintf("%s: %s: %v",
+				code, target.Context.Qualified(), err))
 			// Keep the un-tracked item so the worktree is still reported, but never
 			// let it satisfy a derived filter: its dirty/behind fields are unknown,
 			// not false.

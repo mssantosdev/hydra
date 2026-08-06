@@ -370,12 +370,18 @@ func collectWorktrees(cfg *config.Config, projectRoot string) ([]worktreeContext
 
 	for _, repo := range allRepoContexts(cfg, projectRoot) {
 		if _, err := os.Stat(repo.BareRepo); err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s/%s: bare repository missing at %s", repo.Group, repo.Alias, repo.BareRepo))
+			warnings = append(warnings, fmt.Sprintf("%s: %s/%s: bare repository missing at %s",
+				output.CodeBareMissing, repo.Group, repo.Alias, repo.BareRepo))
 			continue
 		}
 		worktrees, err := listRepoWorktrees(repo)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s/%s: %v", repo.Group, repo.Alias, err))
+			// Prefix the hydra code. Raw git text reached callers verbatim and in the
+			// system locale — `fatal: cannot change to '…': Arquivo ou diretório
+			// inexistente` — which nothing downstream can match on. The git message is
+			// kept because it names the real cause; it just no longer arrives uncoded.
+			warnings = append(warnings, fmt.Sprintf("%s: %s/%s: %v",
+				output.CodeGitFailed, repo.Group, repo.Alias, err))
 			continue
 		}
 		items = append(items, worktrees...)

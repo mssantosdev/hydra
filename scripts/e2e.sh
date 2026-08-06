@@ -757,5 +757,32 @@ check "a zero-match query still reports which project it queried" \
   '(cd "$T/ws" && "$HYDRA" list --filter "branch:no-such-thing-*" --output json 2>/dev/null |
     jq -e "(.data.worktrees|length)==0 and (.data.project|length)>0 and (.data.root|length)>0" >/dev/null)'
 
+# ------------ 16. success may never co-exist with a fault (0.3.5)
+echo "== 16. the aggregate verdict is derived, not asserted =="
+# A failing post_add hook: the worktree IS created, so the summary stays true — but the
+# envelope must carry the failure rather than reporting a clean success and exiting 1.
+mkdir -p "$T/hookws" && (cd "$T/hookws" && "$HYDRA" init --project-name hookws >/dev/null 2>&1)
+(cd "$T/hookws" && "$HYDRA" repo add "$T/upstream" --as api --group g --branches main >/dev/null 2>&1)
+printf 'hooks:\n    post_add:\n        - run: /bin/false\n' >> "$T/hookws/.hydra/config.yaml"
+check "a failing hook cannot be reported as a clean success" \
+  '(cd "$T/hookws" && { "$HYDRA" add api feat/hooked --output json || true; } 2>/dev/null |
+    jq -e ".outcome!=\"success\" and .error.code==\"hook_failed\"" >/dev/null)'
+check "the worktree it created is still reported" \
+  '(cd "$T/hookws" && "$HYDRA" list --output json 2>/dev/null |
+    jq -e "[.data.worktrees[]|select(.branch==\"feat/hooked\")]|length==1" >/dev/null)'
+# A registered worktree missing from disk: status used to say "all clean" and exit 0.
+rm -rf "$T/hookws/g/api-feat-hooked"
+check "status cannot claim all clean while a worktree is missing" \
+  '(cd "$T/hookws" && { "$HYDRA" status --output json || true; } 2>/dev/null |
+    jq -e ".outcome==\"partial\" and (.summary|test(\"doctor\"))" >/dev/null)'
+check "and its exit status agrees with that outcome" \
+  '(cd "$T/hookws" && "$HYDRA" status --output json >/dev/null 2>&1; test $? -eq 4)'
+check "the warning carries a hydra code, not raw git text alone" \
+  '(cd "$T/hookws" && { "$HYDRA" status --output json || true; } 2>/dev/null |
+    jq -e "[.warnings[]|test(\"^(worktree_unknown|git_failed|bare_missing):\")]|any" >/dev/null)'
+check "status points at doctor without being asked" \
+  '(cd "$T/hookws" && { "$HYDRA" status --output json || true; } 2>/dev/null |
+    jq -e "[.next[].argv[1]]|index(\"doctor\")!=null" >/dev/null)'
+
 echo
 echo "ALL $pass ASSERTIONS PASSED"

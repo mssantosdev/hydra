@@ -158,12 +158,30 @@ type Result struct {
 }
 
 // EmitJSON writes the envelope for a success or partial result.
+//
+// The outcome is CORRECTED here rather than trusted. Every aggregate-reporting bug this
+// tool has shipped came from a command deciding its own verdict from "my code path
+// finished": four adds reporting success while the manifest held two, doctor exiting 4
+// under `outcome: success`, status saying "all clean" with a worktree missing, add exiting
+// 1 under success with the failing hook absent from the envelope. Enforcing it at the one
+// boundary every command passes through is the fix applied once instead of five times.
 func EmitJSON(w io.Writer, cmd string, r Result) error {
 	if r.Outcome == "" {
 		r.Outcome = OutcomeSuccess
 	}
 	if r.Warnings == nil {
 		r.Warnings = []string{}
+	}
+
+	// An error on the envelope means at least a partial, whatever the caller said.
+	if r.Err != nil && r.Outcome == OutcomeSuccess {
+		r.Outcome = OutcomePartial
+	}
+	// `success` may not co-exist with a warning about the workspace's own integrity.
+	// Those are facts about the workspace being wrong, and a caller gating on outcome or
+	// exit status would otherwise sail straight past them.
+	if r.Outcome == OutcomeSuccess && HasFault(r.Warnings) {
+		r.Outcome = OutcomePartial
 	}
 	return encode(w, envelope{
 		Schema:   Schema,

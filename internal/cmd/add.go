@@ -130,7 +130,20 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	hookResult, hookErr := runHookEvent("post_add", hooksContextFor(repo, branch, wt.Path), wt.Path)
 	warnings = append(warnings, hookResult.Warnings...)
 
-	emitErr := emit(cmd, fmt.Sprintf("worktree %s created for %s", wt.Qualified(), wt.BranchLabel()), item, warnings, func() {
+	// The hook failure has to ride the envelope. It used to be returned only as the
+	// process error, so `add` exited 1 while stdout said `outcome: success` with an empty
+	// warnings array — the worktree was created correctly and the failure was invisible to
+	// anything reading the envelope.
+	var addErr *output.Error
+	if hookErr != nil {
+		addErr = output.Classify(hookErr)
+	}
+	emitErr := emitResult(cmd, output.Result{
+		Summary:  fmt.Sprintf("worktree %s created for %s", wt.Qualified(), wt.BranchLabel()),
+		Data:     item,
+		Warnings: warnings,
+		Err:      addErr,
+	}, func() {
 		wd, _ := os.Getwd()
 		cdHint, switchHint := navigationHints(wd, wt)
 		fmt.Println()

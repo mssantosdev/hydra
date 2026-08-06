@@ -9,6 +9,59 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.5] - 2026-08-05
+
+The release that fixes the *class* rather than the fifth instance of it.
+
+Four rounds of handing the binary to agents with no knowledge of hydra each found the same
+shape of bug, including in code written specifically to prevent the previous one. Two
+independent adversarial reviews named it identically: **hydra's per-item logic was correct,
+but its aggregate verdict was computed from "my code path finished" rather than "every item
+I claimed to cover actually verified."** Every fix so far had been point-local, so the class
+regenerated in whichever command aggregated next.
+
+### Breaking
+
+- **`success` may no longer co-exist with a failure or a workspace-integrity warning.** The
+  outcome is now corrected at the single boundary every command's envelope passes through,
+  rather than trusted from the command that produced it. Two consequences a consumer will
+  see:
+
+  - `hydra add` with a failing hook reported `outcome: success` with an empty `warnings`
+    array and then exited 1 — the hook failure was absent from the envelope entirely. It now
+    reports `outcome: partial` with `error.code: hook_failed`, and the summary still
+    truthfully says the worktree was created, because it was.
+  - `hydra status` reported `9 worktree(s), all clean` and exit 0 while a registered worktree
+    was missing from disk, the absence appearing only in `warnings[]`. It now reports
+    `outcome: partial`, **exit 4**, a summary that says so, and a `next[]` pointing at
+    `doctor`. Counts describe the worktrees status could inspect, which is not the same set
+    as the ones it was asked about.
+
+- **Warnings that describe a fault now carry a hydra error code.** Raw git text reached
+  callers verbatim and in the system locale — `fatal: cannot change to '…': Arquivo ou
+  diretório inexistente` — which nothing downstream could match on. Such warnings are now
+  prefixed with `worktree_unknown:`, `git_failed:` or `bare_missing:`. The git message is
+  kept, since it names the real cause; it simply no longer arrives uncoded.
+
+### Added
+
+- `output.Coverage{Claimed, Inspected, Failed}` and `Derive()`, so a verdict is computed
+  from what was actually covered: anything failed and nothing survived is `failure`, some
+  failed is `partial`, fewer inspected than claimed is `partial`, otherwise `success`. Tested
+  against the five bugs that motivated it, including the one where every item failed and the
+  outcome still read `partial`.
+
+### Verified, not changed
+
+- `--output text` is honoured in every flag position, across `list`, `status` and
+  `repo list`. Two agents contradicted each other on this; the matrix settles it.
+- Protection of uncommitted work is sound. `remove` refuses with `worktree_dirty` (exit 5),
+  treating untracked files the same as modified ones; `sync` refuses without a policy
+  (`needs_input`, exit 7). Work is destroyed only behind an explicit `--force` or
+  `--dirty reset`.
+
+[0.3.5]: https://github.com/mssantosdev/hydra/compare/v0.3.4...v0.3.5
+
 ## [0.3.4] - 2026-08-05
 
 Both found by handing the installed binary to four agents with no prior knowledge of hydra.
