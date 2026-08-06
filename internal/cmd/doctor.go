@@ -449,7 +449,7 @@ func diagnoseWorktree(repo repoContext, bareRoot string, wt worktreeContext) []d
 	switch {
 	case statErr == nil && wt.Prunable:
 		checks = append(checks, doctorCheck{
-			ID: checkWorktreeOrphanedDir, Status: "fail",
+			ID: checkWorktreeOrphanedDir, Status: "fail", Branch: wt.Branch,
 			Message: fmt.Sprintf(
 				"%s is no longer a valid worktree but the directory still exists; move or delete %s, then run \"hydra add %s %s\"",
 				label, wt.Path, repo.Alias, wt.Branch),
@@ -457,7 +457,7 @@ func diagnoseWorktree(repo repoContext, bareRoot string, wt worktreeContext) []d
 		})
 	case statErr != nil || wt.Prunable:
 		checks = append(checks, doctorCheck{
-			ID: checkWorktreeMissingOnDisk, Status: "fail",
+			ID: checkWorktreeMissingOnDisk, Status: "fail", Branch: wt.Branch,
 			Message: fmt.Sprintf(
 				"worktree is registered but missing on disk; --fix clears the registration, then \"hydra add %s %s\" recreates it",
 				repo.Alias, wt.Branch),
@@ -465,7 +465,7 @@ func diagnoseWorktree(repo repoContext, bareRoot string, wt worktreeContext) []d
 		})
 	default:
 		checks = append(checks, doctorCheck{
-			ID: checkWorktreeMissingOnDisk, Status: "ok",
+			ID: checkWorktreeMissingOnDisk, Status: "ok", Branch: wt.Branch,
 			Message: "worktree directory exists",
 			Repo:    repo.Alias, Worktree: label, Fixable: true,
 		})
@@ -713,9 +713,15 @@ func applyDoctorFixes(report *doctorReport, cfg *config.Config, projectRoot stri
 				check.Message = err.Error()
 				continue
 			}
-			markDoctorFixed(check, fmt.Sprintf(
-				"stale worktree registration pruned; run \"hydra add %s %s\" to recreate it",
-				check.Repo, check.Branch))
+			recreate := "stale worktree registration pruned"
+			if check.Repo != "" && check.Branch != "" {
+				// Only name the follow-up when both halves are known. The message used to
+				// interpolate an empty branch, printing `hydra add api ` — a command that
+				// cannot be run, offered as the recovery.
+				recreate += fmt.Sprintf("; run %q to recreate it",
+					fmt.Sprintf("hydra add %s %s", check.Repo, check.Branch))
+			}
+			markDoctorFixed(check, recreate)
 
 		case checkTopicDanglingMember:
 			// Detach only this member. Removing the whole topic would destroy

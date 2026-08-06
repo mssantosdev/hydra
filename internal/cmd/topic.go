@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -229,7 +230,16 @@ func describeTopic(t topic.Topic) topicJSON {
 		entry := topicMemberJSON{Repo: member.Repo, Branch: member.Branch}
 		if wt, ok := live[topicKey(member.Repo, member.Branch)]; ok {
 			entry.Path = wt.Path
-			entry.Present = true
+			// Being in `git worktree list` is not the same as existing. Git keeps the
+			// registration after the directory is deleted, so `present` was true for a
+			// member whose worktree had been rm -rf'd, and `dangling` counted zero — the
+			// one field a caller reads to find exactly that. `present` names a fact about
+			// disk, so it has to look at disk.
+			if _, err := os.Stat(wt.Path); err == nil {
+				entry.Present = true
+			} else {
+				out.Dangling++
+			}
 		} else {
 			out.Dangling++
 		}

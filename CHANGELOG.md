@@ -9,6 +9,52 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.7] - 2026-08-06
+
+Round five stopped rebuilding workspaces and went after invariants instead: agents were given
+the command surface up front and told to make the tool contradict itself. Branch names were
+deliberately not `prod`/`stage`, and each repository's default branch deliberately was not the
+first one passed to `--branches`, so two previously-untestable claims became testable.
+
+### Fixed
+
+- **One unreachable remote no longer stops `sync` from updating the others.** The pre-fetch
+  loop returned on the first failure, so a single broken remote aborted the whole command:
+  the envelope carried no summary and no counts, exit was 1, and repositories that were
+  perfectly pullable were left stale. With three repositories and one broken remote, two were
+  silently left behind. Unreachable remotes are now reported as `git_failed:`-coded warnings
+  and the run continues, giving `outcome: partial` and exit 4. `run` already behaved this way;
+  `sync` promising less was an inconsistency, not a policy.
+
+- **`sync` reported `partial` while exiting 0**, and separately dropped the failure entirely
+  once the reachable repositories were already current — the "nothing to pull" path took an
+  early return that skipped the outcome logic, so an unreachable remote was visible on the
+  first sync and gone on the second. Both paths now agree with the exit status.
+
+- **`topic show` reported `present: true` for a member whose worktree had been deleted**, and
+  `dangling: 0` alongside it — the one field a caller reads to find exactly that. Presence was
+  taken from `git worktree list`, which keeps the registration after the directory is removed.
+  `present` names a fact about disk, so it now stats the path.
+
+- **`doctor --fix` suggested a command it could not complete.** The pruned-registration
+  message interpolated a branch the check never carried, printing `hydra add api ` — an
+  unrunnable command offered as the recovery. Worktree checks now carry their branch, and the
+  suggestion is omitted rather than half-rendered when either half is unknown.
+
+### Verified, not changed
+
+- `hydra run`'s outcome, exit status and disk state agreed in every arrangement tried: none
+  failing, one of four, two of four, three of four, and all four. Per-worktree output stayed
+  correctly attributed with concurrency raised and with it forced to one at a time.
+- Output larger than the cap is truncated with `stdout_truncated` set and `stdout_bytes`
+  reporting the true size.
+- `apply` does not roll back the worktrees it created when a later item fails, which is the
+  intended behaviour: they exist and are reported.
+- 13 of 14 `doctor` check ids were made to fire simultaneously — the first time most of them
+  have been observed failing rather than passing.
+
+[0.3.7]: https://github.com/mssantosdev/hydra/compare/v0.3.6...v0.3.7
+
 ## [0.3.6] - 2026-08-06
 
 Round four probed surface the earlier rounds never touched — drift, hooks, multiple

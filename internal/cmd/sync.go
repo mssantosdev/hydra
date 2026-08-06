@@ -161,16 +161,38 @@ func runSync(cmd *cobra.Command, args []string) error {
 		data := syncJSON{Project: cfg.Project, Root: projectRoot, Worktrees: []syncWorktreeJSON{}, Summary: syncSummaryJSON{}}
 		return emit(cmd, "no worktrees to sync", data, collectWarnings, func() { log.Info("No worktrees found to sync") })
 	}
-	if err := fetchSyncRepos(entries); err != nil {
-		return err
-	}
+	// Fetch failures become warnings and the run continues. The fault-coded warnings force
+	// at least a partial outcome at the envelope, so an unreachable remote is still
+	// reported — it just no longer prevents the reachable ones from being updated.
+	collectWarnings = append(collectWarnings, fetchSyncRepos(entries)...)
 	entries, enrichWarnings := enrichSyncEntries(entries)
 	collectWarnings = append(collectWarnings, enrichWarnings...)
 	candidates := filterWithUpdates(entries)
 	if len(candidates) == 0 {
+		// "Nothing to pull" still has to report a remote it could not reach. This early
+		// return skipped the outcome logic below, so an unreachable remote vanished
+		// entirely once the reachable ones were already current — the failure was visible
+		// on the first sync and silently gone on the second.
 		results := buildIdleResults(entries)
 		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
-		return emit(cmd, syncSummaryLine(data.Summary), data, collectWarnings, func() { printSyncText(results, data.Summary) })
+		var idleErr *output.Error
+		if output.HasFault(collectWarnings) {
+			idleErr = output.Errorf(output.CodePartialFailure,
+				"%d repositor(y|ies) could not be fetched", countFaults(collectWarnings)).
+				WithDetail("warnings", collectWarnings)
+		}
+		if emitErr := emitResult(cmd, output.Result{
+			Summary:  syncSummaryLine(data.Summary),
+			Data:     data,
+			Warnings: collectWarnings,
+			Err:      idleErr,
+		}, func() { printSyncText(results, data.Summary) }); emitErr != nil {
+			return emitErr
+		}
+		if idleErr != nil {
+			return idleErr
+		}
+		return nil
 	}
 	if !jsonMode() {
 		log.Info(fmt.Sprintf("Found %d worktree(s) with available updates", len(candidates)))
@@ -227,6 +249,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 		outcome = output.OutcomePartial
 		syncErr = output.Errorf(output.CodePartialFailure,
 			"%d worktree(s) failed to sync", len(failed)).WithDetail("worktrees", failed)
+	}
+
+	// A repository that could not be fetched is a fault even when every worktree that WAS
+	// reachable pulled cleanly. Without this, sync reported `outcome: partial` — the
+	// envelope corrects that much on its own — while exiting 0, which is the same
+	// contradiction inverted: a caller gating on the exit status saw nothing wrong.
+	if syncErr == nil && output.HasFault(allWarnings) {
+		syncErr = output.Errorf(output.CodePartialFailure,
+			"%d repositor(y|ies) could not be fetched", countFaults(allWarnings)).
+			WithDetail("warnings", allWarnings)
 	}
 
 	if err := emitResult(cmd, output.Result{
@@ -318,18 +350,32 @@ func gatherSyncEntries(projectCfg *config.Config, root, targetAlias string) ([]s
 	return entries, warnings
 }
 
-func fetchSyncRepos(entries []syncEntry) error {
+// fetchSyncRepos pre-fetches every bare repository and reports the ones that failed,
+// rather than aborting on the first.
+//
+// It used to return that first error, so a single unreachable remote stopped the whole
+// command: the envelope carried no summary and no counts, exit was 1, and repositories that
+// were perfectly pullable stayed stale. One broken remote out of three left two behind and
+// said nothing about them. `run` already attempts every target and reports a partial; sync
+// promising less than that was an inconsistency, not a policy.
+//
+// A repository that cannot be fetched is still handed to the pull stage: it may be
+// fast-forwardable from refs already on disk, and if it is not, the failure is reported per
+// worktree where a caller can see which one it was.
+func fetchSyncRepos(entries []syncEntry) []string {
 	seen := make(map[string]struct{})
+	var failures []string
 	for _, entry := range entries {
 		if _, ok := seen[entry.barePath]; ok {
 			continue
 		}
 		seen[entry.barePath] = struct{}{}
 		if err := git.FetchBareRepo(entry.barePath); err != nil {
-			return output.Wrap(output.CodeGitFailed, err, "failed to fetch %s", entry.repo)
+			failures = append(failures, fmt.Sprintf("%s: %s: failed to fetch: %v",
+				output.CodeGitFailed, entry.repo, err))
 		}
 	}
-	return nil
+	return failures
 }
 
 func enrichSyncEntries(entries []syncEntry) ([]syncEntry, []string) {

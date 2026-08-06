@@ -810,5 +810,42 @@ check "and a retry with a free name then succeeds" \
   '(cd "$T/collide" && "$HYDRA" init --project-name collide-ok --output json 2>/dev/null |
     jq -e ".outcome==\"success\"" >/dev/null)'
 
+# ---- 18. one broken remote must not stop the others (0.3.7)
+echo "== 18. sync attempts every repo, and present means present =="
+SB="$T/syncbreak"
+mkdir -p "$SB/ws"
+for r in alpha beta; do
+  git init -q -b trunk "$SB/up-$r"
+  git -C "$SB/up-$r" -c user.email=t@t -c user.name=T commit -q --allow-empty -m init
+done
+(cd "$SB/ws" && "$HYDRA" init --project-name syncbreak >/dev/null 2>&1)
+for r in alpha beta; do
+  (cd "$SB/ws" && "$HYDRA" repo add "$SB/up-$r" --as "$r" --group g --branches trunk >/dev/null 2>&1)
+done
+# advance both upstreams, then make one unreachable
+for r in alpha beta; do
+  git -C "$SB/up-$r" -c user.email=t@t -c user.name=T commit -q --allow-empty -m more
+done
+mv "$SB/up-beta" "$SB/up-beta-gone"
+check "a broken remote does not stop the healthy ones from pulling" \
+  '(cd "$SB/ws" && { "$HYDRA" sync --yes --output json || true; } 2>/dev/null |
+    jq -e ".outcome==\"partial\" and (.data.summary.pulled>=1)" >/dev/null)'
+check "the healthy repo really did fast-forward" \
+  '[ "$(git -C "$SB/ws/g/alpha" rev-parse HEAD)" = "$(git -C "$SB/up-alpha" rev-parse HEAD)" ]'
+check "the unreachable remote is reported with a hydra code" \
+  '(cd "$SB/ws" && { "$HYDRA" sync --yes --output json || true; } 2>/dev/null |
+    jq -e "[.warnings[]|test(\"^git_failed:\")]|any" >/dev/null)'
+check "and sync exits consistently with a partial outcome" \
+  '(cd "$SB/ws" && "$HYDRA" sync --yes --output json >/dev/null 2>&1; test $? -eq 4)'
+# `present` names a fact about disk, so deleting the directory must change it.
+check "a topic member whose directory is gone is not reported present" \
+  '(cd "$T/ws" && "$HYDRA" start feat/gone --repos api --topic PRESENT-1 >/dev/null 2>&1 &&
+    rm -rf "$T/ws/backend/api-feat-gone" &&
+    "$HYDRA" topic show PRESENT-1 --output json 2>/dev/null |
+    jq -e ".data.dangling==1 and ([.data.members[]|select(.present)]|length==0)" >/dev/null)'
+check "a pruned registration only suggests a command it can complete" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --fix --output json || true; } 2>/dev/null |
+    jq -e "[.data.checks[]|select(.fixed)|.message|test(\"hydra add [a-z].* [a-z]\")or(test(\"hydra add\")|not)]|all" >/dev/null)'
+
 echo
 echo "ALL $pass ASSERTIONS PASSED"
