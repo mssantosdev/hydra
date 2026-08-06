@@ -23,12 +23,16 @@ const (
 	checkWorktreeInsideGitdir  = "worktree_inside_gitdir"
 	checkLegacySymlink         = "legacy_symlink"
 	checkWorktreeMissingOnDisk = "worktree_missing_on_disk"
-	checkWorktreeUnregistered  = "worktree_unregistered"
-	checkStaleGitState         = "stale_git_state"
-	checkWorktreeDetached      = "worktree_detached"
-	checkWorktreeDirty         = "worktree_dirty"
-	checkRegistryDangling      = "registry_dangling"
-	checkBareUnregistered      = "bare_unregistered"
+	// checkWorktreeOrphanedDir is the path-still-present half: pruning the registration
+	// leaves the directory behind, which then blocks `hydra add`. Deleting it is the
+	// caller's decision, so this is deliberately not fixable.
+	checkWorktreeOrphanedDir  = "worktree_orphaned_dir"
+	checkWorktreeUnregistered = "worktree_unregistered"
+	checkStaleGitState        = "stale_git_state"
+	checkWorktreeDetached     = "worktree_detached"
+	checkWorktreeDirty        = "worktree_dirty"
+	checkRegistryDangling     = "registry_dangling"
+	checkBareUnregistered     = "bare_unregistered"
 	// checkTopicDanglingMember covers EVERY way membership can outlive its worktree:
 	// a removal that skipped hydra, an interrupted remove, a branch renamed behind
 	// hydra's back, or a hand-edited state file. One check, because they all reduce
@@ -433,17 +437,33 @@ func diagnoseWorktree(repo repoContext, bareRoot string, wt worktreeContext) []d
 		})
 	}
 
-	missing := wt.Prunable
-	if _, err := os.Stat(wt.Path); err != nil {
-		missing = true
-	}
-	if missing {
+	// Two different states used to share one check id with one Fixable value, so one of
+	// them was always mislabelled. An agent hit the wrong half and dead-ended: --fix
+	// pruned, `add` then failed worktree_name_conflict because the directory was still
+	// there, and `repo add --adopt` refused because it is not a git checkout. The recovery
+	// was a manual mv, which nothing had told it about.
+	//
+	//   path absent   -> prunable registration, --fix can clear it
+	//   path present  -> a directory in the way, NOT safe to delete automatically
+	_, statErr := os.Stat(wt.Path)
+	switch {
+	case statErr == nil && wt.Prunable:
+		checks = append(checks, doctorCheck{
+			ID: checkWorktreeOrphanedDir, Status: "fail",
+			Message: fmt.Sprintf(
+				"%s is no longer a valid worktree but the directory still exists; move or delete %s, then run \"hydra add %s %s\"",
+				label, wt.Path, repo.Alias, wt.Branch),
+			Repo: repo.Alias, Worktree: label, Fixable: false,
+		})
+	case statErr != nil || wt.Prunable:
 		checks = append(checks, doctorCheck{
 			ID: checkWorktreeMissingOnDisk, Status: "fail",
-			Message: "worktree is registered but missing on disk",
-			Repo:    repo.Alias, Worktree: label, Fixable: true,
+			Message: fmt.Sprintf(
+				"worktree is registered but missing on disk; --fix clears the registration, then \"hydra add %s %s\" recreates it",
+				repo.Alias, wt.Branch),
+			Repo: repo.Alias, Worktree: label, Fixable: true,
 		})
-	} else {
+	default:
 		checks = append(checks, doctorCheck{
 			ID: checkWorktreeMissingOnDisk, Status: "ok",
 			Message: "worktree directory exists",
@@ -693,7 +713,9 @@ func applyDoctorFixes(report *doctorReport, cfg *config.Config, projectRoot stri
 				check.Message = err.Error()
 				continue
 			}
-			markDoctorFixed(check, "stale worktree registration pruned")
+			markDoctorFixed(check, fmt.Sprintf(
+				"stale worktree registration pruned; run \"hydra add %s %s\" to recreate it",
+				check.Repo, check.Branch))
 
 		case checkTopicDanglingMember:
 			// Detach only this member. Removing the whole topic would destroy

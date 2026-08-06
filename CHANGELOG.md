@@ -9,6 +9,64 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.6] - 2026-08-06
+
+Round four probed surface the earlier rounds never touched — drift, hooks, multiple
+workspaces, dirty state — and two adversarial reviews of round three named what to fix.
+
+### Added
+
+- **`upstream_as_of` on every worktree.** hydra never fetches to answer a query, so `ahead`
+  and `behind` are computed against whatever remote refs are on disk. After an upstream push
+  an agent saw `behind: 0` and `✓ clean` with nothing signalling staleness, and correctly
+  called that dishonest. Each worktree now carries the time its remote refs were last
+  fetched, from the bare repository's `FETCH_HEAD`, so `behind: 0` means "not behind as of
+  this moment" rather than an unqualified claim. Null means the remote has never been
+  fetched in this workspace. No fetch was added: querying stays cheap, it just stops
+  overstating.
+
+- **`default_branch` and `on_default_branch` on every worktree.** The worktree on a
+  repository's default branch gets the bare alias as its directory; every other gets
+  `alias-<branch-slug>`. Two agents independently concluded the suffix was decided by the
+  ORDER of `--branches`, because in every test the default happened to be listed first —
+  their data could not distinguish the two rules, so the inference was unfalsifiable rather
+  than careless. The rule is now observable instead of inferred.
+
+### Fixed
+
+- **A rejected `hydra init` no longer leaves a workspace behind.** Registration is the last
+  step and the one that fails on a name collision, so `config.yaml` was left on disk: the
+  retry under a different name then found a manifest it had not created. The manifest is now
+  removed on that failure (never the directory, which may hold something of yours), the code
+  is `project_unknown` rather than `internal`, and a `next[]` points at
+  `hydra project ls` to show which names are taken.
+
+- **`worktree_missing_on_disk` covered two states with one `fixable` value**, so one of them
+  was always mislabelled. An agent dead-ended on the wrong half: `--fix` pruned the
+  registration, `hydra add` then failed `worktree_name_conflict` because the directory was
+  still there, and `repo add --adopt` refused because it is not a git checkout — the actual
+  recovery was a manual `mv` that nothing had mentioned. Now split:
+
+  | check | state | fixable |
+  |---|---|---|
+  | `worktree_missing_on_disk` | path absent | yes — prune, then `hydra add` |
+  | `worktree_orphaned_dir` | path present, not a valid worktree | no — move it aside first |
+
+  Both messages name the exact follow-up command, and `--fix`'s prune result now says what
+  to run next instead of stopping at "pruned".
+
+### Verified, not changed
+
+- Uncommitted work is properly defended: `remove` refuses with `worktree_dirty` (exit 5) and
+  treats untracked files exactly like modified ones, `sync` refuses without a policy
+  (`needs_input`, exit 7), and an unmerged branch is not deleted without `--force`. Work is
+  destroyed only behind an explicit `--force` or `--dirty reset`.
+- `--output text` is honoured in every flag position across `list`, `status` and `repo list`.
+- Lifecycle hooks: a failing hook does not roll back or destroy a correctly-created
+  worktree, and `optional: true` makes one non-fatal.
+
+[0.3.6]: https://github.com/mssantosdev/hydra/compare/v0.3.5...v0.3.6
+
 ## [0.3.5] - 2026-08-05
 
 The release that fixes the *class* rather than the fifth instance of it.

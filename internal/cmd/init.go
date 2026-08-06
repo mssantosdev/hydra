@@ -91,7 +91,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := registry.Register(created.Project, root); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to register project %q", created.Project)
+		// Roll the manifest back. Registration is the last step and the one that can fail
+		// on a name collision, so leaving config.yaml behind turned a rejected init into a
+		// half-made workspace: the retry with a different name then found a manifest it had
+		// not created. Only the file this call wrote is removed, never the directory, which
+		// may have held something of the caller's.
+		if removeErr := os.Remove(configPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			return output.Wrap(output.CodeInternal, err,
+				"failed to register project %q, and %s was left behind: %v",
+				created.Project, configPath, removeErr)
+		}
+		return output.Wrap(output.CodeProjectUnknown, err,
+			"failed to register project %q", created.Project).
+			WithDetail("project", created.Project).
+			WithNext(output.Next{
+				Argv: []string{"hydra", "project", "ls", "--output", "json"},
+				Why:  "see which names are already registered",
+			})
 	}
 
 	cfg = created

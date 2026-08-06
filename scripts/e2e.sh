@@ -784,5 +784,31 @@ check "status points at doctor without being asked" \
   '(cd "$T/hookws" && { "$HYDRA" status --output json || true; } 2>/dev/null |
     jq -e "[.next[].argv[1]]|index(\"doctor\")!=null" >/dev/null)'
 
+# ------- 17. cached answers are dated, and rejections leave nothing behind (0.3.6)
+echo "== 17. behind is qualified, the naming rule is observable, init rolls back =="
+check "behind is dated, because hydra never fetches to answer a query" \
+  '(cd "$T/ws" && "$HYDRA" list --output json 2>/dev/null |
+    jq -e "[.data.worktrees[]|select(.upstream!=null)]|all(.upstream_as_of!=null)" >/dev/null)'
+# Assert the INVARIANT, not a particular mix: by this point the shared workspace's set of
+# branches is whatever earlier sections left behind.
+check "every worktree states whether it is on the default branch" \
+  '(cd "$T/ws" && "$HYDRA" list --output json 2>/dev/null |
+    jq -e "[.data.worktrees[]|select(.on_default_branch==null)]|length==0" >/dev/null)'
+check "the unsuffixed directory is exactly the default-branch worktree" \
+  '(cd "$T/ws" && "$HYDRA" list --output json 2>/dev/null |
+    jq -e "[.data.worktrees[]|select(.default_branch!=null and .default_branch!=\"\")]|
+           all(if .on_default_branch then .name==.repo else .name!=.repo end)" >/dev/null)'
+# A rejected init must leave nothing half-made for the retry to trip over.
+mkdir -p "$T/collide"
+{ (cd "$T/collide" && "$HYDRA" init --project-name demo --output json) || true; } \
+  2>/dev/null > "$T/collide.json"
+check "a name collision is rejected and names the taken registry" \
+  'jq -e ".error.code==\"project_unknown\" and (.next|length)>=1" "$T/collide.json" >/dev/null'
+check "the rejected init left no manifest behind" \
+  '! test -f "$T/collide/.hydra/config.yaml"'
+check "and a retry with a free name then succeeds" \
+  '(cd "$T/collide" && "$HYDRA" init --project-name collide-ok --output json 2>/dev/null |
+    jq -e ".outcome==\"success\"" >/dev/null)'
+
 echo
 echo "ALL $pass ASSERTIONS PASSED"

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/git"
@@ -89,8 +90,23 @@ type worktreeJSON struct {
 	Upstream *string `json:"upstream"`
 	Ahead    int     `json:"ahead"`
 	Behind   int     `json:"behind"`
-	Dirty    bool    `json:"dirty"`
-	Changes  int     `json:"changes"`
+	// UpstreamAsOf is when the remote refs this comparison used were last fetched, from
+	// the bare repository's FETCH_HEAD. Ahead and Behind are computed against CACHED
+	// refs — hydra never fetches to answer a query — so `behind: 0` means "not behind as
+	// of this moment", not "up to date now". Reporting the count without the timestamp
+	// stated a cached answer as a current one, which an agent correctly called dishonest.
+	// Null means the remote has never been fetched in this workspace.
+	UpstreamAsOf *string `json:"upstream_as_of"`
+	Dirty        bool    `json:"dirty"`
+	Changes      int     `json:"changes"`
+	// DefaultBranch is the repository's default, and OnDefaultBranch says whether this
+	// worktree is on it. Together they explain the directory name: the worktree on the
+	// default branch gets the bare alias, every other gets `alias-<branch-slug>`. Two
+	// agents independently concluded the suffix was decided by the ORDER of --branches,
+	// because in every test the default happened to be listed first — their data could
+	// not distinguish the two rules. These fields make it observable rather than inferred.
+	DefaultBranch   string `json:"default_branch,omitempty"`
+	OnDefaultBranch bool   `json:"on_default_branch"`
 	// Topic is the recorded topic this worktree belongs to, nil when unassigned.
 	// Unassigned is a permanent, first-class state — not a missing value.
 	Topic *string `json:"topic"`
@@ -114,7 +130,29 @@ func (w worktreeContext) json() worktreeJSON {
 		Head:     w.Head,
 		Locked:   w.Locked,
 		Prunable: w.Prunable,
+
+		DefaultBranch:   w.RepoContext.DefaultBranch,
+		OnDefaultBranch: w.Branch != "" && w.Branch == w.RepoContext.DefaultBranch,
+		UpstreamAsOf:    fetchedAt(w.RepoContext.BareRepo),
 	}
+}
+
+// fetchedAt reports when a bare repository last fetched, from FETCH_HEAD's mtime.
+//
+// This is what makes `behind` honest. hydra never fetches to answer a query, so the count
+// is computed against whatever remote refs are on disk; without a timestamp beside it,
+// `behind: 0` reads as "up to date" when it means "not behind as of some earlier moment".
+// Nil means this remote has never been fetched here.
+func fetchedAt(bareRepo string) *string {
+	if bareRepo == "" {
+		return nil
+	}
+	info, err := os.Stat(filepath.Join(bareRepo, "FETCH_HEAD"))
+	if err != nil {
+		return nil
+	}
+	stamp := info.ModTime().UTC().Format(time.RFC3339)
+	return &stamp
 }
 
 // withTracking fills the upstream/ahead/behind/dirty fields from git.
