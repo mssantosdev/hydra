@@ -125,6 +125,7 @@ topic remove (rm)
   --with-worktrees                   bool
   --yes                              bool
 topic show (view)
+ui (tui)
 where
 
 ## Error codes

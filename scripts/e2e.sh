@@ -847,5 +847,23 @@ check "a pruned registration only suggests a command it can complete" \
   '(cd "$T/ws" && { "$HYDRA" doctor --fix --output json || true; } 2>/dev/null |
     jq -e "[.data.checks[]|select(.fixed)|.message|test(\"hydra add [a-z].* [a-z]\")or(test(\"hydra add\")|not)]|all" >/dev/null)'
 
+# ------------------------------------------------------------------ 19. the interactive register refuses a pipe rather than corrupting it (0.4.x)
+echo
+echo "== 19. hydra ui needs a terminal, and says which =="
+
+# A full-screen program in a pipe would emit escape sequences as data. It must refuse with
+# needs_input and hand back the non-interactive equivalent.
+{ "$HYDRA" ui --output json 2>/dev/null || true; } > "$T/ui.json"
+check "ui refuses without a tty" \
+  'jq -e ".error.code==\"needs_input\"" "$T/ui.json" >/dev/null'
+check "ui names what is missing" \
+  'jq -e ".error.details.missing==\"tty\"" "$T/ui.json" >/dev/null'
+check "ui points at the non-interactive route" \
+  'jq -e "[.next[].argv|join(\" \")]|any(contains(\"status\"))" "$T/ui.json" >/dev/null'
+{ "$HYDRA" ui >/dev/null 2>&1; } && ui_exit=0 || ui_exit=$?
+check "ui exits 7 for needs_input" '[ "'"$ui_exit"'" = "7" ]'
+check "ui is published in the surface" \
+  '"$HYDRA" commands --output json | jq -e ".data.commands[]|select(.name==\"ui\")" >/dev/null'
+
 echo
 echo "ALL $pass ASSERTIONS PASSED"

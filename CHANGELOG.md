@@ -9,6 +9,67 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [Unreleased]
+
+### Added
+
+- **`hydra ui` (alias `hydra tui`): a full-screen register of the workspace.** Eight mutating
+  flows already prompted when run bare on a terminal, but every *reporting* command was
+  flags-only, so exploring a workspace meant already knowing the flag that would answer the
+  question. A form cannot close that: forms collect values and exit, and reporting needs
+  view, refine and act in one place.
+
+  Browse, filter, and leave with a path, so it composes exactly like `switch`:
+  `cd "$(hydra ui)"`. The register is written to stderr and stdout carries only the
+  selection. Quitting without selecting prints nothing and exits 0, because choosing not to
+  choose is not a failure. Without a terminal it returns `needs_input` (exit 7) and names
+  `hydra status --output json` as the non-interactive equivalent, rather than emitting escape
+  sequences into a pipe.
+
+  Two invariants from the rest of the tool are kept rather than reinvented: every refresh
+  re-reads git instead of patching what is on screen, and the footer carries the
+  `upstream_as_of` timestamp the counts were computed against, since hydra never fetches to
+  answer a query.
+
+  The filter vocabulary is identical to `--filter` (`dirty`, `behind`, `branch:<glob>`,
+  plus `topic:<id>` mirroring the `--topic` flag), and it delegates to the same `path.Match`
+  call, so `*` does not cross a `/` in either place. A first hand-rolled matcher diverged on
+  exactly that case; a test now pins the two together. `ahead` is deliberately not a state
+  word because `--filter` rejects it.
+
+  Rendering reuses `collectWorktrees` and the topic index that `list` and `status` decorate
+  from, so the three views cannot disagree.
+
+  This is browse-and-select only. Acting on a selection still means dropping to the existing
+  `sync`, `remove` or `add` forms; wiring those in is the next increment.
+
+- **A first-party `hydra` theme, now the default.** The tool shipped five borrowed community
+  palettes (tokyonight, catppuccin, dracula, nord, onedark) and none of its own, so its face
+  was someone else's design decision. The new palette's role names are shared with
+  `docs/guide.html`, which renders them against a light ground: one design system in two
+  media rather than two palettes that resemble each other. Breaking for anyone who never set
+  a theme; `hydra config` still selects any of the previous five.
+
+- **`docs/guide.html`**, a single self-contained page covering install, the model, the
+  interactive routes and the machine contract. No external requests, no fonts to download,
+  no analytics. Every terminal panel is verbatim output from a real run, the interactive
+  frames captured from a pty. Content is readable with JavaScript disabled.
+
+### Fixed
+
+- **`hydra init` in an existing workspace reported `internal`.** That code means "hydra is
+  broken", and it is the one code an agent is told to treat as a tool defect, so a plain
+  usage mistake cost a retry loop and a bug report. Both creation paths now return
+  `project_exists`, and `init` no longer relabels a cause that already carries a stable
+  code. Found while writing the guide.
+
+### Known
+
+- **A bad `--filter` value still reports `internal`** (`hydra list --filter ahead`). The
+  message and `details.valid` are already correct and actionable; only the code is wrong.
+  Fixing it properly needs a distinct code for caller error, which is an API addition and a
+  versioning decision, so it is recorded rather than quietly patched.
+
 ## [0.3.9] - 2026-08-06
 
 Closes the last route by which one class of bug kept regenerating.

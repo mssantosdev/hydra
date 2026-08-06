@@ -492,12 +492,36 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <figcaption><span>plate 8 &middot; <span class="v">verbatim</span> &middot; it hands back both ways to get there</span><span>exit 0</span></figcaption>
       </figure>
 
+      <p>Reporting has its own route. <code>hydra ui</code> is a full-screen register:
+        browse, filter, and leave with a path. Every refresh re-reads git rather than
+        patching the screen, so it cannot drift from disk.</p>
+
+      <figure>
+        <div class="plate form"><span class="p">$</span> <b>hydra ui</b>
+
+<span class="hi">HYDRA</span>  <span class="dim">register</span>                                                        <span class="dim">shop</span>
+<span class="dim">────────────────────────────────────────────────────────────────────────────</span>
+<span class="dim">WORKTREE                        BRANCH             UPSTREAM     TOPIC     STATUS</span>
+checkout-api                    <span class="bl">main</span>               <span class="dim">origin/main</span>  <span class="dim">—</span>         <span class="wn">~ 1 chg</span>
+checkout-api-feat-split-tender  <span class="bl">feat/split-tender</span>  <span class="dim">local-only</span>   <span class="vi">PAY-4417</span>  <span class="wn">~ 1 chg</span>
+<span class="dim">────────────────────────────────────────────────────────────────────────────</span>
+<span class="dim">1/2  9 worktree(s)                            as of 2026-08-06T14:44:03Z</span>
+<span class="dim">filter</span> <span class="hi">dirty</span> <span class="dim">· ↑↓ move · enter switch · / filter · d dirty · r refresh · q quit</span>
+</div>
+        <figcaption><span>plate 8b &middot; <span class="v">observed in a pty</span> &middot; filtered to dirty, freshness dated in the footer</span><span>cd "$(hydra ui)"</span></figcaption>
+      </figure>
+
+      <p>The filter words are the same ones <code>--filter</code> takes:
+        <code>dirty</code>, <code>behind</code> and <code>branch:&lt;glob&gt;</code>, where
+        <code>*</code> does not cross a <code>/</code>. What you learn here types into a
+        script unchanged, and a test pins the two together.</p>
+
       <div class="mnote">
-        <span class="lbl">known gap</span>
-        <p>Every <em>reporting</em> command (<code>list</code>, <code>status</code>,
-          <code>doctor</code>, <code>topic show</code>, <code>run</code>) is flags-only
-          today. Interactive parity across the whole surface is the next work item, not a
-          closed question.</p>
+        <span class="lbl">still open</span>
+        <p><code>ui</code> browses and selects; it does not yet mutate. Acting on a
+          selection still means dropping to <code>sync</code>, <code>remove</code> or
+          <code>add</code>, which have their own forms. Wiring those in is the next
+          increment.</p>
       </div>
     </section>
 
