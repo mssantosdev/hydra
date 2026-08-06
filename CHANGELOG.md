@@ -9,6 +9,34 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.9] - 2026-08-06
+
+Closes the last route by which one class of bug kept regenerating.
+
+### Changed
+
+- **The exit status is now derived from the envelope that reached stdout, not from what the
+  command returned.** 0.3.5 made `success` impossible to claim beside a failure or a
+  workspace-integrity warning, enforced at the one boundary every command's envelope passes
+  through. But the *exit* still came from the command's return value, so a command could emit
+  a corrected `partial` envelope and then return nil — exiting 0 while the caller had just
+  been told something failed.
+
+  `sync` did exactly that twice in the same release: once on its normal path, and again on its
+  "nothing to pull" early return, which skipped the outcome logic entirely. Both were fixed
+  individually in 0.3.7, which is the pattern this change ends: five releases fixed five
+  instances of one class, each in the command where it was found, and each time it reappeared
+  in whichever command aggregated next.
+
+  A nil return is no longer read as proof of success. If the envelope said `partial` or
+  `failure`, the process exits from that code's published mapping. Verified by deleting
+  `sync`'s explicit error return and confirming the exit is still 4.
+
+  For a consumer this is strictly narrowing: an exit status that was wrongly 0 becomes the
+  correct non-zero. Nothing that exited correctly changes.
+
+[0.3.9]: https://github.com/mssantosdev/hydra/compare/v0.3.8...v0.3.9
+
 ## [0.3.8] - 2026-08-06
 
 ### Fixed

@@ -183,6 +183,8 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 	if r.Outcome == OutcomeSuccess && HasFault(r.Warnings) {
 		r.Outcome = OutcomePartial
 	}
+	recordVerdict(r.Outcome, r.Err)
+
 	return encode(w, envelope{
 		Schema:   Schema,
 		Command:  cmd,
@@ -194,6 +196,39 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 		Warnings: r.Warnings,
 	})
 }
+
+// emittedOutcome and emittedCode remember the verdict that actually reached stdout.
+//
+// The outcome is corrected in EmitJSON, but the process EXIT comes from whatever the command
+// returned to main — so a command could emit a corrected `partial` envelope and then return
+// nil, exiting 0. `sync` did exactly that twice in one release: once on its normal path and
+// again on its "nothing to pull" early return, which skipped the outcome logic entirely.
+// Recording the emitted verdict lets main derive the exit from what the caller was actually
+// told, so returning early can no longer bypass it.
+var (
+	emittedOutcome = OutcomeSuccess
+	emittedCode    string
+)
+
+func recordVerdict(outcome Outcome, err *Error) {
+	emittedOutcome = outcome
+	emittedCode = ""
+	switch {
+	case err != nil:
+		emittedCode = err.Code
+	case outcome == OutcomePartial:
+		emittedCode = CodePartialFailure
+	case outcome == OutcomeFailure:
+		emittedCode = CodeGitFailed
+	}
+}
+
+// EmittedVerdict reports the outcome and error code that reached stdout, so the exit status
+// can be derived from the envelope rather than trusted from a return value.
+func EmittedVerdict() (Outcome, string) { return emittedOutcome, emittedCode }
+
+// ResetVerdict clears the recorded verdict. Tests need it because the state is process-wide.
+func ResetVerdict() { emittedOutcome, emittedCode = OutcomeSuccess, "" }
 
 // EmitError writes the envelope for a total failure. Callers write it to STDOUT: a
 // failure envelope is as machine-readable as a success one, and putting it on stderr

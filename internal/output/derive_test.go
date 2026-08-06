@@ -129,3 +129,82 @@ func (w *writerStub) outcome(t *testing.T) string {
 	}
 	return envelope.Outcome
 }
+
+// The exit status is derived from what reached stdout, not from what the command returned.
+//
+// This closes the last way the aggregate-lie class could regenerate. The outcome was already
+// corrected inside the envelope, but the exit came from the command's return value — so a
+// command could emit a corrected `partial` and then return nil, exiting 0 while the caller
+// had just been told something failed. `sync` did precisely that twice in one release: once
+// on its normal path and once on a "nothing to pull" early return that skipped the outcome
+// logic altogether. A command that has not been written yet cannot reintroduce it.
+func TestEmittedVerdictDrivesTheExitStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   Result
+		wantCode string
+		wantExit int
+	}{
+		{
+			name:     "a clean success leaves the exit alone",
+			result:   Result{Summary: "all good"},
+			wantCode: "",
+			wantExit: 0,
+		},
+		{
+			name:     "an emitted partial carries the partial exit",
+			result:   Result{Outcome: OutcomePartial, Err: Errorf(CodePartialFailure, "some failed")},
+			wantCode: CodePartialFailure,
+			wantExit: 4,
+		},
+		{
+			name: "an emitted fault warning alone still moves the exit",
+			// No error, no explicit outcome: the envelope promotes this to partial, and
+			// the exit has to follow even though the command said nothing was wrong.
+			result:   Result{Warnings: []string{"worktree_unknown: g/api: gone"}},
+			wantCode: CodePartialFailure,
+			wantExit: 4,
+		},
+		{
+			name:     "a hook failure keeps its own code and exit",
+			result:   Result{Err: Errorf(CodeHookFailed, "hook exited 1")},
+			wantCode: CodeHookFailed,
+			wantExit: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ResetVerdict()
+			var buf writerStub
+			if err := EmitJSON(&buf, "test", tc.result); err != nil {
+				t.Fatalf("EmitJSON: %v", err)
+			}
+
+			outcome, code := EmittedVerdict()
+			if code != tc.wantCode {
+				t.Errorf("code = %q, want %q", code, tc.wantCode)
+			}
+			if tc.wantExit == 0 {
+				if outcome != OutcomeSuccess {
+					t.Errorf("outcome = %q, want success", outcome)
+				}
+				return
+			}
+			if outcome == OutcomeSuccess {
+				t.Fatalf("outcome = success, but exit %d was expected", tc.wantExit)
+			}
+			if got := ExitFor(code); got != tc.wantExit {
+				t.Errorf("ExitFor(%q) = %d, want %d", code, got, tc.wantExit)
+			}
+		})
+	}
+}
+
+// A fresh process starts clean, so a command that emits nothing cannot inherit a verdict.
+func TestVerdictStartsClean(t *testing.T) {
+	ResetVerdict()
+	if outcome, code := EmittedVerdict(); outcome != OutcomeSuccess || code != "" {
+		t.Errorf("EmittedVerdict() = (%q, %q), want (success, \"\")", outcome, code)
+	}
+}
