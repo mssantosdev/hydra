@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,6 +88,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	root, configPath, created, err := createProjectRootAt(target, initProjectName)
 	if err != nil {
+		// Preserve a cause that already carries a stable code. Wrapping everything as
+		// `internal` told the caller hydra had broken when they had simply run init twice,
+		// and `internal` is the one code an agent is expected to treat as a tool defect.
+		var coded *output.Error
+		if errors.As(err, &coded) {
+			return coded
+		}
 		return output.Wrap(output.CodeInternal, err, "failed to initialize the workspace")
 	}
 

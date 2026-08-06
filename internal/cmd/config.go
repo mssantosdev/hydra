@@ -22,7 +22,7 @@ DESCRIPTION
   emits the current settings as data (JSON with --output json).
 
   Configurable options:
-    • Theme  - Color scheme (tokyonight, catppuccin, dracula, nord, onedark)
+    • Theme  - Color scheme (hydra, tokyonight, catppuccin, dracula, nord, onedark)
     • Editor - Default editor command (code, vim, nano, etc.)
 
 CONFIG LOCATION

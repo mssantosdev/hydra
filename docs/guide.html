@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hydra — a register of worktrees</title>
+<script>document.documentElement.className="js";</script>
+<meta name="description" content="Technical guide to hydra: multi-repository git worktree management with a machine-readable output contract. For developers and AI agents.">
+<style>
+/* ======================================================================
+   hydra — archival register
+   Palette role names are shared with internal/ui/themes/themes.go (theme
+   "hydra"). The terminal renders these hues on a near-black ground; this
+   document renders them on card stock. One system, two media.
+   ====================================================================== */
+:root{
+  --card:#e7e5dc; --card-2:#dedbd0; --card-3:#d5d1c4;
+  --ink:#17150f; --ink-2:#46423a; --ink-3:#7d766a;
+  --rule:#b4ae9f; --rule-2:#c8c3b5;
+  --red:#9c2f1b; --ochre:#7d5f12; --green:#2f5f43; --blue:#28536f; --violet:#4e3f70;
+  --plate:#15161b; --plate-ink:#cfcabc; --plate-dim:#6f6a5f; --plate-hi:#e8e4d8;
+  --p-green:#7faf85; --p-ochre:#c9a54a; --p-red:#d2604a; --p-blue:#7fa8c9; --p-violet:#9a8cc0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --gap:clamp(16px,3vw,32px);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--card);color:var(--ink);
+  font-family:var(--serif);font-size:17.5px;line-height:1.62;
+  font-feature-settings:"kern" 1,"liga" 1}
+
+/* ---- shell ------------------------------------------------------------- */
+.shell{max-width:1180px;margin:0 auto;padding:0 var(--gap) 120px;
+  display:grid;grid-template-columns:172px minmax(0,1fr);column-gap:44px}
+
+/* ---- sticky index ------------------------------------------------------ */
+.index{position:sticky;top:0;align-self:start;height:100vh;padding:38px 0 24px;
+  border-right:1px solid var(--rule);display:flex;flex-direction:column}
+.index .brand{font-family:var(--mono);font-size:13px;letter-spacing:.3em;text-transform:uppercase;
+  font-weight:700;padding-right:20px;text-align:right;margin-bottom:2px}
+.index .ver{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-3);
+  text-align:right;padding-right:20px;margin-bottom:26px}
+.index nav{overflow-y:auto;flex:1;padding-right:20px}
+.index a{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.055em;
+  text-transform:uppercase;color:var(--ink-3);text-decoration:none;text-align:right;
+  padding:3px 0;border-right:2px solid transparent;margin-right:-20px;padding-right:18px}
+.index a:hover{color:var(--ink)}
+.index a.on{color:var(--red);border-right-color:var(--red)}
+.index a .n{color:var(--rule);margin-right:6px}
+.index a.on .n{color:var(--red)}
+.index .foot{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-3);
+  text-align:right;padding-right:20px;padding-top:14px;border-top:1px solid var(--rule-2)}
+
+/* ---- masthead ---------------------------------------------------------- */
+.main{padding-top:38px;min-width:0}
+.masthead{border-top:4px solid var(--ink);padding-top:16px}
+.masthead .strip{display:flex;justify-content:space-between;align-items:baseline;gap:18px;
+  flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-2);border-bottom:1px solid var(--ink);padding-bottom:11px}
+h1{font-family:var(--serif);font-size:clamp(34px,5.6vw,54px);line-height:1.06;margin:26px 0 0;
+  font-weight:400;letter-spacing:-.014em;max-width:24ch}
+h1 em{font-style:italic;color:var(--red)}
+.sub{font-size:clamp(18px,2.2vw,21px);line-height:1.5;color:var(--ink-2);max-width:56ch;margin:18px 0 0}
+.sub b{color:var(--ink);font-weight:600}
+
+/* two reading paths */
+.paths{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);
+  border:1px solid var(--rule);margin:32px 0 0}
+.paths > div{background:var(--card-2);padding:14px 16px}
+.paths h3{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  margin:0 0 5px;color:var(--ink-2)}
+.paths p{margin:0;font-size:15px;line-height:1.5}
+.paths a{color:var(--blue);text-decoration:none;border-bottom:1px solid currentColor}
+
+/* ---- sections ---------------------------------------------------------- */
+section{margin-top:76px;scroll-margin-top:28px}
+.sh{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--ink);
+  padding-bottom:8px;margin-bottom:22px;flex-wrap:wrap}
+.sh .num{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--red);font-weight:700}
+.sh h2{font-family:var(--mono);font-size:13px;letter-spacing:.17em;text-transform:uppercase;
+  margin:0;font-weight:700;flex:1}
+.sh .aside{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3)}
+p{max-width:66ch;margin:0 0 15px}
+p.wide{max-width:78ch}
+code{font-family:var(--mono);font-size:.87em;background:var(--card-3);padding:1px 5px;
+  border-radius:2px;color:var(--ink)}
+a.ref{color:var(--blue);text-decoration:none;border-bottom:1px solid var(--rule)}
+a.ref:hover{border-bottom-color:var(--blue)}
+strong{font-weight:600}
+
+/* margin note */
+.mnote{border-left:2px solid var(--ochre);background:rgba(125,95,18,.055);
+  padding:11px 15px;margin:0 0 18px;max-width:70ch}
+.mnote p{margin:0;font-size:15.5px}
+.mnote .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ochre);display:block;margin-bottom:3px;font-weight:700}
+
+/* ---- register table ---------------------------------------------------- */
+.reg{overflow-x:auto;margin:0 0 6px;border-top:1px solid var(--ink)}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+thead th{text-align:left;font-weight:700;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-2);padding:8px 11px;white-space:nowrap;border-bottom:1px solid var(--rule)}
+tbody td{padding:7px 11px;border-bottom:1px solid var(--rule-2);vertical-align:baseline;
+  white-space:nowrap}
+tbody tr:nth-child(even){background:rgba(180,174,159,.19)}
+td.call{color:var(--ink-3)}
+td.br{color:var(--blue)}
+td.wrap{white-space:normal;font-family:var(--serif);font-size:15px;line-height:1.45}
+.dash{color:var(--rule)}
+.tab{display:inline-block;font-size:10px;letter-spacing:.06em;padding:1px 6px;
+  border:1px solid var(--violet);color:var(--violet);border-radius:1px}
+.stamp{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.07em;
+  text-transform:uppercase;border:1.5px solid currentColor;padding:1px 6px;border-radius:2px;
+  transform:rotate(-.6deg);white-space:nowrap}
+.stamp::before{content:"";width:4px;height:4px;background:currentColor;border-radius:50%;flex:none}
+.s-ok{color:var(--green)}.s-warn{color:var(--ochre)}.s-bad{color:var(--red)}.s-info{color:var(--blue)}
+
+/* ---- terminal plate ---------------------------------------------------- */
+figure{margin:24px 0 26px}
+.plate{position:relative;background:var(--plate);color:var(--plate-ink);font-family:var(--mono);
+  font-size:12.5px;line-height:1.6;padding:15px 17px;overflow-x:auto;white-space:pre;
+  box-shadow:0 16px 30px -22px rgba(23,21,15,.55)}
+.plate b{font-weight:400;color:#fff}
+.plate .p{color:var(--plate-dim)}
+.plate .ok{color:var(--p-green)}
+.plate .wn{color:var(--p-ochre)}
+.plate .er{color:var(--p-red)}
+.plate .bl{color:var(--p-blue)}
+.plate .vi{color:var(--p-violet)}
+.plate .dim{color:var(--plate-dim)}
+.plate .hi{color:var(--plate-hi)}
+.cp{position:absolute;top:7px;right:8px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;background:transparent;color:var(--plate-dim);border:1px solid #2f313a;
+  border-radius:2px;padding:2px 7px;cursor:pointer;opacity:0;transition:opacity .18s}
+.plate:hover .cp,.cp:focus{opacity:1}
+.cp:hover{color:var(--plate-hi);border-color:#4a4d59}
+figcaption{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-2);margin-top:7px;display:flex;justify-content:space-between;gap:14px;
+  flex-wrap:wrap;border-top:1px solid var(--rule);padding-top:5px}
+figcaption .v{color:var(--red);font-weight:700}
+
+/* form frame — a plate that is a live interface, not a transcript */
+.plate.form{border-left:2px solid var(--p-violet)}
+.keys{font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--ink-3);
+  margin-top:6px}
+.keys kbd{font-family:var(--mono);background:var(--card-3);border:1px solid var(--rule);
+  border-radius:2px;padding:0 4px;font-size:10px;color:var(--ink-2)}
+
+/* ---- layout diagram ---------------------------------------------------- */
+.tree{font-family:var(--mono);font-size:12.5px;line-height:1.72;background:var(--card-2);
+  border:1px solid var(--rule);padding:15px 17px;overflow-x:auto;white-space:pre;margin:0 0 20px}
+.tree .c{color:var(--ink-3)}
+.tree .k{color:var(--blue)}
+.tree .g{color:var(--green)}
+
+/* ---- code chip grid --------------------------------------------------- */
+.exits{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);margin:0 0 20px}
+.exits > div{background:var(--card-2);padding:11px 13px}
+.exits .e{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1}
+.exits .n{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);margin:3px 0 6px}
+.exits ul{margin:0;padding-left:15px;font-family:var(--mono);font-size:11px;line-height:1.65}
+.exits li{color:var(--ink-2)}
+.exits .rt{color:var(--red);font-weight:700}
+
+/* ---- close ------------------------------------------------------------- */
+.colophon{margin-top:84px;border-top:4px solid var(--ink);padding-top:16px;
+  font-family:var(--mono);font-size:11px;line-height:1.75;color:var(--ink-2)}
+.colophon b{color:var(--ink)}
+.colophon a{color:var(--blue);text-decoration:none;border-bottom:1px solid var(--rule)}
+
+/* ---- motion: a card drawn from a drawer, once -------------------------- */
+@media (prefers-reduced-motion:no-preference){
+  .js .rv{opacity:0;transform:translateY(9px)}
+  .js .rv.in{animation:draw .52s cubic-bezier(.19,.72,.28,1) forwards}
+  @keyframes draw{to{opacity:1;transform:none}}
+  .js .stamp{animation:land .3s cubic-bezier(.16,.84,.28,1) both}
+  @keyframes land{from{transform:rotate(-3deg) scale(1.06);opacity:0}
+                  to{transform:rotate(-.6deg) scale(1);opacity:1}}
+}
+
+/* ---- narrow ------------------------------------------------------------ */
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .index{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule);
+    padding:22px 0 14px;flex-direction:row;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .index .brand,.index .ver{text-align:left;padding-right:0;margin:0}
+  .index nav{display:flex;flex-wrap:wrap;gap:2px 12px;padding-right:0;overflow:visible;flex:1 1 100%}
+  .index a{text-align:left;border-right:0;border-bottom:2px solid transparent;margin-right:0;
+    padding:1px 0}
+  .index a.on{border-right-color:transparent;border-bottom-color:var(--red)}
+  .index .foot{display:none}
+  .main{padding-top:26px}
+  .paths{grid-template-columns:1fr}
+}
+@media (max-width:620px){
+  body{font-size:16.5px}
+  /* the register stops being a table and becomes one card per worktree */
+  .reg.stack thead{display:none}
+  .reg.stack tbody td{display:block;white-space:normal;border-bottom:0;padding:2px 0}
+  .reg.stack tbody tr{display:block;border-bottom:1px solid var(--rule);padding:11px 0}
+  .reg.stack tbody tr:nth-child(even){background:transparent}
+  .reg.stack tbody td::before{content:attr(data-l) " ";font-size:9.5px;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--ink-3)}
+  .plate{font-size:11.5px;padding:13px 14px}
+}
+</style>
+</head>
+<body>
+<!--
+THESIS: A finding aid records the identity and location of things kept elsewhere; it never holds the
+item. That is hydra's remit exactly, so the guide is built as a register rather than as the dev-tool
+landing page it refuses: no gradient hero, no curl box, no stat counters, no feature-card grid.
+OWN-WORLD: Filing-card stock on ledger rule, warm typewriter black, saturated stamp inks (accession
+red, ledger ochre, verdigris, tab blue, date violet). Status is a rotated stamp plus a word. The
+tool's own output is tipped in as dark plates captioned like archival photographs. Serif for reading,
+mono for every piece of apparatus.
+STORY: A developer sees a real multi-repo workspace catalogued, reads the verbatim command that
+produced it, and installs; an agent jumps to the contract and gets codes, exits and invariants.
+VIEWPORT: Sticky section index left; 4pt masthead rule, title, two declared reading paths; then the
+register itself. No hero.
+FORM: Archival finding aid, candidate 4 of 7, seed key 630164d4, mode read.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
+-->
+<div class="shell">
+
+  <aside class="index">
+    <div class="brand">hydra</div>
+    <div class="ver">v0.3.9 &middot; schema 3</div>
+    <nav id="nav">
+      <a href="#register"><span class="n">01</span>register</a>
+      <a href="#install"><span class="n">02</span>install</a>
+      <a href="#model"><span class="n">03</span>the model</a>
+      <a href="#firstrun"><span class="n">04</span>first run</a>
+      <a href="#interactive"><span class="n">05</span>interactive</a>
+      <a href="#topic"><span class="n">06</span>a unit of work</a>
+      <a href="#current"><span class="n">07</span>staying current</a>
+      <a href="#contract"><span class="n">08</span>the contract</a>
+      <a href="#agents"><span class="n">09</span>for agents</a>
+      <a href="#recovery"><span class="n">10</span>recovery</a>
+      <a href="#surface"><span class="n">11</span>full surface</a>
+    </nav>
+    <div class="foot">go install<br>mssantosdev/hydra</div>
+  </aside>
+
+  <main class="main">
+
+    <header class="masthead">
+      <div class="strip">
+        <span>register of worktrees</span>
+        <span>github.com/mssantosdev/hydra</span>
+      </div>
+      <h1>Git gives you one worktree in one repository. <em>A unit of work rarely stays in one.</em></h1>
+      <p class="sub">hydra records which worktree, on which branch, in which repository, belongs to
+        which piece of work, and it <b>records</b> that rather than inferring it from a branch
+        name. It owns identity, layout, freshness and reporting. It never merges, never rebases,
+        never resolves a conflict, and never talks to a forge.</p>
+
+      <div class="paths">
+        <div>
+          <h3>if you are a developer</h3>
+          <p>Read down. Every dark panel is verbatim output from a real run, including its exit
+            status. Start at <a href="#install">install</a>.</p>
+        </div>
+        <div>
+          <h3>if you are an agent</h3>
+          <p>Skip to <a href="#contract">the contract</a> for the envelope, the 23 error codes and
+            their exit statuses. Then run <code>hydra skill</code>.</p>
+        </div>
+      </div>
+    </header>
+
+    <!-- ================================================== 01 ============ -->
+    <section id="register" class="rv">
+      <div class="sh"><span class="num">&sect; 01</span><h2>The register</h2>
+        <span class="aside">hydra list</span></div>
+
+      <p>A workspace is a project holding groups of repositories. Every worktree is a real sibling
+        directory, never hidden inside a <code>.git</code>. The register is the whole workspace in
+        one view.</p>
+
+      <div class="reg stack">
+        <table>
+          <thead><tr><th>call</th><th>worktree</th><th>branch</th><th>upstream</th><th>topic</th><th>status</th></tr></thead>
+          <tbody>
+            <tr><td class="call" data-l="call">svc.001</td><td data-l="worktree">billing-worker</td><td class="br" data-l="branch">main</td><td class="call" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+            <tr><td class="call" data-l="call">svc.002</td><td data-l="worktree">billing-worker-feat-split-tender</td><td class="br" data-l="branch">feat/split-tender</td><td class="call" data-l="upstream">local-only</td><td data-l="topic"><span class="tab">PAY-4417</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+            <tr><td class="call" data-l="call">svc.003</td><td data-l="worktree">billing-worker-stage</td><td class="br" data-l="branch">stage</td><td class="call" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+            <tr><td class="call" data-l="call">svc.004</td><td data-l="worktree">checkout-api</td><td class="br" data-l="branch">main</td><td class="call" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+            <tr><td class="call" data-l="call">svc.005</td><td data-l="worktree">checkout-api-feat-split-tender</td><td class="br" data-l="branch">feat/split-tender</td><td class="call" data-l="upstream">local-only</td><td data-l="topic"><span class="tab">PAY-4417</span></td><td data-l="status"><span class="stamp s-warn">1 chg</span></td></tr>
+            <tr><td class="call" data-l="call">svc.006</td><td data-l="worktree">checkout-api-stage</td><td class="br" data-l="branch">stage</td><td class="call" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+            <tr><td class="call" data-l="call">svc.007</td><td data-l="worktree">storefront-web</td><td class="br" data-l="branch">main</td><td class="call" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+            <tr><td class="call" data-l="call">svc.008</td><td data-l="worktree">storefront-web-stage</td><td class="br" data-l="branch">stage</td><td class="call" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mnote">
+        <span class="lbl">synthetic data</span>
+        <p><code>checkout-api</code>, <code>storefront-web</code>, <code>billing-worker</code> and
+          <code>PAY-4417</code> are invented fixtures. The commands and their output are real.</p>
+      </div>
+
+      <p>The same view as the tool draws it. Two worktrees carry the topic <code>PAY-4417</code>;
+        one of them is dirty, and neither has been pushed, so their upstream reads
+        <code>local-only</code> rather than a fabricated remote.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra status --output text</b>
+
+<span class="dim">╭────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="dim">│</span>                                   <span class="hi">HYDRA</span>                                    <span class="dim">│</span>
+<span class="dim">│</span>                              Status Overview                               <span class="dim">│</span>
+<span class="dim">╰────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="dim">╭─────────────────────────────────────────────────────────────────────────╮</span>
+<span class="dim">│</span>  TOTAL 8    CLEAN 6    DIRTY 1   AHEAD 0  BEHIND 0  LOCAL 2  DETACHED 0 <span class="dim">│</span>
+<span class="dim">╰─────────────────────────────────────────────────────────────────────────╯</span>
+
+ <span class="dim">WORKTREE          BRANCH             UPSTREAM      TOPIC     STATUS</span>
+<span class="dim">────────────────────────────────────────────────────────────────────────────</span>
+ billing-worker    <span class="bl">main</span>               origin/main   <span class="dim">—</span>            <span class="ok">✓ clean</span>
+ billing-worker-…  <span class="bl">feat/split-tender</span>  <span class="dim">local-only</span>    <span class="vi">PAY-4417</span>     <span class="ok">✓ clean</span>
+ billing-worker-…  <span class="bl">stage</span>              origin/stage  <span class="dim">—</span>            <span class="ok">✓ clean</span>
+ checkout-api      <span class="bl">main</span>               origin/main   <span class="dim">—</span>            <span class="ok">✓ clean</span>
+ checkout-api-fe…  <span class="bl">feat/split-tender</span>  <span class="dim">local-only</span>    <span class="vi">PAY-4417</span>    <span class="wn">~ 1 chg</span>
+ checkout-api-st…  <span class="bl">stage</span>              origin/stage  <span class="dim">—</span>            <span class="ok">✓ clean</span>
+ storefront-web    <span class="bl">main</span>               origin/main   <span class="dim">—</span>            <span class="ok">✓ clean</span>
+ storefront-web-…  <span class="bl">stage</span>              origin/stage  <span class="dim">—</span>            <span class="ok">✓ clean</span>
+</div>
+        <figcaption><span>plate 1 &middot; <span class="v">verbatim</span></span><span>exit 0</span></figcaption>
+      </figure>
+    </section>
+
+    <!-- ================================================== 02 ============ -->
+    <section id="install" class="rv">
+      <div class="sh"><span class="num">&sect; 02</span><h2>Install</h2>
+        <span class="aside">one binary, no cgo</span></div>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>go install github.com/mssantosdev/hydra@latest</b>
+<span class="p">$</span> <b>hydra --version</b>
+<span class="hi">v0.3.9</span>
+</div>
+        <figcaption><span>plate 2 &middot; requires go 1.24+</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <p>It builds with <code>CGO_ENABLED=0</code>, so there is no toolchain to install on the
+        target and no database to provision. State is two YAML files and git itself.</p>
+
+      <p><strong>Shell integration is optional but wanted.</strong> A child process cannot change
+        its parent's directory, so <code>hydra switch</code> prints a path and exits 0 on its own.
+        With the helper installed it changes directory instead.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra init-shell</b>       <span class="dim"># installs the helper and a loader block</span>
+<span class="p">$</span> <b>hydra switch checkout-api-stage</b>
+</div>
+        <figcaption><span>plate 3 &middot; without the helper, exit 3 <code>shell_helper_missing</code></span><span>exit 0</span></figcaption>
+      </figure>
+    </section>
+
+    <!-- ================================================== 03 ============ -->
+    <section id="model" class="rv">
+      <div class="sh"><span class="num">&sect; 03</span><h2>The model</h2>
+        <span class="aside">project → group → repo → worktree</span></div>
+
+      <p>Four nouns, and a fifth laid over them. Git data lives once, in a bare repository under
+        <code>.bare/</code>. Every worktree is a plain directory you can <code>cd</code> into.</p>
+
+      <div class="tree">shop<span class="c">/</span>                                  <span class="c"># project — one workspace</span>
+├── .hydra<span class="c">/</span>
+│   ├── config.yaml                  <span class="c"># the manifest (schema 2)</span>
+│   └── state.yaml                   <span class="c"># topic membership, under flock</span>
+├── .bare<span class="c">/</span>
+│   ├── checkout-api.git             <span class="c"># git data, once per repo</span>
+│   └── storefront-web.git
+└── <span class="g">services</span><span class="c">/</span>                        <span class="c"># group — a category you choose</span>
+    ├── <span class="k">checkout-api</span><span class="c">/</span>                <span class="c"># worktree: repo + branch</span>
+    ├── <span class="k">checkout-api-stage</span><span class="c">/</span>
+    └── <span class="k">checkout-api-feat-split-tender</span><span class="c">/</span>  <span class="c">← topic PAY-4417</span>
+</div>
+
+      <p>A <strong>topic</strong> is the fifth noun: identity layered over worktrees. It is not a
+        mode and not a lifecycle. Unlabelled worktrees stay first-class forever, and
+        <code>hydra topic attach</code> promotes work you already started, with no migration.</p>
+
+      <div class="mnote">
+        <span class="lbl">a deliberate refusal</span>
+        <p>Membership is <strong>recorded, never inferred</strong>. hydra will not parse
+          <code>feat/PAY-4417-split</code> and guess. Branch naming is a team convention, and a tool
+          that guesses at it is wrong on the day the convention changes.</p>
+      </div>
+    </section>
+
+    <!-- ================================================== 04 ============ -->
+    <section id="firstrun" class="rv">
+      <div class="sh"><span class="num">&sect; 04</span><h2>First run</h2>
+        <span class="aside">init, repo add</span></div>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra init --project-name shop</b>
+
+<span class="ok">✓</span> Hydra workspace initialized
+  Project: shop
+  Config:  .hydra/config.yaml
+  Layout:  .bare/&lt;alias&gt;.git holds git data; worktrees are siblings under &lt;group&gt;/
+
+<span class="dim">Next:</span>
+  hydra repo add &lt;url&gt; --as &lt;alias&gt; --group &lt;group&gt;
+  hydra repo add &lt;path&gt; --adopt --group &lt;group&gt;
+</div>
+        <figcaption><span>plate 4 &middot; <span class="v">verbatim</span> &middot; every command ends by naming what comes next</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <p>Now register a repository. One command clones the bare repo, records it in the manifest,
+        and materialises a worktree per branch you named.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra repo add git@github.com:acme/checkout-api.git \
+      --group services --branches main,stage</b>
+
+<span class="dim">From github.com:acme/checkout-api</span>
+<span class="dim"> * [new branch]      main       -&gt; origin/main</span>
+<span class="dim"> * [new branch]      prod       -&gt; origin/prod</span>
+<span class="dim"> * [new branch]      stage      -&gt; origin/stage</span>
+
+<span class="ok">✓</span> Repository cloned
+  Repo: services/checkout-api
+  ./services/checkout-api        <span class="dim">(main)</span>
+  ./services/checkout-api-stage  <span class="dim">(stage)</span>
+</div>
+        <figcaption><span>plate 5 &middot; <span class="v">verbatim</span> &middot; git progress goes to stderr, so stdout stays parseable</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <div class="mnote">
+        <span class="lbl">naming</span>
+        <p>The unsuffixed directory is the repository's <strong>default branch</strong>, not the
+          first one you listed in <code>--branches</code>. Order does not decide the layout.</p>
+      </div>
+
+      <p>Already have a checkout you don't want to re-clone? <code>hydra repo add &lt;path&gt;
+        --adopt</code> tracks it in place.</p>
+    </section>
+
+    <!-- ================================================== 05 ============ -->
+    <section id="interactive" class="rv">
+      <div class="sh"><span class="num">&sect; 05</span><h2>Interactive routes</h2>
+        <span class="aside">the human surface</span></div>
+
+      <p>Run a mutating command with no arguments on a terminal and it asks. The forms are the
+        human-facing route, not a fallback: <code>new</code>, <code>add</code>, <code>sync</code>,
+        <code>config</code>, <code>remove</code>, <code>switch</code>, <code>topic</code> and
+        <code>repo add</code> all have one.</p>
+
+      <figure>
+        <div class="plate form"><span class="p">$</span> <b>hydra add</b>
+
+┃ <span class="hi">Repo</span>
+┃ <span class="vi">&gt;</span> services/billing-worker
+┃   services/checkout-api
+┃   services/storefront-web
+</div>
+        <figcaption><span>plate 6 &middot; <span class="v">observed in a pty</span></span><span>step 1 of 2</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="plate form">┃ <span class="hi">Branch</span>
+┃ <span class="vi">&gt;</span> + new branch…
+┃   prod
+</div>
+        <figcaption><span>plate 7 &middot; <span class="v">observed</span> &middot; main and stage are absent because they already have worktrees</span><span>step 2 of 2</span></figcaption>
+      </figure>
+
+      <p>Only <code>prod</code> is offered. hydra filters out branches that already have a worktree,
+        so the list is what you can actually create, not everything that exists.</p>
+
+      <figure>
+        <div class="plate"><span class="ok">✓</span> Worktree created
+  Repo:   services/checkout-api
+  Branch: prod
+  Path:   ./services/checkout-api-prod
+  Upstream: origin/prod
+
+<span class="dim">cd services/checkout-api-prod</span>
+<span class="dim">hydra switch checkout-api-prod</span>
+</div>
+        <figcaption><span>plate 8 &middot; <span class="v">verbatim</span> &middot; it hands back both ways to get there</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <div class="mnote">
+        <span class="lbl">known gap</span>
+        <p>Every <em>reporting</em> command (<code>list</code>, <code>status</code>,
+          <code>doctor</code>, <code>topic show</code>, <code>run</code>) is flags-only
+          today. Interactive parity across the whole surface is the next work item, not a
+          closed question.</p>
+      </div>
+    </section>
+
+    <!-- ================================================== 06 ============ -->
+    <section id="topic" class="rv">
+      <div class="sh"><span class="num">&sect; 06</span><h2>A unit of work</h2>
+        <span class="aside">start, topic, run</span></div>
+
+      <p>One branch, several repositories, one command. The topic id is whatever you already use:
+        a ticket, an incident, a name.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra start feat/split-tender \
+      --repos checkout-api,billing-worker --topic PAY-4417</b>
+
+<span class="ok">✓</span> branch feat/split-tender (positional), 2 created, topic PAY-4417
+
+  <span class="bl">new</span>  billing-worker     ./services/billing-worker-feat-split-tender
+  <span class="bl">new</span>  checkout-api       ./services/checkout-api-feat-split-tender
+</div>
+        <figcaption><span>plate 9 &middot; <span class="v">verbatim</span> &middot; convergent: run it twice and the second is a no-op at exit 0</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra topic show PAY-4417 --output text</b>
+
+<span class="hi">Topic PAY-4417</span>
+
+  billing-worker           feat/split-tender            <span class="ok">present</span>
+  checkout-api             feat/split-tender            <span class="ok">present</span>
+</div>
+        <figcaption><span>plate 10 &middot; <span class="v">verbatim</span> &middot; <code>present</code> means the directory is on disk, checked now</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <p>Then act on the whole topic at once. Everything after <code>--</code> is handed to exec
+        directly. There is <strong>no implicit shell</strong>, so no quoting surprises. Pass
+        <code>-- sh -c '…'</code> when you want one.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra run --topic PAY-4417 --output text -- git rev-parse --abbrev-ref HEAD</b>
+feat/split-tender
+feat/split-tender
+
+<span class="ok">✓</span> "git rev-parse --abbrev-ref HEAD" succeeded in 2 worktree(s)
+
+  <span class="ok">ok</span>   billing-worker/feat/split-tender 5ms
+  <span class="ok">ok</span>   checkout-api/feat/split-tender 4ms
+</div>
+        <figcaption><span>plate 11 &middot; <span class="v">verbatim</span> &middot; child output is attributed per worktree</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <p>Selectors <strong>intersect</strong>: <code>--topic</code>, <code>--repos</code>,
+        <code>--group</code>, <code>--all</code> and
+        <code>--filter dirty|behind|branch:&lt;glob&gt;</code> narrow together rather than
+        competing. A selector that matches nothing is an empty result, not a silent everything.</p>
+    </section>
+
+    <!-- ================================================== 07 ============ -->
+    <section id="current" class="rv">
+      <div class="sh"><span class="num">&sect; 07</span><h2>Staying current</h2>
+        <span class="aside">sync, and dated freshness</span></div>
+
+      <div class="mnote">
+        <span class="lbl">the one thing to understand</span>
+        <p>hydra <strong>does not fetch to answer a query</strong>. So <code>behind: 0</code> means
+          &ldquo;as of the last fetch&rdquo;, and every count is stamped with
+          <code>upstream_as_of</code> taken from the bare repo's <code>FETCH_HEAD</code>. A dated
+          answer beats a confident one.</p>
+      </div>
+
+      <p><code>hydra sync</code> is where fetching happens. On a terminal it shows you what has
+        updates and lets you choose.</p>
+
+      <figure>
+        <div class="plate form"><span class="ok"> ✓ </span> Found 2 worktree(s) with available updates
+
+<span class="hi">Worktrees with Available Updates</span>
+
+  <span class="dim">Select  Repository Branch Behind Status</span>
+<span class="dim">──────────────────────────────────────────────────────────────</span>
+┃ <span class="hi">Select worktrees to update</span>
+┃ <span class="dim">Clean worktrees are pre-selected. Dirty worktrees require special handling.</span>
+┃ <span class="vi">&gt;</span> <span class="ok">✓</span> checkout-api    main            1        clean
+┃   <span class="ok">✓</span> storefront-web  main            1        clean
+</div>
+        <figcaption><span>plate 12 &middot; <span class="v">observed in a pty</span></span><span>clean rows pre-selected</span></figcaption>
+      </figure>
+      <p class="keys"><kbd>x</kbd> toggle &nbsp; <kbd>↑</kbd><kbd>↓</kbd> move &nbsp; <kbd>/</kbd> filter
+        &nbsp; <kbd>enter</kbd> submit &nbsp; <kbd>ctrl+a</kbd> select none</p>
+
+      <p>A dirty worktree is treated differently, and visibly so: its marker is <code>•</code> where
+        a clean one is <code>✓</code>, and it is <strong>not</strong> pre-selected.</p>
+
+      <figure>
+        <div class="plate form">┃ <span class="vi">&gt;</span> <span class="wn">•</span> checkout-api    main            1        <span class="wn">! 1 changes</span>
+
+<span class="dim">Worktree 'checkout-api/main' has 1 uncommitted changes.</span>
+
+┃ <span class="hi">How would you like to proceed?</span>
+┃ <span class="vi">&gt;</span> Stash changes, pull, then restore
+┃   Discard all changes (reset --hard)
+┃   Skip this worktree
+</div>
+        <figcaption><span>plate 13 &middot; <span class="v">observed</span> &middot; asked per worktree, never assumed</span><span>3 explicit outcomes</span></figcaption>
+      </figure>
+
+      <p>Verified rather than asserted: with a local edit present and the branch one commit behind,
+        the stash path fast-forwarded the worktree and the edit was still there afterwards.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra sync --yes --output json | jq -c '{outcome,summary}'</b>
+{"outcome":"partial","summary":"2 pulled"}
+
+<span class="p">$</span> <b>hydra sync --yes; echo "exit $?"</b>
+<span class="dim">exit 4</span>
+</div>
+        <figcaption><span>plate 14 &middot; a fetch failure on one remote is a <span class="v">partial</span>, never a silent success</span><span>exit 4</span></figcaption>
+      </figure>
+
+      <p>One unreachable remote does not stop the reachable ones from pulling, and the failure is
+        still reported. The exit status is derived from the envelope, so a command cannot print
+        <code>partial</code> and exit 0.</p>
+    </section>
+
+    <!-- ================================================== 08 ============ -->
+    <section id="contract" class="rv">
+      <div class="sh"><span class="num">&sect; 08</span><h2>The contract</h2>
+        <span class="aside">for anything that parses</span></div>
+
+      <p class="wide">One envelope, on stdout, per invocation. <code>--output json</code> is implied
+        whenever stdout is not a terminal, so a pipe already gets JSON without asking.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra path nonexistent --output json</b>
+{
+  <span class="bl">"schema"</span>: 3,
+  <span class="bl">"command"</span>: <span class="ok">"path"</span>,
+  <span class="bl">"outcome"</span>: <span class="er">"failure"</span>,
+  <span class="bl">"error"</span>: {
+    <span class="bl">"code"</span>: <span class="er">"worktree_unknown"</span>,
+    <span class="bl">"message"</span>: <span class="dim">"worktree not found: nonexistent"</span>,
+    <span class="bl">"retryable"</span>: false
+  },
+  <span class="bl">"warnings"</span>: []
+}
+</div>
+        <figcaption><span>plate 15 &middot; <span class="v">verbatim</span></span><span>exit 1</span></figcaption>
+      </figure>
+
+      <p><strong>Branch on <code>error.code</code>, never on message wording.</strong> Codes are
+        stable across versions; messages are not. There is no <code>exit</code> field in the
+        envelope; the process status carries it.</p>
+
+      <p>An unrecognised command answers with the whole surface and a next step rather than a
+        stack trace:</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra clone --output json</b>
+{
+  <span class="bl">"schema"</span>: 3,
+  <span class="bl">"outcome"</span>: <span class="er">"failure"</span>,
+  <span class="bl">"error"</span>: {
+    <span class="bl">"code"</span>: <span class="er">"unknown_command"</span>,
+    <span class="bl">"message"</span>: <span class="dim">"unknown command \"clone\" for \"hydra\""</span>,
+    <span class="bl">"details"</span>: { <span class="bl">"available"</span>: [<span class="dim">"add"</span>, <span class="dim">"apply"</span>, <span class="dim">"commands"</span>, <span class="dim">…</span>] }
+  },
+  <span class="bl">"next"</span>: [
+    { <span class="bl">"argv"</span>: [<span class="ok">"hydra"</span>,<span class="ok">"commands"</span>,<span class="ok">"--output"</span>,<span class="ok">"json"</span>],
+      <span class="bl">"why"</span>: <span class="dim">"list every command and its flags, plus the error-code table"</span> }
+  ]
+}
+</div>
+        <figcaption><span>plate 16 &middot; <span class="v">verbatim</span> &middot; <code>next[]</code> is argv plus a reason, never auto-run</span><span>exit 1</span></figcaption>
+      </figure>
+
+      <h3 style="font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;margin:34px 0 12px">23 codes, 8 exit statuses</h3>
+
+      <div class="exits">
+        <div><div class="e" style="color:var(--green)">0</div><div class="n">success</div>
+          <ul><li>also a convergent no-op</li></ul></div>
+        <div><div class="e">1</div><div class="n">general failure</div>
+          <ul><li>bare_missing</li><li>branch_provider_failed</li><li>branch_unknown</li><li>git_failed</li><li>hook_failed</li><li>internal</li><li>project_exists</li><li>repo_unknown</li><li>topic_conflict</li><li>topic_unknown</li><li>unknown_command</li><li>worktree_exists</li><li>worktree_name_conflict</li><li>worktree_unknown</li></ul></div>
+        <div><div class="e">2</div><div class="n">wrong place / version</div>
+          <ul><li>config_version_unsupported</li><li>not_in_project</li><li>project_unknown</li><li>state_version_unsupported</li></ul></div>
+        <div><div class="e">3</div><div class="n">shell helper</div>
+          <ul><li>shell_helper_missing</li></ul></div>
+        <div><div class="e" style="color:var(--ochre)">4</div><div class="n">partial</div>
+          <ul><li>partial_failure</li><li style="color:var(--ink-3)">data <em>and</em> error both real</li></ul></div>
+        <div><div class="e" style="color:var(--red)">5</div><div class="n">refused, work protected</div>
+          <ul><li>worktree_dirty</li></ul></div>
+        <div><div class="e" style="color:var(--blue)">6</div><div class="n">retry this one</div>
+          <ul><li class="rt">busy — the only retryable code</li></ul></div>
+        <div><div class="e">7</div><div class="n">needs input</div>
+          <ul><li>needs_input</li><li style="color:var(--ink-3)">names it in details.missing</li></ul></div>
+      </div>
+
+      <p><code>hydra commands --output json</code> publishes this table, so nothing above needs to
+        be hardcoded from this page.</p>
+    </section>
+
+    <!-- ================================================== 09 ============ -->
+    <section id="agents" class="rv">
+      <div class="sh"><span class="num">&sect; 09</span><h2>For agents</h2>
+        <span class="aside">hydra skill</span></div>
+
+      <p>hydra ships its own agent contract. Print it and hand it over; it is versioned with the
+        binary, so it cannot drift from the tool the way a pasted prompt does.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra skill</b>            <span class="dim"># the embedded contract, ~120 lines</span>
+<span class="p">$</span> <b>hydra commands --output json</b>  <span class="dim"># every command, flag, code and exit</span>
+</div>
+        <figcaption><span>plate 17 &middot; two commands are the whole onboarding</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <p>Its invariants, verbatim, because they are what makes probing unnecessary:</p>
+
+      <div class="reg">
+        <table>
+          <thead><tr><th>#</th><th>invariant</th></tr></thead>
+          <tbody>
+            <tr><td class="call">1</td><td class="wrap"><code>--output json</code> (default when stdout is not a terminal) emits one envelope. Never scrape text.</td></tr>
+            <tr><td class="call">2</td><td class="wrap">Branch on <code>error.code</code>, never on message wording. Codes are stable; messages are not.</td></tr>
+            <tr><td class="call">3</td><td class="wrap">Every command is <strong>convergent</strong>: doing it twice is a no-op that exits 0, reported as <code>skipped</code>.</td></tr>
+            <tr><td class="call">4</td><td class="wrap">Nothing is inferred from a branch name. Topic membership is recorded, never guessed.</td></tr>
+            <tr><td class="call">5</td><td class="wrap">A missing value is <code>needs_input</code> (exit 7) naming it in <code>details.missing</code>. hydra never blocks on a prompt when output is machine-readable.</td></tr>
+            <tr><td class="call">6</td><td class="wrap">A handle matching several worktrees is an error, never a silent first match.</td></tr>
+            <tr><td class="call">7</td><td class="wrap"><code>hydra commands --output json</code> publishes the whole surface and the code&rarr;exit table.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mnote">
+        <span class="lbl">why this is safe in a loop</span>
+        <p>The destructive operations are not in hydra's vocabulary. It cannot merge, rebase,
+          resolve a conflict or push. The worst a wrong call does is create or remove a worktree,
+          and removal refuses on uncommitted work with exit 5.</p>
+      </div>
+    </section>
+
+    <!-- ================================================== 10 ============ -->
+    <section id="recovery" class="rv">
+      <div class="sh"><span class="num">&sect; 10</span><h2>Recovery</h2>
+        <span class="aside">doctor, prune, repo restore</span></div>
+
+      <p>Interrupted clones, worktrees deleted behind hydra's back, stale registrations.
+        <code>doctor</code> audits the manifest against the disk and says what it can repair.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra doctor --output text</b>
+<span class="dim">…</span>
+<span class="ok">✓</span> worktree_unregistered: no unregistered worktree directories
+<span class="ok">✓</span> registry_dangling: registry entries point at valid workspaces
+<span class="wn">!</span> worktree_dirty (services/checkout-api-feat-split-tender): 1 uncommitted change(s)
+
+<span class="dim">ok=56 warn=1 fail=0 fixed=0</span>
+</div>
+        <figcaption><span>plate 18 &middot; <span class="v">verbatim</span> &middot; the check count scales with repos and worktrees</span><span>exit 0</span></figcaption>
+      </figure>
+
+      <p>A warning is not a failure: a dirty worktree is your work, correctly left alone. Failures
+        get <code>--fix</code>, and each one names the exact command that repairs it.</p>
+
+      <div class="reg">
+        <table>
+          <thead><tr><th>command</th><th>what it is for</th></tr></thead>
+          <tbody>
+            <tr><td class="br">doctor --fix</td><td class="wrap">Repair what is mechanically repairable; report the rest with a runnable command.</td></tr>
+            <tr><td class="br">prune</td><td class="wrap">Drop registrations whose worktrees are gone. Leaves files alone.</td></tr>
+            <tr><td class="br">repo restore</td><td class="wrap">Rebuild repositories from the manifest alone: the recovery path after a lost clone.</td></tr>
+            <tr><td class="br">apply -</td><td class="wrap">Read <code>hydra list --output json</code> on stdin and recreate that workspace elsewhere.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p><code>apply</code> is the pair to <code>list</code>: the output of one is the input of the
+        other, which is how a workspace gets reproduced on another machine.</p>
+    </section>
+
+    <!-- ================================================== 11 ============ -->
+    <section id="surface" class="rv">
+      <div class="sh"><span class="num">&sect; 11</span><h2>Full surface</h2>
+        <span class="aside">40 commands</span></div>
+
+      <div class="reg">
+        <table>
+          <thead><tr><th>group</th><th>commands</th></tr></thead>
+          <tbody>
+            <tr><td class="br">workspace</td><td class="wrap"><code>init</code> <code>where</code> <code>project add|ls|rm</code> <code>config show|set</code></td></tr>
+            <tr><td class="br">repositories</td><td class="wrap"><code>repo add</code> <code>repo list</code> <code>repo branches</code> <code>repo remove</code> <code>repo restore</code></td></tr>
+            <tr><td class="br">worktrees</td><td class="wrap"><code>add</code> <code>new</code> <code>list</code> <code>status</code> <code>switch</code> <code>path</code> <code>remove</code> <code>prune</code></td></tr>
+            <tr><td class="br">units of work</td><td class="wrap"><code>start</code> <code>topic list|show|attach|detach|remove</code></td></tr>
+            <tr><td class="br">execution</td><td class="wrap"><code>run</code> <code>sync</code> <code>apply</code></td></tr>
+            <tr><td class="br">integration</td><td class="wrap"><code>skill</code> <code>commands</code> <code>hooks ls|run</code> <code>completion</code> <code>init-shell</code></td></tr>
+            <tr><td class="br">health</td><td class="wrap"><code>doctor</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Global flags apply everywhere: <code>--output</code>, <code>--project</code>,
+        <code>--config</code>, <code>--no-hooks</code>, <code>--verbose</code>. Hooks fire on
+        <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>,
+        <code>post_remove</code> and <code>post_sync</code>; a failing hook never deletes a
+        correctly created worktree.</p>
+    </section>
+
+    <div class="colophon">
+      <b>hydra</b> &middot; <a href="https://github.com/mssantosdev/hydra">github.com/mssantosdev/hydra</a>
+      &middot; <code>go install github.com/mssantosdev/hydra@latest</code><br>
+      Every dark panel on this page is verbatim output from a real run. Repository names and the
+      topic id are synthetic fixtures; the commands are not.<br>
+      This document has no external requests, no analytics, and no fonts to download.
+    </div>
+
+  </main>
+</div>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('#nav a'));
+  var secs  = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+
+  // section index follows the read
+  if ('IntersectionObserver' in window) {
+    var seen = new Map();
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ seen.set(e.target, e.intersectionRatio); });
+      var best = null, bestR = 0;
+      seen.forEach(function(r, el){ if (r > bestR) { bestR = r; best = el; } });
+      if (!best) return;
+      links.forEach(function(a, i){ a.classList.toggle('on', secs[i] === best); });
+    }, { rootMargin:'-12% 0px -60% 0px', threshold:[0,.15,.4,.75,1] });
+    secs.forEach(function(s){ if (s) io.observe(s); });
+
+    // reveal once, never on a loop
+    var rio = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting) { e.target.classList.add('in'); rio.unobserve(e.target); }
+      });
+    }, { rootMargin:'0px 0px -8% 0px', threshold:.06 });
+    document.querySelectorAll('.rv').forEach(function(el){ rio.observe(el); });
+  } else {
+    document.querySelectorAll('.rv').forEach(function(el){ el.classList.add('in'); });
+  }
+
+  // copy a transcript as plain text — agents and humans both want the text, not a picture
+  document.querySelectorAll('.plate').forEach(function(pre){
+    var b = document.createElement('button');
+    b.className = 'cp'; b.type = 'button'; b.textContent = 'copy';
+    b.addEventListener('click', function(){
+      var t = pre.cloneNode(true);
+      t.querySelectorAll('.cp').forEach(function(x){ x.remove(); });
+      var text = t.textContent.replace(/^\s*\$\s?/gm, '');
+      navigator.clipboard.writeText(text).then(function(){
+        b.textContent = 'copied'; setTimeout(function(){ b.textContent = 'copy'; }, 1400);
+      }, function(){ b.textContent = 'select it'; });
+    });
+    pre.appendChild(b);
+  });
+})();
+</script>
+</body>
+</html>

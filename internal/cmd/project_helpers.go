@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/output"
 )
 
 func validateRelativeProjectPath(input string) (string, error) {
@@ -50,7 +51,8 @@ func createProjectRoot(baseDir, projectPath string) (string, string, *config.Con
 
 	configPath := config.ManifestPath(projectRoot)
 	if _, err := os.Stat(configPath); err == nil {
-		return "", "", nil, fmt.Errorf("hydra project already exists at %s", projectRoot)
+		return "", "", nil, output.Errorf(output.CodeProjectExists,
+			"hydra project already exists at %s", projectRoot)
 	}
 
 	cfg := config.DefaultConfig(filepath.Base(cleanPath))
@@ -75,7 +77,8 @@ func createProjectRootAt(root, projectName string) (string, string, *config.Conf
 
 	configPath := config.ManifestPath(abs)
 	if _, err := os.Stat(configPath); err == nil {
-		return "", "", nil, fmt.Errorf("hydra project already exists at %s", abs)
+		return "", "", nil, output.Errorf(output.CodeProjectExists,
+			"hydra project already exists at %s", abs)
 	}
 
 	name := strings.TrimSpace(projectName)

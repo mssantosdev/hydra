@@ -33,7 +33,7 @@ func DefaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
 		Version: "1.0",
 		Theme: ThemeConf{
-			Name: "tokyonight",
+			Name: "hydra",
 		},
 		Defaults: Defaults{
 			Editor:             "code",

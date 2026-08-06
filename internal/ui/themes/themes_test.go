@@ -46,11 +46,22 @@ func TestGet(t *testing.T) {
 }
 
 func TestGetInvalidTheme(t *testing.T) {
-	// Invalid theme should return TokyoNight (default)
+	// An unknown name falls back to the first-party default, never to a borrowed palette.
 	theme := Get("invalid-theme")
 
-	if theme.Name != "tokyonight" {
-		t.Errorf("Expected default theme tokyonight for invalid input, got %s", theme.Name)
+	if theme.Name != "hydra" {
+		t.Errorf("Expected default theme hydra for invalid input, got %s", theme.Name)
+	}
+}
+
+// The default must be the one palette this project owns. Shipping a borrowed community
+// palette as the face of the tool is what this asserts against.
+func TestDefaultThemeIsFirstParty(t *testing.T) {
+	if Current.Name != "hydra" {
+		t.Errorf("Current theme is %q, want hydra", Current.Name)
+	}
+	if Get("").Name != "hydra" {
+		t.Errorf("empty name resolved to %q, want hydra", Get("").Name)
 	}
 }
 

@@ -15,8 +15,8 @@ func TestDefaultGlobalConfig(t *testing.T) {
 		t.Errorf("Expected version 1.0, got %s", cfg.Version)
 	}
 
-	if cfg.Theme.Name != "tokyonight" {
-		t.Errorf("Expected theme tokyonight, got %s", cfg.Theme.Name)
+	if cfg.Theme.Name != "hydra" {
+		t.Errorf("Expected theme hydra, got %s", cfg.Theme.Name)
 	}
 
 	if cfg.Defaults.Editor != "code" {

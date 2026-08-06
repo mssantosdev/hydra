@@ -19,7 +19,27 @@ type Theme struct {
 
 // Available themes
 var (
-	// TokyoNight is the default theme (dark blue-based)
+	// Hydra is the default theme and the only first-party one: every other entry
+	// here is a borrowed community palette. Its hues are archival — accession-stamp
+	// red, ledger ochre, verdigris, filing-tab blue, date-stamp violet — carried on a
+	// near-black ground that reads as the negative of filing-card stock. The web guide
+	// renders from the same role names against a light ground, so the tool and its
+	// documentation are one system in two media rather than two palettes that resemble
+	// each other.
+	Hydra = Theme{
+		Name:       "hydra",
+		Background: "#15161b",
+		Foreground: "#cfcabc",
+		Primary:    "#7fa8c9",
+		Secondary:  "#9a8cc0",
+		Success:    "#7faf85",
+		Warning:    "#c9a54a",
+		Error:      "#d2604a",
+		Muted:      "#6f6a5f",
+		Border:     "#2a2b33",
+		Highlight:  "#e8e4d8",
+	}
+	// TokyoNight is a borrowed community palette (dark blue-based)
 	TokyoNight = Theme{
 		Name:       "tokyonight",
 		Background: "#1a1b26",
@@ -97,6 +117,7 @@ var (
 
 // Themes map for lookup
 var Themes = map[string]Theme{
+	"hydra":      Hydra,
 	"tokyonight": TokyoNight,
 	"catppuccin": Catppuccin,
 	"dracula":    Dracula,
@@ -104,12 +125,12 @@ var Themes = map[string]Theme{
 	"onedark":    OneDark,
 }
 
-// Get returns a theme by name (defaults to tokyonight)
+// Get returns a theme by name, falling back to the first-party default.
 func Get(name string) Theme {
 	if theme, ok := Themes[name]; ok {
 		return theme
 	}
-	return TokyoNight
+	return Hydra
 }
 
 // GetNames returns all available theme names
@@ -128,7 +149,7 @@ func IsValid(name string) bool {
 }
 
 // Current holds the currently active theme
-var Current = TokyoNight
+var Current = Hydra
 
 // Set sets the current theme
 func Set(name string) {

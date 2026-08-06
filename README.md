@@ -12,7 +12,7 @@ A beautiful CLI tool for managing Git worktrees with group organization.
 - 🚀 **Multi-repo start**: `hydra start` creates one branch across several repos in one command
 - ▶️ **Fan-out execution**: `hydra run` runs one command per worktree with no implicit shell
 - 📋 **Workspace replay**: `hydra apply -` reproduces a workspace from captured JSON
-- 🎨 **Beautiful CLI**: Multiple themes (Tokyo Night, Catppuccin, Dracula, Nord, One Dark)
+- 🎨 **Beautiful CLI**: A first-party `hydra` theme by default, plus Tokyo Night, Catppuccin, Dracula, Nord and One Dark
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
 - 🔖 **Version Visibility**: `hydra`, `hydra --help`, and `hydra --version` show version info
@@ -137,6 +137,9 @@ The map key under each group **is** the repo alias. It determines both `.bare/<a
 
 Complete documentation is in [`docs/`](docs/):
 
+- **[Visual guide](docs/guide.html)** — a single self-contained page covering install, the model,
+  the interactive routes, and the machine contract. Every terminal panel in it is verbatim output
+  from a real run. Open it directly in a browser; it makes no external requests.
 - **[Getting Started](docs/README.md)** — Overview and quick start
 - **[Commands](docs/commands/README.md)** — Complete command reference
   - [Worktree Management](docs/commands/worktree-management.md) — `add`, `remove`
@@ -352,17 +355,24 @@ Always pass `--output json` (or rely on `--output auto` with a pipe) and parse t
 
 ## Themes
 
-Hydra supports multiple themes. Change with:
+Hydra ships one first-party palette and five borrowed community ones. Change with:
 
 ```bash
 hydra config
 # Select "Theme" and choose from:
-# - tokyonight (default)
+# - hydra (default)  — the only first-party palette
+# - tokyonight
 # - catppuccin
 # - dracula
 # - nord
 # - onedark
 ```
+
+The `hydra` theme is not just another entry in the list: its role names (`Primary`,
+`Success`, `Warning`, `Error`, …) are the same ones the HTML guide renders from, so the
+tool and its documentation are one design system in two media rather than two palettes
+that happen to resemble each other. The terminal carries the hues on a near-black ground;
+the guide carries them on a light one.
 
 ## Shell Integration
 
