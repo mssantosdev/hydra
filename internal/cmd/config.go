@@ -22,7 +22,8 @@ DESCRIPTION
   emits the current settings as data (JSON with --output json).
 
   Configurable options:
-    • Theme  - Color scheme (hydra, tokyonight, catppuccin, dracula, nord, onedark)
+    • Theme  - Color scheme (terminal, hydra, tokyonight, catppuccin, dracula, nord, onedark)
+               "terminal" uses your terminal's own palette and paints no background
     • Editor - Default editor command (code, vim, nano, etc.)
 
 CONFIG LOCATION

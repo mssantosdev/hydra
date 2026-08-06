@@ -143,22 +143,33 @@ func TestThemePreview(t *testing.T) {
 }
 
 func TestAllThemesHaveColors(t *testing.T) {
+	// The semantic roles must always be set: each one carries information (a reference, a
+	// topic, a state), and a theme missing one renders that information as plain text.
+	semantic := func(th Theme) map[string]lipgloss.Color {
+		return map[string]lipgloss.Color{
+			"Primary": th.Primary, "Secondary": th.Secondary, "Success": th.Success,
+			"Warning": th.Warning, "Error": th.Error, "Muted": th.Muted,
+			"Border": th.Border, "Highlight": th.Highlight,
+		}
+	}
+
 	for name, theme := range Themes {
 		t.Run(name, func(t *testing.T) {
-			if theme.Background == "" {
-				t.Error("Background should not be empty")
+			for role, v := range semantic(theme) {
+				if v == "" {
+					t.Errorf("%s is empty; every semantic role must be set", role)
+				}
 			}
-			if theme.Foreground == "" {
-				t.Error("Foreground should not be empty")
-			}
-			if theme.Primary == "" {
-				t.Error("Primary should not be empty")
-			}
-			if theme.Success == "" {
-				t.Error("Success should not be empty")
-			}
-			if theme.Error == "" {
-				t.Error("Error should not be empty")
+
+			// Background and Foreground are the one pair allowed to be empty, and only
+			// TOGETHER. Empty means "defer to the terminal", which is what the `terminal`
+			// theme does deliberately. Setting one and not the other paints half a surface:
+			// a declared background under inherited text, or inherited ground under
+			// declared text, either of which can render unreadable on someone else's
+			// terminal. This is a coherence check, not a "must not be blank" check.
+			bg, fg := theme.Background == "", theme.Foreground == ""
+			if bg != fg {
+				t.Errorf("Background empty=%v but Foreground empty=%v; a theme either declares both or defers both to the terminal", bg, fg)
 			}
 		})
 	}

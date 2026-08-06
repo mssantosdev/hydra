@@ -19,6 +19,32 @@ type Theme struct {
 
 // Available themes
 var (
+	// Terminal is hydra synced to the terminal, which is the honest default direction:
+	// the palette belongs to whoever configured the terminal, and hydra is a guest in it.
+	//
+	// Every role is an ANSI slot rather than a hex value, so the terminal resolves it from
+	// its OWN palette. That needs no OSC query and no config parsing, so it works over
+	// SSH, inside tmux, and it follows a live theme change for free. Background and
+	// Foreground are empty on purpose: hydra paints neither, and the terminal's own ground
+	// and text colour show through.
+	//
+	// The trade is exact hue control — one terminal's yellow is another's olive. That is
+	// the point. A tool that overrides the palette its user chose is asserting taste it
+	// was not asked for.
+	Terminal = Theme{
+		Name:       "terminal",
+		Background: "",
+		Foreground: "",
+		Primary:    "4", // blue
+		Secondary:  "5", // magenta
+		Success:    "2", // green
+		Warning:    "3", // yellow
+		Error:      "1", // red
+		Muted:      "8", // bright black
+		Border:     "8",
+		Highlight:  "15", // bright white
+	}
+
 	// Hydra is the default theme and the only first-party one: every other entry
 	// here is a borrowed community palette. Its hues are archival — accession-stamp
 	// red, ledger ochre, verdigris, filing-tab blue, date-stamp violet — carried on a
@@ -120,6 +146,7 @@ var (
 
 // Themes map for lookup
 var Themes = map[string]Theme{
+	"terminal":   Terminal,
 	"hydra":      Hydra,
 	"tokyonight": TokyoNight,
 	"catppuccin": Catppuccin,
