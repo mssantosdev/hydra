@@ -54,8 +54,8 @@ GOLANGCI_VERSION ?= 2.12.2
 # It additionally runs the race detector, which the CI pipeline currently has
 # commented out ("until the CI race-test environment is fixed"). Locally there is
 # no such constraint, so hydra does not inherit that gap.
-.PHONY: gate gate-fmt gate-vet gate-lint gate-themes gate-guide gate-vuln gate-test gate-race themes
-gate: gate-fmt gate-vet gate-lint gate-themes gate-guide gate-vuln gate-test gate-race
+.PHONY: gate gate-fmt gate-vet gate-lint gate-themes gate-docs gate-vuln gate-test gate-race themes
+gate: gate-fmt gate-vet gate-lint gate-themes gate-docs gate-vuln gate-test gate-race
 	@echo "gate: all checks passed"
 
 themes:
@@ -64,8 +64,8 @@ themes:
 gate-themes:
 	python3 scripts/gen-themes.py --check
 
-gate-guide:
-	bash scripts/check-guide-version.sh
+gate-docs:
+	bash scripts/check-docs-claims.sh
 
 gate-fmt: ## Fail if anything is unformatted
 	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi

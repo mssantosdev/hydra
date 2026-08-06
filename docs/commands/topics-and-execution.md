@@ -8,7 +8,7 @@ ai_context: "Reference for topic management, cross-repo start, run, and apply wi
 
 Commands for grouping worktrees into **topics** (units of work spanning repositories), creating worktrees across repos, running commands in many worktrees, and replaying a captured worktree set from JSON.
 
-A topic is a unit of work layered over worktrees. Unlabeled worktrees remain first-class — not every checkout belongs to a topic. Membership is **recorded** in `.hydra/state.yaml` when you `start` with `--topic`, `topic attach`, or `apply` a document that includes `topic`; it is **never inferred** from a branch name. Two repositories can use different branch names for the same topic, and two topics can share a branch name without colliding.
+A topic is a name for one piece of work, plus the record of which worktrees belong to it. Worktrees without a topic are normal and stay that way — not every checkout belongs to one. Membership is **recorded** in `.hydra/state.yaml` when you `start` with `--topic`, `topic attach`, or `apply` a document that includes `topic`; it is **never inferred** from a branch name. Two repositories can use different branch names for the same topic, and two topics can share a branch name without colliding.
 
 There is no `topic create`: a topic exists because work was put in it (`hydra start --topic` or `hydra topic attach`). It disappears when its last member is detached.
 
@@ -20,7 +20,7 @@ Inspect and manage topics — recorded membership across repositories.
 
 ### Description
 
-`hydra topic` groups the worktrees that belong to one piece of work. A worktree belongs to at most one topic; not belonging to any topic is a permanent, first-class state.
+`hydra topic` groups the worktrees that belong to one piece of work. A worktree belongs to at most one topic, and belonging to none is a normal, permanent state.
 
 `hydra topic attach` promotes existing ad-hoc work: attach an unlabeled worktree to a topic with no migration step. `hydra start --topic` creates worktrees and records membership in one pass.
 
@@ -326,7 +326,7 @@ Create a worktree per repository for one unit of work.
 
 ### Description
 
-`hydra start` is `hydra add` across several repositories at once, with optional topic recording. Without `--topic`, worktrees are created unassigned — the same first-class state as a single `hydra add`.
+`hydra start` is `hydra add` across several repositories at once, with optional topic recording. Without `--topic`, worktrees are created unassigned — the same state a single `hydra add` leaves them in.
 
 The command is **convergent**: a worktree that already exists for the requested branch is reported as skipped, not as a failure. Re-running the same command to confirm it landed is safe and exits 0.
 

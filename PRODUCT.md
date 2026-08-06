@@ -30,10 +30,11 @@ The guide's job is onboarding both from one document. The developer scrolls; the
 
 ## Product Purpose
 
-hydra makes a *unit of work* first-class across several repositories. Where git gives you one
-worktree in one repo, hydra gives a named topic that spans repos, materializes a worktree per
-repo/branch pair under a predictable layout, reports their combined state, and tears the whole set
-down again.
+hydra manages git worktrees across several repositories at once. `git worktree` already handles
+many worktrees in a single repo perfectly well; what it does not do is cross the repo boundary, so
+nothing ties worktrees in three separate repos together as one piece of work. hydra records that
+grouping (a *topic*), creates a worktree per repo/branch pair under the same layout every time,
+reports their combined state, and removes the whole set together.
 
 Success is that a developer stops hand-managing worktree directories and stops losing track of
 which branch in which repo belongs to which piece of work — and that an agent can drive the same

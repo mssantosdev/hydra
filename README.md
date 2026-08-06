@@ -1,6 +1,11 @@
 # Hydra 🐍
 
-A beautiful CLI tool for managing Git worktrees with group organization.
+`hydra` manages git worktrees across many repositories — from your terminal or through AI agents.
+
+Name a repo and a branch from anywhere in the workspace and hydra places the worktree, registers it,
+and every other command finds it. One name then addresses a whole set of worktrees across
+repositories: create it, run across it, sync it, remove it. It never merges, never rebases, never
+resolves a conflict, and never talks to a forge.
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/mssantosdev/hydra)](https://goreportcard.com/report/github.com/mssantosdev/hydra)
 
@@ -12,7 +17,7 @@ A beautiful CLI tool for managing Git worktrees with group organization.
 - 🚀 **Multi-repo start**: `hydra start` creates one branch across several repos in one command
 - ▶️ **Fan-out execution**: `hydra run` runs one command per worktree with no implicit shell
 - 📋 **Workspace replay**: `hydra apply -` reproduces a workspace from captured JSON
-- 🎨 **Beautiful CLI**: A first-party `hydra` theme by default, plus Tokyo Night, Catppuccin, Dracula, Nord and One Dark
+- 🎨 **Themes**: Inherits your terminal's own colours by default; `hydra`, Tokyo Night, Catppuccin, Dracula, Nord and One Dark are all selectable
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
 - 🔖 **Version Visibility**: `hydra`, `hydra --help`, and `hydra --version` show version info
@@ -138,7 +143,7 @@ The map key under each group **is** the repo alias. It determines both `.bare/<a
 Complete documentation is in [`docs/`](docs/):
 
 - **[Visual guide](https://mssantosdev.github.io/hydra/)** ([source](docs/guide.html)) — a single self-contained page covering install, the model,
-  the interactive routes, and the machine contract. Every terminal panel in it is verbatim output
+  the interactive routes, and the contract scripts and agents rely on. Every terminal panel in it is verbatim output
   from a real run. Open it directly in a browser; it makes no external requests.
 - **[Getting Started](docs/README.md)** — Overview and quick start
 - **[Commands](docs/commands/README.md)** — Complete command reference

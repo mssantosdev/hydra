@@ -7,7 +7,7 @@ ai_context: "Entry point for Hydra documentation: overview, quick start, and nav
 
 # Hydra Documentation 🐍
 
-> A beautiful CLI tool for managing Git worktrees with group organization.
+> Manage git worktrees across many repositories — from your terminal or through AI agents.
 
 ## What is Hydra?
 
@@ -25,7 +25,7 @@ repositories, Hydra treats that whole set as **one topic** rather than N unrelat
   guessed from a branch name.
 - 🏃 **Fan-out execution**: `hydra run --topic <id> -- <argv>` runs one command per worktree
 - 📋 **Reproducible workspaces**: `hydra list -o json | hydra apply -` recreates a workspace elsewhere
-- 🎨 **Beautiful CLI**: Tokyo Night theme with styled output (more themes via `hydra config`)
+- 🎨 **Themes**: Inherits your terminal's own colours by default; six more selectable via `hydra config`
 - ⚡ **Fast**: Compiled Go binary for instant startup
 - 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
 - 🤖 **Machine-readable output**: a JSON envelope with stable error codes on every command; the whole
