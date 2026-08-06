@@ -3,227 +3,229 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>hydra — a register of worktrees</title>
+<title>hydra — worktrees across repositories</title>
 <script>document.documentElement.className="js";</script>
 <meta name="description" content="Technical guide to hydra: multi-repository git worktree management with a machine-readable output contract. For developers and AI agents.">
 <style>
 /* ======================================================================
-   hydra — archival register
-   Palette role names are shared with internal/ui/themes/themes.go (theme
-   "hydra"). The terminal renders these hues on a near-black ground; this
-   document renders them on card stock. One system, two media.
+   hydra — a terminal document
+   The palette is hydra's own `hydra` theme (internal/ui/themes/themes.go):
+   neutral ground, one mono family, and colour only where the CLI itself
+   spends it — blue for a reference, violet for a topic, green clean,
+   amber dirty, red failed. Chrome is greyscale.
    ====================================================================== */
 :root{
-  --card:#e7e5dc; --card-2:#dedbd0; --card-3:#d5d1c4;
-  --ink:#17150f; --ink-2:#46423a; --ink-3:#7d766a;
-  --rule:#b4ae9f; --rule-2:#c8c3b5;
-  --red:#9c2f1b; --ochre:#7d5f12; --green:#2f5f43; --blue:#28536f; --violet:#4e3f70;
-  --plate:#15161b; --plate-ink:#cfcabc; --plate-dim:#6f6a5f; --plate-hi:#e8e4d8;
-  --p-green:#7faf85; --p-ochre:#c9a54a; --p-red:#d2604a; --p-blue:#7fa8c9; --p-violet:#9a8cc0;
-  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
-  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --bg:#1a1a1a; --bg-1:#151515; --bg-2:#232322;
+  --fg:#c8c8c6; --hi:#eaeae8;
+  /* One greyscale ramp. --mute is the theme's muted role opened up to 4.6:1 on
+     this ground, because a document is read at rest and a TUI is scanned; --faint
+     is the theme's #6e6e6c, spent only on the index ordinals, which repeat the
+     section name beside them. */
+  --mute:#848482; --faint:#6e6e6c;
+  --line:#2c2c2c; --line-2:#242424;
+  --blue:#7fa8c9; --violet:#9a8cc0; --green:#7faf85; --amber:#c9a54a; --red:#d2604a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
   --gap:clamp(16px,3vw,32px);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
-body{margin:0;background:var(--card);color:var(--ink);
-  font-family:var(--serif);font-size:17.5px;line-height:1.62;
-  font-feature-settings:"kern" 1,"liga" 1}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:var(--mono);font-size:15px;line-height:1.66}
+em{font-style:normal;color:var(--hi)}
+::selection{background:#33424d;color:var(--hi)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
 /* ---- shell ------------------------------------------------------------- */
-.shell{max-width:1180px;margin:0 auto;padding:0 var(--gap) 120px;
-  display:grid;grid-template-columns:172px minmax(0,1fr);column-gap:44px}
+.shell{max-width:1180px;margin:0 auto;padding:0 var(--gap) 110px;
+  display:grid;grid-template-columns:176px minmax(0,1fr);column-gap:44px}
 
 /* ---- sticky index ------------------------------------------------------ */
-.index{position:sticky;top:0;align-self:start;height:100vh;padding:38px 0 24px;
-  border-right:1px solid var(--rule);display:flex;flex-direction:column}
-.index .brand{font-family:var(--mono);font-size:13px;letter-spacing:.3em;text-transform:uppercase;
-  font-weight:700;padding-right:20px;text-align:right;margin-bottom:2px}
-.index .ver{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-3);
-  text-align:right;padding-right:20px;margin-bottom:26px}
+.index{position:sticky;top:0;align-self:start;height:100vh;padding:36px 0 22px;
+  border-right:1px solid var(--line);display:flex;flex-direction:column}
+.index .brand{font-size:14px;font-weight:700;color:var(--hi);padding-right:20px}
+.index .ver{font-size:11px;color:var(--mute);padding-right:20px;margin:2px 0 24px}
 .index nav{overflow-y:auto;flex:1;padding-right:20px}
-.index a{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.055em;
-  text-transform:uppercase;color:var(--ink-3);text-decoration:none;text-align:right;
-  padding:3px 0;border-right:2px solid transparent;margin-right:-20px;padding-right:18px}
-.index a:hover{color:var(--ink)}
-.index a.on{color:var(--red);border-right-color:var(--red)}
-.index a .n{color:var(--rule);margin-right:6px}
-.index a.on .n{color:var(--red)}
-.index .foot{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-3);
-  text-align:right;padding-right:20px;padding-top:14px;border-top:1px solid var(--rule-2)}
+.index a{position:relative;display:block;font-size:11px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--mute);text-decoration:none;padding:3px 0 3px 15px}
+.index a:hover{color:var(--fg)}
+.index a.on{color:var(--hi)}
+.index a.on::before{content:"\25b8";position:absolute;left:0;top:3px}
+.index a .n{color:var(--faint);margin-right:7px}
+.index a.on .n{color:var(--mute)}
+.index .foot{font-size:10.5px;line-height:1.7;color:var(--mute);padding:13px 20px 0 0;
+  border-top:1px solid var(--line)}
 
-/* ---- masthead ---------------------------------------------------------- */
-.main{padding-top:38px;min-width:0}
-.masthead{border-top:4px solid var(--ink);padding-top:16px}
-.masthead .strip{display:flex;justify-content:space-between;align-items:baseline;gap:18px;
-  flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;
-  text-transform:uppercase;color:var(--ink-2);border-bottom:1px solid var(--ink);padding-bottom:11px}
-h1{font-family:var(--serif);font-size:clamp(34px,5.6vw,54px);line-height:1.06;margin:26px 0 0;
-  font-weight:400;letter-spacing:-.014em;max-width:24ch}
-h1 em{font-style:italic;color:var(--red)}
-.sub{font-size:clamp(18px,2.2vw,21px);line-height:1.5;color:var(--ink-2);max-width:56ch;margin:18px 0 0}
-.sub b{color:var(--ink);font-weight:600}
+/* ---- head -------------------------------------------------------------- */
+.main{padding-top:36px;min-width:0}
+.masthead .strip{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+  flex-wrap:wrap;font-size:11px;color:var(--mute);
+  border-bottom:1px solid var(--line);padding-bottom:10px}
+h1{font-size:clamp(23px,3.4vw,34px);line-height:1.24;margin:26px 0 0;font-weight:500;
+  letter-spacing:-.005em;max-width:36ch;color:var(--fg)}
+/* the emphasis is weight and value, not a second hue */
+h1 em{font-weight:700}
+.sub{font-size:clamp(15px,1.8vw,16.5px);line-height:1.62;color:var(--fg);
+  max-width:64ch;margin:16px 0 0}
+.sub b{color:var(--hi);font-weight:600}
 
-/* two reading paths */
-.paths{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);
-  border:1px solid var(--rule);margin:32px 0 0}
-.paths > div{background:var(--card-2);padding:14px 16px}
-.paths h3{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
-  margin:0 0 5px;color:var(--ink-2)}
-.paths p{margin:0;font-size:15px;line-height:1.5}
-.paths a{color:var(--blue);text-decoration:none;border-bottom:1px solid currentColor}
+/* two reading paths — flat, ruled, not boxed */
+.paths{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;margin:30px 0 0}
+.paths > div{border-top:1px solid var(--line);padding:11px 0 0}
+.paths h3{font-size:11px;font-weight:700;color:var(--mute);margin:0 0 5px}
+.paths p{margin:0;font-size:14px;line-height:1.6}
+.paths a,a.ref{color:var(--blue);text-decoration:none;border-bottom:1px solid var(--line)}
+.paths a:hover,a.ref:hover{border-bottom-color:var(--blue)}
 
 /* ---- sections ---------------------------------------------------------- */
-section{margin-top:76px;scroll-margin-top:28px}
-.sh{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--ink);
-  padding-bottom:8px;margin-bottom:22px;flex-wrap:wrap}
-.sh .num{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--red);font-weight:700}
-.sh h2{font-family:var(--mono);font-size:13px;letter-spacing:.17em;text-transform:uppercase;
-  margin:0;font-weight:700;flex:1}
-.sh .aside{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--ink-3)}
-p{max-width:66ch;margin:0 0 15px}
+section{margin-top:72px;scroll-margin-top:24px}
+.sh{display:flex;align-items:baseline;gap:13px;border-bottom:1px solid var(--line);
+  padding-bottom:8px;margin-bottom:20px;flex-wrap:wrap}
+.sh .num{font-size:11.5px;color:var(--mute)}
+.sh h2{font-size:17px;font-weight:700;color:var(--hi);margin:0;flex:1;letter-spacing:-.005em}
+.sh .aside{font-size:11px;color:var(--mute)}
+h3.h3{font-size:13px;font-weight:700;color:var(--hi);margin:32px 0 12px}
+p{max-width:70ch;margin:0 0 14px}
 p.wide{max-width:78ch}
-code{font-family:var(--mono);font-size:.87em;background:var(--card-3);padding:1px 5px;
-  border-radius:2px;color:var(--ink)}
-a.ref{color:var(--blue);text-decoration:none;border-bottom:1px solid var(--rule)}
-a.ref:hover{border-bottom-color:var(--blue)}
-strong{font-weight:600}
+code{font-family:inherit;font-size:.9em;background:var(--bg-2);padding:1px 5px;color:var(--hi)}
+strong{font-weight:700;color:var(--hi)}
 
-/* margin note */
-.mnote{border-left:2px solid var(--ochre);background:rgba(125,95,18,.055);
-  padding:11px 15px;margin:0 0 18px;max-width:70ch}
-.mnote p{margin:0;font-size:15.5px}
-.mnote .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--ochre);display:block;margin-bottom:3px;font-weight:700}
+/* a note beside the argument — greyscale, because a note is not a warning */
+.mnote{border-left:2px solid var(--mute);padding:2px 0 2px 15px;margin:2px 0 18px;max-width:70ch}
+.mnote p{margin:0;font-size:14px}
+.mnote .lbl{display:block;font-size:11px;font-weight:700;color:var(--mute);margin-bottom:4px}
 
-/* ---- register table ---------------------------------------------------- */
-.reg{overflow-x:auto;margin:0 0 6px;border-top:1px solid var(--ink)}
-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
-thead th{text-align:left;font-weight:700;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
-  color:var(--ink-2);padding:8px 11px;white-space:nowrap;border-bottom:1px solid var(--rule)}
-tbody td{padding:7px 11px;border-bottom:1px solid var(--rule-2);vertical-align:baseline;
+/* ---- the worktree table --------------------------------------------- */
+.reg{overflow-x:auto;margin:0 0 8px;border-top:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;line-height:1.5}
+thead th{text-align:left;font-weight:700;font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--mute);padding:8px 12px 7px;white-space:nowrap;
+  border-bottom:1px solid var(--line)}
+tbody td{padding:6px 12px;border-bottom:1px solid var(--line-2);vertical-align:baseline;
   white-space:nowrap}
-tbody tr:nth-child(even){background:rgba(180,174,159,.19)}
-td.call{color:var(--ink-3)}
+tbody tr:nth-child(even){background:#1d1d1d}
 td.br{color:var(--blue)}
-td.wrap{white-space:normal;font-family:var(--serif);font-size:15px;line-height:1.45}
-.dash{color:var(--rule)}
-.tab{display:inline-block;font-size:10px;letter-spacing:.06em;padding:1px 6px;
-  border:1px solid var(--violet);color:var(--violet);border-radius:1px}
-.stamp{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.07em;
-  text-transform:uppercase;border:1.5px solid currentColor;padding:1px 6px;border-radius:2px;
-  transform:rotate(-.6deg);white-space:nowrap}
-.stamp::before{content:"";width:4px;height:4px;background:currentColor;border-radius:50%;flex:none}
-.s-ok{color:var(--green)}.s-warn{color:var(--ochre)}.s-bad{color:var(--red)}.s-info{color:var(--blue)}
+td.up{color:var(--mute)}
+td.tp{color:var(--violet)}
+td.wrap{white-space:normal;font-size:13px;line-height:1.6}
+.dash{color:var(--mute)}
+/* status: glyph plus word, in the same hue the CLI uses. Never colour alone. */
+.st-ok{color:var(--green)}
+.st-warn{color:var(--amber)}
+.st-bad{color:var(--red)}
 
-/* ---- terminal plate ---------------------------------------------------- */
-figure{margin:24px 0 26px}
-.plate{position:relative;background:var(--plate);color:var(--plate-ink);font-family:var(--mono);
-  font-size:12.5px;line-height:1.6;padding:15px 17px;overflow-x:auto;white-space:pre;
-  box-shadow:0 16px 30px -22px rgba(23,21,15,.55)}
-.plate b{font-weight:400;color:#fff}
-.plate .p{color:var(--plate-dim)}
-.plate .ok{color:var(--p-green)}
-.plate .wn{color:var(--p-ochre)}
-.plate .er{color:var(--p-red)}
-.plate .bl{color:var(--p-blue)}
-.plate .vi{color:var(--p-violet)}
-.plate .dim{color:var(--plate-dim)}
-.plate .hi{color:var(--plate-hi)}
-.cp{position:absolute;top:7px;right:8px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;
-  text-transform:uppercase;background:transparent;color:var(--plate-dim);border:1px solid #2f313a;
-  border-radius:2px;padding:2px 7px;cursor:pointer;opacity:0;transition:opacity .18s}
-.plate:hover .cp,.cp:focus{opacity:1}
-.cp:hover{color:var(--plate-hi);border-color:#4a4d59}
-figcaption{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--ink-2);margin-top:7px;display:flex;justify-content:space-between;gap:14px;
-  flex-wrap:wrap;border-top:1px solid var(--rule);padding-top:5px}
-figcaption .v{color:var(--red);font-weight:700}
-
-/* form frame — a plate that is a live interface, not a transcript */
-.plate.form{border-left:2px solid var(--p-violet)}
-.keys{font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--ink-3);
-  margin-top:6px}
-.keys kbd{font-family:var(--mono);background:var(--card-3);border:1px solid var(--rule);
-  border-radius:2px;padding:0 4px;font-size:10px;color:var(--ink-2)}
+/* ---- panels: the tool's own output ------------------------------------- */
+figure{margin:20px 0 24px}
+.plate{position:relative;background:var(--bg-1);border:1px solid var(--line);color:var(--fg);
+  font-size:12.5px;line-height:1.6;padding:14px 16px;overflow-x:auto;white-space:pre}
+.plate b{font-weight:600;color:var(--hi)}
+.plate .p{color:var(--mute)}
+.plate .ok{color:var(--green)}
+.plate .wn{color:var(--amber)}
+.plate .er{color:var(--red)}
+.plate .bl{color:var(--blue)}
+.plate .vi{color:var(--violet)}
+.plate .dim{color:var(--mute)}
+.plate .hi{color:var(--hi)}
+.plate .sel{background:var(--fg);color:var(--bg-1)}
+/* a form is a live interface, not a transcript: greyscale marker, no hue spent */
+.plate.form{border-left:2px solid var(--mute)}
+.cp{position:absolute;top:6px;right:7px;font-family:inherit;font-size:10.5px;
+  background:var(--bg-1);color:var(--mute);border:1px solid var(--line);padding:2px 7px;
+  cursor:pointer;opacity:.45;transition:opacity .15s,color .15s}
+.plate:hover .cp,.cp:focus-visible{opacity:1}
+.cp:hover{color:var(--hi);border-color:var(--mute)}
+@media (prefers-reduced-motion:reduce){.cp{transition:none}}
+figcaption{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  font-size:11px;line-height:1.5;color:var(--mute);margin-top:8px}
+figcaption .v{color:var(--hi)}
+figcaption .x0{color:var(--green)}
+figcaption .xp{color:var(--amber)}
+figcaption .xe{color:var(--red)}
+figcaption code,.colophon code,.keys code{background:none;padding:0;color:var(--fg)}
+.keys{font-size:11px;color:var(--mute);margin:-6px 0 16px;max-width:none}
+.keys kbd{font-family:inherit;font-size:11px;background:var(--bg-2);
+  border:1px solid var(--line);padding:0 4px;color:var(--hi)}
 
 /* ---- layout diagram ---------------------------------------------------- */
-.tree{font-family:var(--mono);font-size:12.5px;line-height:1.72;background:var(--card-2);
-  border:1px solid var(--rule);padding:15px 17px;overflow-x:auto;white-space:pre;margin:0 0 20px}
-.tree .c{color:var(--ink-3)}
+.tree{background:var(--bg-1);border:1px solid var(--line);color:var(--fg);
+  font-size:12.5px;line-height:1.72;padding:14px 16px;overflow-x:auto;white-space:pre;
+  margin:0 0 18px}
+.tree .c{color:var(--mute)}
 .tree .k{color:var(--blue)}
-.tree .g{color:var(--green)}
+.tree .g{color:var(--hi)}
 
-/* ---- code chip grid --------------------------------------------------- */
-.exits{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:1px;
-  background:var(--rule);border:1px solid var(--rule);margin:0 0 20px}
-.exits > div{background:var(--card-2);padding:11px 13px}
-.exits .e{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1}
-.exits .n{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
-  color:var(--ink-3);margin:3px 0 6px}
-.exits ul{margin:0;padding-left:15px;font-family:var(--mono);font-size:11px;line-height:1.65}
-.exits li{color:var(--ink-2)}
-.exits .rt{color:var(--red);font-weight:700}
+/* ---- exit statuses ----------------------------------------------------- */
+.exits{display:grid;grid-template-columns:repeat(auto-fill,minmax(208px,1fr));gap:0 26px;
+  margin:0 0 18px}
+.exits > div{border-top:1px solid var(--line);padding:10px 0 15px}
+.exits .e{font-size:20px;font-weight:700;line-height:1;color:var(--hi)}
+.exits .e.ok{color:var(--green)}
+.exits .e.wn{color:var(--amber)}
+.exits .e.er{color:var(--red)}
+.exits .e.bl{color:var(--blue)}
+.exits .n{font-size:11px;color:var(--mute);margin:5px 0 7px}
+.exits ul{margin:0;padding-left:15px;font-size:11.5px;line-height:1.7}
+.exits li.q{color:var(--mute)}
+.exits .rt{color:var(--blue)}
 
 /* ---- close ------------------------------------------------------------- */
-.colophon{margin-top:84px;border-top:4px solid var(--ink);padding-top:16px;
-  font-family:var(--mono);font-size:11px;line-height:1.75;color:var(--ink-2)}
-.colophon b{color:var(--ink)}
-.colophon a{color:var(--blue);text-decoration:none;border-bottom:1px solid var(--rule)}
+.colophon{margin-top:78px;border-top:1px solid var(--line);padding-top:14px;
+  font-size:11.5px;line-height:1.8;color:var(--mute)}
+.colophon b{color:var(--hi)}
+.colophon a{color:var(--blue);text-decoration:none;border-bottom:1px solid var(--line)}
+.colophon a:hover{border-bottom-color:var(--blue)}
 
-/* ---- motion: a card drawn from a drawer, once -------------------------- */
+/* ---- motion: one settle, exponential ease-out, never a loop ------------ */
 @media (prefers-reduced-motion:no-preference){
-  .js .rv{opacity:0;transform:translateY(9px)}
-  .js .rv.in{animation:draw .52s cubic-bezier(.19,.72,.28,1) forwards}
-  @keyframes draw{to{opacity:1;transform:none}}
-  .js .stamp{animation:land .3s cubic-bezier(.16,.84,.28,1) both}
-  @keyframes land{from{transform:rotate(-3deg) scale(1.06);opacity:0}
-                  to{transform:rotate(-.6deg) scale(1);opacity:1}}
+  .js .rv{opacity:0;transform:translateY(8px)}
+  .js .rv.in{animation:settle .5s cubic-bezier(.16,.84,.28,1) forwards}
+  @keyframes settle{to{opacity:1;transform:none}}
 }
 
 /* ---- narrow ------------------------------------------------------------ */
 @media (max-width:900px){
   .shell{grid-template-columns:1fr}
-  .index{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule);
-    padding:22px 0 14px;flex-direction:row;align-items:baseline;gap:14px;flex-wrap:wrap}
-  .index .brand,.index .ver{text-align:left;padding-right:0;margin:0}
-  .index nav{display:flex;flex-wrap:wrap;gap:2px 12px;padding-right:0;overflow:visible;flex:1 1 100%}
-  .index a{text-align:left;border-right:0;border-bottom:2px solid transparent;margin-right:0;
-    padding:1px 0}
-  .index a.on{border-right-color:transparent;border-bottom-color:var(--red)}
+  .index{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line);
+    padding:20px 0 12px;flex-direction:row;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .index .brand,.index .ver{padding-right:0;margin:0}
+  .index nav{display:flex;flex-wrap:wrap;gap:2px 14px;padding-right:0;overflow:visible;
+    flex:1 1 100%}
+  .index a{padding:1px 0 1px 13px}
+  .index a.on::before{top:1px}
   .index .foot{display:none}
-  .main{padding-top:26px}
-  .paths{grid-template-columns:1fr}
+  .main{padding-top:24px}
+  .paths{grid-template-columns:1fr;gap:0}
+  .paths > div + div{margin-top:14px}
 }
 @media (max-width:620px){
-  body{font-size:16.5px}
-  /* the register stops being a table and becomes one card per worktree */
+  body{font-size:14.5px}
+  /* the table stops being a table and becomes one block per worktree */
   .reg.stack thead{display:none}
   .reg.stack tbody td{display:block;white-space:normal;border-bottom:0;padding:2px 0}
-  .reg.stack tbody tr{display:block;border-bottom:1px solid var(--rule);padding:11px 0}
+  .reg.stack tbody tr{display:block;border-bottom:1px solid var(--line);padding:11px 0}
   .reg.stack tbody tr:nth-child(even){background:transparent}
-  .reg.stack tbody td::before{content:attr(data-l) " ";font-size:9.5px;letter-spacing:.11em;
-    text-transform:uppercase;color:var(--ink-3)}
-  .plate{font-size:11.5px;padding:13px 14px}
+  .reg.stack tbody td::before{content:attr(data-l) " ";font-size:10px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--mute)}
+  .plate{font-size:11.5px;padding:12px 13px}
 }
 </style>
 </head>
 <body>
 <!--
-THESIS: A finding aid records the identity and location of things kept elsewhere; it never holds the
-item. That is hydra's remit exactly, so the guide is built as a register rather than as the dev-tool
-landing page it refuses: no gradient hero, no curl box, no stat counters, no feature-card grid.
-OWN-WORLD: Filing-card stock on ledger rule, warm typewriter black, saturated stamp inks (accession
-red, ledger ochre, verdigris, tab blue, date violet). Status is a rotated stamp plus a word. The
-tool's own output is tipped in as dark plates captioned like archival photographs. Serif for reading,
-mono for every piece of apparatus.
+THESIS: The subject is a fixed-width program, so the document is built from the program's own
+material: hydra's `hydra` palette, one monospace family, and the same status glyphs the CLI prints.
+Nothing here is a picture of a terminal; the panels are the text, selectable and copyable.
+OWN-WORLD: Neutral dark ground (#1a1a1a), no paper and no card stock. One mono stack for prose,
+apparatus and output alike. Colour is spent only where hydra spends it — blue a reference, violet a
+topic, green clean, amber dirty, red failed — and every other surface is greyscale. Status is a
+glyph plus a word, never a colour and never a badge. Panels are bordered, flush with the page, and
+carry no shadow, because a shadow would make output into an object.
 STORY: A developer sees a real multi-repo workspace catalogued, reads the verbatim command that
 produced it, and installs; an agent jumps to the contract and gets codes, exits and invariants.
-VIEWPORT: Sticky section index left; 4pt masthead rule, title, two declared reading paths; then the
-register itself. No hero.
-FORM: Archival finding aid, candidate 4 of 7, seed key 630164d4, mode read.
+VIEWPORT: Sticky section index left, marked with the board's own ▸ cursor; one hairline under the
+strip, the title, two declared reading paths; then the workspace itself. No hero.
+FORM: Terminal document, candidate 4 of 7 re-skinned after review, seed key 630164d4, mode read.
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
 -->
 <div class="shell">
@@ -232,7 +234,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <div class="brand">hydra</div>
     <div class="ver">v0.3.9 &middot; schema 3</div>
     <nav id="nav">
-      <a href="#register"><span class="n">01</span>register</a>
+      <a href="#worktrees"><span class="n">01</span>worktrees</a>
       <a href="#install"><span class="n">02</span>install</a>
       <a href="#model"><span class="n">03</span>the model</a>
       <a href="#firstrun"><span class="n">04</span>first run</a>
@@ -251,7 +253,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
     <header class="masthead">
       <div class="strip">
-        <span>register of worktrees</span>
+        <span>worktrees across repositories</span>
         <span>github.com/mssantosdev/hydra</span>
       </div>
       <h1>Git gives you one worktree in one repository. <em>A unit of work rarely stays in one.</em></h1>
@@ -263,7 +265,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <div class="paths">
         <div>
           <h3>if you are a developer</h3>
-          <p>Read down. Every dark panel is verbatim output from a real run, including its exit
+          <p>Read down. Every panel is verbatim output from a real run, including its exit
             status. Start at <a href="#install">install</a>.</p>
         </div>
         <div>
@@ -275,26 +277,27 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     </header>
 
     <!-- ================================================== 01 ============ -->
-    <section id="register" class="rv">
-      <div class="sh"><span class="num">&sect; 01</span><h2>The register</h2>
-        <span class="aside">hydra list</span></div>
+    <section id="worktrees" class="rv">
+      <div class="sh"><span class="num">&sect; 01</span><h2>The workspace</h2>
+        <span class="aside">hydra status &middot; hydra list</span></div>
 
       <p>A workspace is a project holding groups of repositories. Every worktree is a real sibling
-        directory, never hidden inside a <code>.git</code>. The register is the whole workspace in
+        directory, never hidden inside a <code>.git</code>. This is the whole workspace in
         one view.</p>
 
       <div class="reg stack">
         <table>
-          <thead><tr><th>call</th><th>worktree</th><th>branch</th><th>upstream</th><th>topic</th><th>status</th></tr></thead>
+          <thead><tr><th>worktree</th><th>branch</th><th>upstream</th><th>topic</th><th>status</th></tr></thead>
           <tbody>
-            <tr><td class="call" data-l="call">svc.001</td><td data-l="worktree">billing-worker</td><td class="br" data-l="branch">main</td><td class="call" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
-            <tr><td class="call" data-l="call">svc.002</td><td data-l="worktree">billing-worker-feat-split-tender</td><td class="br" data-l="branch">feat/split-tender</td><td class="call" data-l="upstream">local-only</td><td data-l="topic"><span class="tab">PAY-4417</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
-            <tr><td class="call" data-l="call">svc.003</td><td data-l="worktree">billing-worker-stage</td><td class="br" data-l="branch">stage</td><td class="call" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
-            <tr><td class="call" data-l="call">svc.004</td><td data-l="worktree">checkout-api</td><td class="br" data-l="branch">main</td><td class="call" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
-            <tr><td class="call" data-l="call">svc.005</td><td data-l="worktree">checkout-api-feat-split-tender</td><td class="br" data-l="branch">feat/split-tender</td><td class="call" data-l="upstream">local-only</td><td data-l="topic"><span class="tab">PAY-4417</span></td><td data-l="status"><span class="stamp s-warn">1 chg</span></td></tr>
-            <tr><td class="call" data-l="call">svc.006</td><td data-l="worktree">checkout-api-stage</td><td class="br" data-l="branch">stage</td><td class="call" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
-            <tr><td class="call" data-l="call">svc.007</td><td data-l="worktree">storefront-web</td><td class="br" data-l="branch">main</td><td class="call" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
-            <tr><td class="call" data-l="call">svc.008</td><td data-l="worktree">storefront-web-stage</td><td class="br" data-l="branch">stage</td><td class="call" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="stamp s-ok">clean</span></td></tr>
+            <tr><td data-l="worktree">billing-worker</td><td class="br" data-l="branch">main</td><td class="up" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="st-ok">✓ clean</span></td></tr>
+            <tr><td data-l="worktree">billing-worker-feat-split-tender</td><td class="br" data-l="branch">feat/split-tender</td><td class="up" data-l="upstream">local-only</td><td class="tp" data-l="topic">PAY-4417</td><td data-l="status"><span class="st-ok">✓ clean</span></td></tr>
+            <tr><td data-l="worktree">billing-worker-stage</td><td class="br" data-l="branch">stage</td><td class="up" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="st-ok">✓ clean</span></td></tr>
+            <tr><td data-l="worktree">checkout-api</td><td class="br" data-l="branch">main</td><td class="up" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="st-warn">~ 1 chg</span></td></tr>
+            <tr><td data-l="worktree">checkout-api-feat-split-tender</td><td class="br" data-l="branch">feat/split-tender</td><td class="up" data-l="upstream">local-only</td><td class="tp" data-l="topic">PAY-4417</td><td data-l="status"><span class="st-warn">~ 1 chg</span></td></tr>
+            <tr><td data-l="worktree">checkout-api-prod</td><td class="br" data-l="branch">prod</td><td class="up" data-l="upstream">origin/prod</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="st-ok">✓ clean</span></td></tr>
+            <tr><td data-l="worktree">checkout-api-stage</td><td class="br" data-l="branch">stage</td><td class="up" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="st-ok">✓ clean</span></td></tr>
+            <tr><td data-l="worktree">storefront-web</td><td class="br" data-l="branch">main</td><td class="up" data-l="upstream">origin/main</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="st-ok">✓ clean</span></td></tr>
+            <tr><td data-l="worktree">storefront-web-stage</td><td class="br" data-l="branch">stage</td><td class="up" data-l="upstream">origin/stage</td><td data-l="topic"><span class="dash">&mdash;</span></td><td data-l="status"><span class="st-ok">✓ clean</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -312,27 +315,42 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra status --output text</b>
 
-<span class="dim">╭────────────────────────────────────────────────────────────────────────────╮</span>
-<span class="dim">│</span>                                   <span class="hi">HYDRA</span>                                    <span class="dim">│</span>
-<span class="dim">│</span>                              Status Overview                               <span class="dim">│</span>
-<span class="dim">╰────────────────────────────────────────────────────────────────────────────╯</span>
+<span class="dim">TOTAL</span> 9  <span class="dim">CLEAN</span> 6  <span class="dim">DIRTY</span> <span class="wn">2</span>  <span class="dim">AHEAD 0</span>  <span class="dim">BEHIND 0</span>  <span class="dim">LOCAL</span> 2  <span class="dim">DETACHED 0</span>
 
-<span class="dim">╭─────────────────────────────────────────────────────────────────────────╮</span>
-<span class="dim">│</span>  TOTAL 8    CLEAN 6    DIRTY 1   AHEAD 0  BEHIND 0  LOCAL 2  DETACHED 0 <span class="dim">│</span>
-<span class="dim">╰─────────────────────────────────────────────────────────────────────────╯</span>
-
- <span class="dim">WORKTREE          BRANCH             UPSTREAM      TOPIC     STATUS</span>
+<span class="dim"> WORKTREE            BRANCH             UPSTREAM      TOPIC     STATUS      </span>
 <span class="dim">────────────────────────────────────────────────────────────────────────────</span>
- billing-worker    <span class="bl">main</span>               origin/main   <span class="dim">—</span>            <span class="ok">✓ clean</span>
- billing-worker-…  <span class="bl">feat/split-tender</span>  <span class="dim">local-only</span>    <span class="vi">PAY-4417</span>     <span class="ok">✓ clean</span>
- billing-worker-…  <span class="bl">stage</span>              origin/stage  <span class="dim">—</span>            <span class="ok">✓ clean</span>
- checkout-api      <span class="bl">main</span>               origin/main   <span class="dim">—</span>            <span class="ok">✓ clean</span>
- checkout-api-fe…  <span class="bl">feat/split-tender</span>  <span class="dim">local-only</span>    <span class="vi">PAY-4417</span>    <span class="wn">~ 1 chg</span>
- checkout-api-st…  <span class="bl">stage</span>              origin/stage  <span class="dim">—</span>            <span class="ok">✓ clean</span>
- storefront-web    <span class="bl">main</span>               origin/main   <span class="dim">—</span>            <span class="ok">✓ clean</span>
- storefront-web-…  <span class="bl">stage</span>              origin/stage  <span class="dim">—</span>            <span class="ok">✓ clean</span>
+ billing-worker      <span class="bl">main               </span><span class="dim">origin/main   </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ billing-worker-fe…  <span class="bl">feat/split-tender  </span><span class="dim">local-only    </span><span class="vi">PAY-4417  </span>  <span class="ok">✓ clean</span>   
+ billing-worker-st…  <span class="bl">stage              </span><span class="dim">origin/stage  </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ checkout-api        <span class="bl">main               </span><span class="dim">origin/main   </span><span class="dim">—         </span> <span class="wn">~ 1 chg</span>    
+ checkout-api-feat…  <span class="bl">feat/split-tender  </span><span class="dim">local-only    </span><span class="vi">PAY-4417  </span> <span class="wn">~ 1 chg</span>    
+ checkout-api-prod   <span class="bl">prod               </span><span class="dim">origin/prod   </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ checkout-api-stage  <span class="bl">stage              </span><span class="dim">origin/stage  </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ storefront-web      <span class="bl">main               </span><span class="dim">origin/main   </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ storefront-web-st…  <span class="bl">stage              </span><span class="dim">origin/stage  </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
 </div>
-        <figcaption><span>plate 1 &middot; <span class="v">verbatim</span></span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 1 &middot; <span class="v">verbatim</span> &middot; the table above is this, typeset</span><span class="x0">exit 0</span></figcaption>
+      </figure>
+
+      <p><code>list</code> is the narrower view of the same rows: grouped by group, without the
+        upstream column and without the counts line.</p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra list --output text</b>
+<span class="dim">▸ SERVICES</span>
+<span class="dim"> WORKTREE                          BRANCH             TOPIC     STATUS      </span>
+<span class="dim">────────────────────────────────────────────────────────────────────────────</span>
+ billing-worker                    <span class="bl">main               </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ billing-worker-feat-split-tender  <span class="bl">feat/split-tender  </span><span class="vi">PAY-4417  </span>  <span class="ok">✓ clean</span>   
+ billing-worker-stage              <span class="bl">stage              </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ checkout-api                      <span class="bl">main               </span><span class="dim">—         </span> <span class="wn">~ 1 chg</span>    
+ checkout-api-feat-split-tender    <span class="bl">feat/split-tender  </span><span class="vi">PAY-4417  </span> <span class="wn">~ 1 chg</span>    
+ checkout-api-prod                 <span class="bl">prod               </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ checkout-api-stage                <span class="bl">stage              </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ storefront-web                    <span class="bl">main               </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+ storefront-web-stage              <span class="bl">stage              </span><span class="dim">—         </span>  <span class="ok">✓ clean</span>   
+</div>
+        <figcaption><span>plate 2 &middot; <span class="v">verbatim</span> &middot; <code>&#9656;</code> marks a group</span><span class="x0">exit 0</span></figcaption>
       </figure>
     </section>
 
@@ -346,11 +364,20 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <span class="p">$</span> <b>hydra --version</b>
 <span class="hi">v0.3.9</span>
 </div>
-        <figcaption><span>plate 2 &middot; requires go 1.24+</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 3 &middot; requires go 1.24+</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <p>It builds with <code>CGO_ENABLED=0</code>, so there is no toolchain to install on the
         target and no database to provision. State is two YAML files and git itself.</p>
+
+      <div class="mnote">
+        <span class="lbl">appearance</span>
+        <p>The default theme is <code>terminal</code>: every colour is an ANSI slot and no
+          background is painted, so hydra inherits the palette your terminal already has rather
+          than imposing one. <code>hydra config set theme hydra</code> selects the fixed palette
+          instead &mdash; the one this page is drawn in &mdash; and <code>contrib/</code> carries
+          generated Ghostty and omp themes if you would rather move the terminal to hydra.</p>
+      </div>
 
       <p><strong>Shell integration is optional but wanted.</strong> A child process cannot change
         its parent's directory, so <code>hydra switch</code> prints a path and exits 0 on its own.
@@ -360,7 +387,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div class="plate"><span class="p">$</span> <b>hydra init-shell</b>       <span class="dim"># installs the helper and a loader block</span>
 <span class="p">$</span> <b>hydra switch checkout-api-stage</b>
 </div>
-        <figcaption><span>plate 3 &middot; without the helper, exit 3 <code>shell_helper_missing</code></span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 4 &middot; without the helper, exit 3 <code>shell_helper_missing</code></span><span class="x0">exit 0</span></figcaption>
       </figure>
     </section>
 
@@ -414,7 +441,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   hydra repo add &lt;url&gt; --as &lt;alias&gt; --group &lt;group&gt;
   hydra repo add &lt;path&gt; --adopt --group &lt;group&gt;
 </div>
-        <figcaption><span>plate 4 &middot; <span class="v">verbatim</span> &middot; every command ends by naming what comes next</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 5 &middot; <span class="v">verbatim</span> &middot; every command ends by naming what comes next</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <p>Now register a repository. One command clones the bare repo, records it in the manifest,
@@ -434,7 +461,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   ./services/checkout-api        <span class="dim">(main)</span>
   ./services/checkout-api-stage  <span class="dim">(stage)</span>
 </div>
-        <figcaption><span>plate 5 &middot; <span class="v">verbatim</span> &middot; git progress goes to stderr, so stdout stays parseable</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 6 &middot; <span class="v">verbatim</span> &middot; git progress goes to stderr, so stdout stays parseable</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <div class="mnote">
@@ -465,7 +492,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ┃   services/checkout-api
 ┃   services/storefront-web
 </div>
-        <figcaption><span>plate 6 &middot; <span class="v">observed in a pty</span></span><span>step 1 of 2</span></figcaption>
+        <figcaption><span>plate 7 &middot; <span class="v">observed in a pty</span></span><span>step 1 of 2</span></figcaption>
       </figure>
 
       <figure>
@@ -473,7 +500,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ┃ <span class="vi">&gt;</span> + new branch…
 ┃   prod
 </div>
-        <figcaption><span>plate 7 &middot; <span class="v">observed</span> &middot; main and stage are absent because they already have worktrees</span><span>step 2 of 2</span></figcaption>
+        <figcaption><span>plate 8 &middot; <span class="v">observed</span> &middot; main and stage are absent because they already have worktrees</span><span>step 2 of 2</span></figcaption>
       </figure>
 
       <p>Only <code>prod</code> is offered. hydra filters out branches that already have a worktree,
@@ -489,27 +516,36 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <span class="dim">cd services/checkout-api-prod</span>
 <span class="dim">hydra switch checkout-api-prod</span>
 </div>
-        <figcaption><span>plate 8 &middot; <span class="v">verbatim</span> &middot; it hands back both ways to get there</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 9 &middot; <span class="v">verbatim</span> &middot; it hands back both ways to get there</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
-      <p>Reporting has its own route. <code>hydra ui</code> is a full-screen register:
-        browse, filter, and leave with a path. Every refresh re-reads git rather than
-        patching the screen, so it cannot drift from disk.</p>
+      <p>Reporting has a route of its own. Run <code>hydra status</code> bare on a terminal and it
+        opens a full-screen board instead of printing: browse, filter, and leave with a path. Every
+        refresh re-reads git rather than patching the screen, so it cannot drift from disk.
+        <code>hydra ui</code> survives as a hidden, deprecated alias of the same thing.</p>
 
       <figure>
-        <div class="plate form"><span class="p">$</span> <b>hydra ui</b>
+        <div class="plate form"><span class="p">$</span> <b>hydra status</b>
 
-<span class="hi">HYDRA</span>  <span class="dim">register</span>                                                        <span class="dim">shop</span>
-<span class="dim">────────────────────────────────────────────────────────────────────────────</span>
-<span class="dim">WORKTREE                        BRANCH             UPSTREAM     TOPIC     STATUS</span>
-checkout-api                    <span class="bl">main</span>               <span class="dim">origin/main</span>  <span class="dim">—</span>         <span class="wn">~ 1 chg</span>
-checkout-api-feat-split-tender  <span class="bl">feat/split-tender</span>  <span class="dim">local-only</span>   <span class="vi">PAY-4417</span>  <span class="wn">~ 1 chg</span>
-<span class="dim">────────────────────────────────────────────────────────────────────────────</span>
-<span class="dim">1/2  9 worktree(s)                            as of 2026-08-06T14:44:03Z</span>
-<span class="dim">filter</span> <span class="hi">dirty</span> <span class="dim">· ↑↓ move · enter switch · / filter · d dirty · r refresh · q quit</span>
+<span class="hi">hydra</span><span class="dim"> · worktrees </span><span class="dim">shop › services</span>  <span class="dim">TOTAL</span> 9  <span class="dim">CLEAN</span> 6  <span class="dim">DIRTY</span> <span class="wn">2</span>  <span class="dim">AHEAD 0</span>  <span class="dim">BEHIND 0</span>  <span class="dim">LOCAL</span> 2  <span class="dim">DETACHED 0</span>
+<span class="dim">────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="dim">  WORKTREE                        BRANCH             UPSTREAM     TOPIC     STATUS</span>
+<span class="dim">▸ SERVICES</span>
+<span class="sel">▸</span> <span class="hi">checkout-api                    </span><span class="bl">main               </span><span class="dim">origin/main  </span><span class="dim">—         </span><span class="wn">~ 1 chg</span>
+  checkout-api-feat-split-tender  <span class="bl">feat/split-tender  </span><span class="dim">local-only   </span><span class="vi">PAY-4417  </span><span class="wn">~ 1 chg</span>
+<span class="dim">────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="dim">1/2  9 worktree(s)                                                        as of 2026-08-06T14:44:03Z</span>
+<span class="dim">filter </span><span class="hi">dirty</span><span class="dim"> · ↑↓ move · enter print path · y copy · / filter · d dirty · r refresh · q quit</span>
 </div>
-        <figcaption><span>plate 8b &middot; <span class="v">observed in a pty</span> &middot; filtered to dirty, freshness dated in the footer</span><span>cd "$(hydra ui)"</span></figcaption>
+        <figcaption><span>plate 10 &middot; <span class="v">observed in a pty</span> at 100 columns &middot; filtered to dirty, freshness dated in the footer</span><span>cd "$(hydra status)"</span></figcaption>
       </figure>
+      <p class="keys"><kbd>↑</kbd><kbd>↓</kbd> move &nbsp; <kbd>enter</kbd> print path &nbsp;
+        <kbd>y</kbd> copy path &nbsp; <kbd>/</kbd> filter &nbsp; <kbd>d</kbd> dirty &nbsp;
+        <kbd>r</kbd> refresh &nbsp; <kbd>q</kbd> quit</p>
+
+      <p>The board draws on stderr and prints only the chosen path on stdout, which is why
+        <code>cd "$(hydra status)"</code> composes. Quitting with <code>q</code> chooses nothing,
+        prints nothing, and still exits 0.</p>
 
       <p>The filter words are the same ones <code>--filter</code> takes:
         <code>dirty</code>, <code>behind</code> and <code>branch:&lt;glob&gt;</code>, where
@@ -518,10 +554,9 @@ checkout-api-feat-split-tender  <span class="bl">feat/split-tender</span>  <span
 
       <div class="mnote">
         <span class="lbl">still open</span>
-        <p><code>ui</code> browses and selects; it does not yet mutate. Acting on a
-          selection still means dropping to <code>sync</code>, <code>remove</code> or
-          <code>add</code>, which have their own forms. Wiring those in is the next
-          increment.</p>
+        <p>The board browses and selects; it does not mutate. Acting on a selection still means
+          dropping to <code>sync</code>, <code>remove</code> or <code>add</code>, which have their
+          own forms. Wiring those in is the next increment.</p>
       </div>
     </section>
 
@@ -542,18 +577,20 @@ checkout-api-feat-split-tender  <span class="bl">feat/split-tender</span>  <span
   <span class="bl">new</span>  billing-worker     ./services/billing-worker-feat-split-tender
   <span class="bl">new</span>  checkout-api       ./services/checkout-api-feat-split-tender
 </div>
-        <figcaption><span>plate 9 &middot; <span class="v">verbatim</span> &middot; convergent: run it twice and the second is a no-op at exit 0</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 11 &middot; <span class="v">verbatim</span> &middot; convergent: run it twice and the second is a no-op at exit 0</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra topic show PAY-4417 --output text</b>
 
+              
 <span class="hi">Topic PAY-4417</span>
+              
 
-  billing-worker           feat/split-tender            <span class="ok">present</span>
-  checkout-api             feat/split-tender            <span class="ok">present</span>
+  billing-worker           <span class="bl">feat/split-tender</span>            <span class="ok">present</span>
+  checkout-api             <span class="bl">feat/split-tender</span>            <span class="ok">present</span>
 </div>
-        <figcaption><span>plate 10 &middot; <span class="v">verbatim</span> &middot; <code>present</code> means the directory is on disk, checked now</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 12 &middot; <span class="v">verbatim</span> &middot; <code>present</code> means the directory is on disk, checked now</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <p>Then act on the whole topic at once. Everything after <code>--</code> is handed to exec
@@ -567,10 +604,10 @@ feat/split-tender
 
 <span class="ok">✓</span> "git rev-parse --abbrev-ref HEAD" succeeded in 2 worktree(s)
 
-  <span class="ok">ok</span>   billing-worker/feat/split-tender 5ms
-  <span class="ok">ok</span>   checkout-api/feat/split-tender 4ms
+  <span class="ok">ok</span>   billing-worker/feat/split-tender <span class="dim">3ms</span>
+  <span class="ok">ok</span>   checkout-api/feat/split-tender <span class="dim">3ms</span>
 </div>
-        <figcaption><span>plate 11 &middot; <span class="v">verbatim</span> &middot; child output is attributed per worktree</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 13 &middot; <span class="v">verbatim</span> &middot; child output is attributed per worktree</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <p>Selectors <strong>intersect</strong>: <code>--topic</code>, <code>--repos</code>,
@@ -607,7 +644,7 @@ feat/split-tender
 ┃ <span class="vi">&gt;</span> <span class="ok">✓</span> checkout-api    main            1        clean
 ┃   <span class="ok">✓</span> storefront-web  main            1        clean
 </div>
-        <figcaption><span>plate 12 &middot; <span class="v">observed in a pty</span></span><span>clean rows pre-selected</span></figcaption>
+        <figcaption><span>plate 14 &middot; <span class="v">observed in a pty</span></span><span>clean rows pre-selected</span></figcaption>
       </figure>
       <p class="keys"><kbd>x</kbd> toggle &nbsp; <kbd>↑</kbd><kbd>↓</kbd> move &nbsp; <kbd>/</kbd> filter
         &nbsp; <kbd>enter</kbd> submit &nbsp; <kbd>ctrl+a</kbd> select none</p>
@@ -625,7 +662,7 @@ feat/split-tender
 ┃   Discard all changes (reset --hard)
 ┃   Skip this worktree
 </div>
-        <figcaption><span>plate 13 &middot; <span class="v">observed</span> &middot; asked per worktree, never assumed</span><span>3 explicit outcomes</span></figcaption>
+        <figcaption><span>plate 15 &middot; <span class="v">observed</span> &middot; asked per worktree, never assumed</span><span>3 explicit outcomes</span></figcaption>
       </figure>
 
       <p>Verified rather than asserted: with a local edit present and the branch one commit behind,
@@ -638,7 +675,7 @@ feat/split-tender
 <span class="p">$</span> <b>hydra sync --yes; echo "exit $?"</b>
 <span class="dim">exit 4</span>
 </div>
-        <figcaption><span>plate 14 &middot; a fetch failure on one remote is a <span class="v">partial</span>, never a silent success</span><span>exit 4</span></figcaption>
+        <figcaption><span>plate 16 &middot; a fetch failure on one remote is a <span class="v">partial</span>, never a silent success</span><span class="xp">exit 4</span></figcaption>
       </figure>
 
       <p>One unreachable remote does not stop the reachable ones from pulling, and the failure is
@@ -668,7 +705,7 @@ feat/split-tender
   <span class="bl">"warnings"</span>: []
 }
 </div>
-        <figcaption><span>plate 15 &middot; <span class="v">verbatim</span></span><span>exit 1</span></figcaption>
+        <figcaption><span>plate 17 &middot; <span class="v">verbatim</span></span><span class="xe">exit 1</span></figcaption>
       </figure>
 
       <p><strong>Branch on <code>error.code</code>, never on message wording.</strong> Codes are
@@ -694,13 +731,13 @@ feat/split-tender
   ]
 }
 </div>
-        <figcaption><span>plate 16 &middot; <span class="v">verbatim</span> &middot; <code>next[]</code> is argv plus a reason, never auto-run</span><span>exit 1</span></figcaption>
+        <figcaption><span>plate 18 &middot; <span class="v">verbatim</span> &middot; <code>next[]</code> is argv plus a reason, never auto-run</span><span class="xe">exit 1</span></figcaption>
       </figure>
 
-      <h3 style="font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;margin:34px 0 12px">23 codes, 8 exit statuses</h3>
+      <h3 class="h3">23 codes, 8 exit statuses</h3>
 
       <div class="exits">
-        <div><div class="e" style="color:var(--green)">0</div><div class="n">success</div>
+        <div><div class="e ok">0</div><div class="n">success</div>
           <ul><li>also a convergent no-op</li></ul></div>
         <div><div class="e">1</div><div class="n">general failure</div>
           <ul><li>bare_missing</li><li>branch_provider_failed</li><li>branch_unknown</li><li>git_failed</li><li>hook_failed</li><li>internal</li><li>project_exists</li><li>repo_unknown</li><li>topic_conflict</li><li>topic_unknown</li><li>unknown_command</li><li>worktree_exists</li><li>worktree_name_conflict</li><li>worktree_unknown</li></ul></div>
@@ -708,14 +745,14 @@ feat/split-tender
           <ul><li>config_version_unsupported</li><li>not_in_project</li><li>project_unknown</li><li>state_version_unsupported</li></ul></div>
         <div><div class="e">3</div><div class="n">shell helper</div>
           <ul><li>shell_helper_missing</li></ul></div>
-        <div><div class="e" style="color:var(--ochre)">4</div><div class="n">partial</div>
-          <ul><li>partial_failure</li><li style="color:var(--ink-3)">data <em>and</em> error both real</li></ul></div>
-        <div><div class="e" style="color:var(--red)">5</div><div class="n">refused, work protected</div>
+        <div><div class="e wn">4</div><div class="n">partial</div>
+          <ul><li>partial_failure</li><li class="q">data <em>and</em> error both real</li></ul></div>
+        <div><div class="e er">5</div><div class="n">refused, work protected</div>
           <ul><li>worktree_dirty</li></ul></div>
-        <div><div class="e" style="color:var(--blue)">6</div><div class="n">retry this one</div>
+        <div><div class="e bl">6</div><div class="n">retry this one</div>
           <ul><li class="rt">busy — the only retryable code</li></ul></div>
         <div><div class="e">7</div><div class="n">needs input</div>
-          <ul><li>needs_input</li><li style="color:var(--ink-3)">names it in details.missing</li></ul></div>
+          <ul><li>needs_input</li><li class="q">names it in details.missing</li></ul></div>
       </div>
 
       <p><code>hydra commands --output json</code> publishes this table, so nothing above needs to
@@ -734,7 +771,7 @@ feat/split-tender
         <div class="plate"><span class="p">$</span> <b>hydra skill</b>            <span class="dim"># the embedded contract, ~120 lines</span>
 <span class="p">$</span> <b>hydra commands --output json</b>  <span class="dim"># every command, flag, code and exit</span>
 </div>
-        <figcaption><span>plate 17 &middot; two commands are the whole onboarding</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 19 &middot; two commands are the whole onboarding</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <p>Its invariants, verbatim, because they are what makes probing unnecessary:</p>
@@ -743,13 +780,13 @@ feat/split-tender
         <table>
           <thead><tr><th>#</th><th>invariant</th></tr></thead>
           <tbody>
-            <tr><td class="call">1</td><td class="wrap"><code>--output json</code> (default when stdout is not a terminal) emits one envelope. Never scrape text.</td></tr>
-            <tr><td class="call">2</td><td class="wrap">Branch on <code>error.code</code>, never on message wording. Codes are stable; messages are not.</td></tr>
-            <tr><td class="call">3</td><td class="wrap">Every command is <strong>convergent</strong>: doing it twice is a no-op that exits 0, reported as <code>skipped</code>.</td></tr>
-            <tr><td class="call">4</td><td class="wrap">Nothing is inferred from a branch name. Topic membership is recorded, never guessed.</td></tr>
-            <tr><td class="call">5</td><td class="wrap">A missing value is <code>needs_input</code> (exit 7) naming it in <code>details.missing</code>. hydra never blocks on a prompt when output is machine-readable.</td></tr>
-            <tr><td class="call">6</td><td class="wrap">A handle matching several worktrees is an error, never a silent first match.</td></tr>
-            <tr><td class="call">7</td><td class="wrap"><code>hydra commands --output json</code> publishes the whole surface and the code&rarr;exit table.</td></tr>
+            <tr><td class="up">1</td><td class="wrap"><code>--output json</code> (default when stdout is not a terminal) emits one envelope. Never scrape text.</td></tr>
+            <tr><td class="up">2</td><td class="wrap">Branch on <code>error.code</code>, never on message wording. Codes are stable; messages are not.</td></tr>
+            <tr><td class="up">3</td><td class="wrap">Every command is <strong>convergent</strong>: doing it twice is a no-op that exits 0, reported as <code>skipped</code>.</td></tr>
+            <tr><td class="up">4</td><td class="wrap">Nothing is inferred from a branch name. Topic membership is recorded, never guessed.</td></tr>
+            <tr><td class="up">5</td><td class="wrap">A missing value is <code>needs_input</code> (exit 7) naming it in <code>details.missing</code>. hydra never blocks on a prompt when output is machine-readable.</td></tr>
+            <tr><td class="up">6</td><td class="wrap">A handle matching several worktrees is an error, never a silent first match.</td></tr>
+            <tr><td class="up">7</td><td class="wrap"><code>hydra commands --output json</code> publishes the whole surface and the code&rarr;exit table.</td></tr>
           </tbody>
         </table>
       </div>
@@ -773,13 +810,13 @@ feat/split-tender
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra doctor --output text</b>
 <span class="dim">…</span>
+<span class="ok">✓</span> worktree_missing_on_disk (services/storefront-web-stage): worktree directory exists
 <span class="ok">✓</span> worktree_unregistered: no unregistered worktree directories
 <span class="ok">✓</span> registry_dangling: registry entries point at valid workspaces
-<span class="wn">!</span> worktree_dirty (services/checkout-api-feat-split-tender): 1 uncommitted change(s)
 
-<span class="dim">ok=56 warn=1 fail=0 fixed=0</span>
+<span class="dim">ok=61 warn=2 fail=0 fixed=0</span>
 </div>
-        <figcaption><span>plate 18 &middot; <span class="v">verbatim</span> &middot; the check count scales with repos and worktrees</span><span>exit 0</span></figcaption>
+        <figcaption><span>plate 20 &middot; <span class="v">verbatim</span>, tail &middot; the check count scales with repos and worktrees</span><span class="x0">exit 0</span></figcaption>
       </figure>
 
       <p>A warning is not a failure: a dirty worktree is your work, correctly left alone. Failures
@@ -831,7 +868,7 @@ feat/split-tender
     <div class="colophon">
       <b>hydra</b> &middot; <a href="https://github.com/mssantosdev/hydra">github.com/mssantosdev/hydra</a>
       &middot; <code>go install github.com/mssantosdev/hydra@latest</code><br>
-      Every dark panel on this page is verbatim output from a real run. Repository names and the
+      Every panel on this page is verbatim output from a real run. Repository names and the
       topic id are synthetic fixtures; the commands are not.<br>
       This document has no external requests, no analytics, and no fonts to download.
     </div>

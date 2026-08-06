@@ -9,22 +9,25 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+
 ## [Unreleased]
 
 ### Added
 
-- **`hydra ui` (alias `hydra tui`): a full-screen register of the workspace.** Eight mutating
-  flows already prompted when run bare on a terminal, but every *reporting* command was
-  flags-only, so exploring a workspace meant already knowing the flag that would answer the
-  question. A form cannot close that: forms collect values and exit, and reporting needs
-  view, refine and act in one place.
+- **`hydra status` on a TTY is the interactive board.** Eight mutating flows already prompted when
+  run bare on a terminal, but every *reporting* command was flags-only, so exploring a workspace
+  meant already knowing the flag that would answer the question. A form cannot close that: forms
+  collect values and exit, and reporting needs view, refine and act in one place.
+
+  The tool already had the convention that the interactive route is the same command rather than a
+  separate noun; `hydra status` with no arguments on a TTY now opens the board. `ui` and `tui`
+  remain registered as hidden aliases so muscle memory and scripts keep working.
 
   Browse, filter, and leave with a path, so it composes exactly like `switch`:
-  `cd "$(hydra ui)"`. The register is written to stderr and stdout carries only the
-  selection. Quitting without selecting prints nothing and exits 0, because choosing not to
-  choose is not a failure. Without a terminal it returns `needs_input` (exit 7) and names
-  `hydra status --output json` as the non-interactive equivalent, rather than emitting escape
-  sequences into a pipe.
+  `cd "$(hydra status)"`. The selection is written to stderr and stdout carries only the path.
+  Quitting without selecting prints nothing and exits 0, because choosing not to choose is not a
+  failure. `enter` prints the path and exits; `y` copies it via the clipboard so you can stay on
+  the board.
 
   Two invariants from the rest of the tool are kept rather than reinvented: every refresh
   re-reads git instead of patching what is on screen, and the footer carries the
@@ -38,42 +41,71 @@ is permanently bound to different content in the Go checksum database, so it can
   word because `--filter` rejects it.
 
   Rendering reuses `collectWorktrees` and the topic index that `list` and `status` decorate
-  from, so the three views cannot disagree.
+  from, so the three views cannot disagree. The board now carries aggregate counts, group and
+  project headers that do not consume cursor indices, an `--against` column showing ahead/behind
+  plus merged/unmerged when present, multi-project browsing via `--all`, and every status
+  selector (`--topic`, `--repos`, `--group`, `--filter`, `--against`, `--all`) passed through
+  as the board's opening state.
 
   This is browse-and-select only. Acting on a selection still means dropping to the existing
   `sync`, `remove` or `add` forms; wiring those in is the next increment.
 
-  Four defects found by using it and fixed before release:
+- **A `terminal` theme.** Every role is an ANSI slot rather than hex, so the terminal resolves it
+  from its own palette. `Background` and `Foreground` are empty on purpose: hydra paints neither.
+  No OSC query and no config parsing, so it works over SSH and in tmux and follows live theme
+  changes.
 
-  - **It ignored the configured theme entirely.** It read `themes.Current`, a package
-    initialiser that `loadTheme` never published to — only the interactive `config` form
-    wrote it, inside its own process. So it drew a hardcoded palette while `list` and
-    `status` drew the user's, in the same terminal. It now reads the resolved `styles.*`
-    colours, `loadTheme` publishes to `themes.Current` so the trap cannot bite the next
-    reader, and a test fails if the source is switched back. Verified by measuring the RGB
-    escapes emitted under two themes.
-  - **The selection painted a hardcoded background colour**, forcing this program's palette
-    onto a terminal whose background it does not own. It now uses reverse video.
-  - **The selected row rendered monochrome**, so the one row under the cursor was the only
-    row with no status colour. A gutter caret marks the cursor instead.
-  - **The footer said `enter switch`, and it does not switch.** A child process cannot change
-    its parent's directory; that is why `hydra switch` exists with a shell helper. It printed
-    a path and claimed otherwise. Relabelled `enter print path`; `cd "$(hydra ui)"` is the
-    composition that actually moves you.
+- **A first-party `hydra` theme.** The tool shipped five borrowed community palettes (tokyonight,
+  catppuccin, dracula, nord, onedark) and none of its own, so its face was someone else's design
+  decision. The new palette's role names are shared with `docs/guide.html`, which renders them
+  against a light ground: one design system in two media rather than two palettes that resemble
+  each other. `hydra config` still selects any of the previous five.
 
-- **A first-party `hydra` theme, now the default.** The tool shipped five borrowed community
-  palettes (tokyonight, catppuccin, dracula, nord, onedark) and none of its own, so its face
-  was someone else's design decision. The new palette's role names are shared with
-  `docs/guide.html`, which renders them against a light ground: one design system in two
-  media rather than two palettes that resemble each other. Breaking for anyone who never set
-  a theme; `hydra config` still selects any of the previous five.
+- **`scripts/gen-themes.py`**, which parses the ten `hydra` roles out of `internal/ui/themes/themes.go`
+  and emits `contrib/ghostty/hydra` and `contrib/omp/hydra.json`. An ad-hoc ghostty theme had
+  drifted from the tool and the documentation three times, caught only by eye; claiming a file is
+  generated while the generator lives nowhere is the same class of unbacked assertion this project
+  keeps fixing elsewhere. `make gate` now fails if either downstream theme drifts from the source
+  palette.
 
 - **`docs/guide.html`**, a single self-contained page covering install, the model, the
   interactive routes and the machine contract. No external requests, no fonts to download,
   no analytics. Every terminal panel is verbatim output from a real run, the interactive
   frames captured from a pty. Content is readable with JavaScript disabled.
 
+### Changed
+
+- **One visual language.** The `ui` board rendered plain — coloured foregrounds, a gutter caret,
+  glyph-plus-word status, nothing painted — while `list` and `status` drew a rounded box masthead
+  and filled status badges and `project` and `doctor` used a background-painted header chip. The
+  plain rendering was judged better, so the others move to it rather than the reverse.
+
+  Painting a background was also wrong on its own terms: a terminal program does not own the
+  user's background, and `Foreground(BgDark)` coloured text using hydra's declared background,
+  which is not the terminal's. `AppHeader`, `CleanBadge`, `ModifiedBadge`, `WarningBadge` and
+  `hydraHeaderBox` are deleted; zero `Background(` calls remain in `internal/ui/styles` or
+  `internal/cmd`. `status` renders its seven counts as one plain line, colouring only
+  dirty/behind/detached when non-zero.
+
+- **`terminal` is now the DEFAULT theme.** With the background-painted sites gone, an empty
+  `Background` no longer strips a foreground anywhere, so hydra stops asserting a palette and
+  inherits whatever the user configured. Every role is an ANSI slot; `Background` and
+  `Foreground` are empty. Breaking for anyone who never set a theme. `hydra` remains selectable
+  for a fixed look, and `contrib/` still generates matching Ghostty and omp themes for anyone who
+  wants their terminal to follow hydra instead.
+
+- **Hidden commands are now published in `hydra commands --output json`.** Hiding is a `--help`
+  decision for humans; the command stays invocable, so it stays part of the machine contract. Both
+  `hydra commands --output json` and the skill coverage test had filtered on cobra's
+  `IsAvailableCommand` and dropped hidden routes; an agent must be able to discover a command that
+  works.
+
 ### Fixed
+
+- **Bare `hydra status` without a terminal briefly returned `needs_input` (exit 7).** `--output auto`
+  has always meant JSON when stdout is not a terminal, and every script piping `hydra status`
+  depends on it. The board is a TTY affordance and must never change what a pipe gets. e2e section
+  19 now asserts that contract instead of the refusal.
 
 - **`hydra init` in an existing workspace reported `internal`.** That code means "hydra is
   broken", and it is the one code an agent is told to treat as a tool defect, so a plain
@@ -103,6 +135,7 @@ is permanently bound to different content in the Go checksum database, so it can
   comments, so it wants `yaml.Node`; and preserving unknowns unconditionally would resurrect
   fields that a future schema migration means to drop, so the rule has to be "preserve within
   the same schema version, and let an explicit migration remove them".
+
 
 ## [0.3.9] - 2026-08-06
 
