@@ -355,18 +355,24 @@ Always pass `--output json` (or rely on `--output auto` with a pipe) and parse t
 
 ## Themes
 
-Hydra ships one first-party palette and five borrowed community ones. Change with:
+Hydra defaults to your terminal's own palette. Change with:
 
 ```bash
 hydra config
 # Select "Theme" and choose from:
-# - hydra (default)  — the only first-party palette
+# - terminal (default)  — inherits your terminal's palette; paints no background
+# - hydra               — the one first-party palette
 # - tokyonight
 # - catppuccin
 # - dracula
 # - nord
 # - onedark
 ```
+
+`terminal` sets every colour to an ANSI slot rather than a hex value, so your terminal
+resolves it from its own theme. That needs no OSC query and no config parsing, so it works
+over SSH, inside tmux, and it follows a live theme change for free. Hydra paints no
+background under it: the palette belongs to whoever configured the terminal.
 
 Matching your terminal and tools to it:
 
@@ -386,9 +392,9 @@ Both files are generated from `internal/ui/themes/themes.go`, never hand-written
 
 The `hydra` theme is not just another entry in the list: its role names (`Primary`,
 `Success`, `Warning`, `Error`, …) are the same ones the HTML guide renders from, so the
-tool and its documentation are one design system in two media rather than two palettes
-that happen to resemble each other. The terminal carries the hues on a near-black ground;
-the guide carries them on a light one.
+tool and its documentation are one design system rather than two palettes that happen to
+resemble each other. Both render on a neutral dark ground, and colour is spent only where it
+carries meaning — a reference, a topic, a state.
 
 ## Shell Integration
 

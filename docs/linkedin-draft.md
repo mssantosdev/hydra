@@ -1,8 +1,14 @@
 # LinkedIn — engineering write-up
 
-Register of what is true: 10 releases (v0.2.0 → v0.3.9), 16 real bugs found by 16
-zero-context agents across 4 rounds, e2e 43 → 226 assertions, gate green throughout.
+What is true, and checkable: 10 released versions (v0.2.0 → v0.3.9), 16 real bugs found by
+16 zero-context agents across 4 rounds, e2e 43 → 226 assertions, gate green throughout.
 No users, no downloads, no benchmarks — none exist, so none are claimed.
+
+Since v0.3.9 there is unreleased work in CHANGELOG.md under `[Unreleased]`: one visual
+language across every command, `terminal` as the default theme, and `hydra status` becoming
+the interactive board. None of it is referenced in the drafts below, because the drafts are
+about the testing method rather than a feature list, and that story is complete as it stands.
+If a version gets cut before posting, only the release count changes.
 
 ---
 
@@ -75,3 +81,7 @@ github.com/mssantosdev/hydra
   land, and a post that hedges its own evidence mid-flow reads as unsure. It belongs in a
   longer article if one gets written.
 - Tone check: no emoji, no "🚀", no "excited to share", no rhetorical questions.
+- Do not add the theme work or the `status` board to these drafts. They are a feature list,
+  and a post that pivots from "here is what I learned" to "here is what it does" loses the
+  only thing that made it worth reading.
+- The word "register" was removed from the product's vocabulary; do not reintroduce it here.
