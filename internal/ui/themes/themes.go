@@ -155,12 +155,13 @@ var Themes = map[string]Theme{
 	"onedark":    OneDark,
 }
 
-// Get returns a theme by name, falling back to the first-party default.
+// Get returns a theme by name, falling back to `terminal` — which inherits the
+// user's own palette rather than imposing one.
 func Get(name string) Theme {
 	if theme, ok := Themes[name]; ok {
 		return theme
 	}
-	return Hydra
+	return Terminal
 }
 
 // GetNames returns all available theme names
@@ -179,7 +180,7 @@ func IsValid(name string) bool {
 }
 
 // Current holds the currently active theme
-var Current = Hydra
+var Current = Terminal
 
 // Set sets the current theme
 func Set(name string) {

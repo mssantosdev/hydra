@@ -39,19 +39,14 @@ var (
 
 // Styles - will be initialized with theme colors
 var (
-	// App Header
-	AppHeader lipgloss.Style
-
 	// Centered header
 
 	// Title styles
+	// Header is a heading. It replaces AppHeader, which painted a background colour
+	// that no terminal program owns; a heading is a foreground weight decision.
+	Header   lipgloss.Style
 	Title    lipgloss.Style
 	Subtitle lipgloss.Style
-
-	// Status badges
-	CleanBadge    lipgloss.Style
-	ModifiedBadge lipgloss.Style
-	WarningBadge  lipgloss.Style
 
 	// Group header
 	GroupHeader lipgloss.Style
@@ -139,14 +134,11 @@ func SetColorEnabled(enabled bool) {
 
 // initStyles initializes all styles with current theme colors
 func initStyles() {
-	// App Header
-	AppHeader = lipgloss.NewStyle().
-		Background(Blue).
-		Foreground(BgDark).
-		Bold(true).
-		Padding(0, 3)
-
 	// Centered header
+
+	Header = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(FgBright)
 
 	// Title styles
 	Title = lipgloss.NewStyle().
@@ -158,25 +150,6 @@ func initStyles() {
 	Subtitle = lipgloss.NewStyle().
 		Foreground(FgComment).
 		MarginBottom(0)
-
-	// Status badges
-	CleanBadge = lipgloss.NewStyle().
-		Background(Green).
-		Foreground(BgDark).
-		Bold(true).
-		Padding(0, 1)
-
-	ModifiedBadge = lipgloss.NewStyle().
-		Background(Yellow).
-		Foreground(BgDark).
-		Bold(true).
-		Padding(0, 1)
-
-	WarningBadge = lipgloss.NewStyle().
-		Background(Orange).
-		Foreground(BgDark).
-		Bold(true).
-		Padding(0, 1)
 
 	// Group header
 	GroupHeader = lipgloss.NewStyle().
@@ -219,8 +192,7 @@ func initStyles() {
 		Padding(0, 1)
 
 	TotalBadge = lipgloss.NewStyle().
-		Background(Blue).
-		Foreground(BgDark).
+		Foreground(Blue).
 		Bold(true).
 		Padding(0, 1)
 
@@ -236,12 +208,14 @@ func ReloadTheme() {
 	loadTheme()
 }
 
-// StatusBadge returns the appropriate badge for a status (fixed width)
+// StatusBadge returns a foreground-only status label. A terminal program does not
+// own the user's background, so status is glyph + word in a foreground colour
+// rather than a filled chip.
 func StatusBadge(isClean bool, count int) string {
 	if isClean {
-		return CleanBadge.Render("  ✓ clean  ")
+		return lipgloss.NewStyle().Foreground(Green).Render("✓ clean")
 	}
-	return ModifiedBadge.Render(fmt.Sprintf(" ~ %d chg  ", count))
+	return lipgloss.NewStyle().Foreground(Yellow).Render(fmt.Sprintf("~ %d chg", count))
 }
 
 // GetTerminalWidth returns the current terminal width, or 80 if not a terminal

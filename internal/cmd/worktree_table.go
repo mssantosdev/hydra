@@ -58,7 +58,11 @@ func worktreeTable(width int, items []worktreeJSON, opts worktreeTableOpts) stri
 		if opts.IncludeAgainst {
 			row = append(row, againstLabelJSON(item))
 		}
-		row = append(row, styles.StatusBadge(!item.Dirty, item.Changes))
+		status := lipgloss.NewStyle().Foreground(styles.Green).Render("  ✓ clean  ")
+		if item.Dirty {
+			status = lipgloss.NewStyle().Foreground(styles.Yellow).Render(fmt.Sprintf(" ~ %d chg  ", item.Changes))
+		}
+		row = append(row, status)
 		rows = append(rows, row)
 	}
 
@@ -107,26 +111,9 @@ func againstLabelJSON(item worktreeJSON) string {
 		return "—"
 	}
 	if item.Against.Merged {
-		return styles.CleanBadge.Render("merged")
+		return lipgloss.NewStyle().Foreground(styles.Green).Render("merged")
 	}
-	return styles.ModifiedBadge.Render(fmt.Sprintf("+%d", item.Against.Ahead))
-}
-
-// hydraHeaderBox renders the rounded title box.
-//
-// It stays OUTSIDE the table: lipgloss/table has no notion of a spanning title, and
-// the box is per-command chrome rather than data.
-func hydraHeaderBox(subtitle string) string {
-	return lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Blue).
-		Background(styles.BgDarker).
-		Padding(0, 4).
-		Align(lipgloss.Center).
-		Width(tableWidth()).
-		Render(
-			lipgloss.NewStyle().Bold(true).Foreground(styles.Blue).Render("HYDRA") + "\n" +
-				lipgloss.NewStyle().Foreground(styles.FgComment).Render(subtitle))
+	return lipgloss.NewStyle().Foreground(styles.Yellow).Render(fmt.Sprintf("+%d", item.Against.Ahead))
 }
 
 // tableWidth is the usable width for a full-bleed element.
@@ -142,5 +129,5 @@ func tableWidth() int {
 
 // groupLabel renders a group heading above its table.
 func groupLabel(group string) string {
-	return styles.GroupHeader.Render("▸ " + strings.ToUpper(group))
+	return lipgloss.NewStyle().Foreground(styles.FgComment).Render("▸ " + strings.ToUpper(group))
 }

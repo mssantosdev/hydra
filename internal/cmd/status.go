@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/mssantosdev/hydra/internal/output"
+	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
@@ -198,10 +200,6 @@ func summarizeStatus(items []worktreeJSON) statusSummaryJSON {
 func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayload) {
 	out := cmd.OutOrStdout()
 
-	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, hydraHeaderBox("Status Overview"))
-	_, _ = fmt.Fprintln(out)
-
 	// status is the command that exists to show tracking, so the upstream column is
 	// always on here even though list omits it.
 	opts := worktreeTableOpts{
@@ -215,18 +213,7 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 			_, _ = fmt.Fprintf(out, "%s\n\n", styles.Label.Render(project.Project))
 		}
 
-		s := project.Summary
-		stats := strings.Join([]string{
-			styles.TotalBadge.Render(fmt.Sprintf("TOTAL %d", s.Total)),
-			styles.CleanBadge.Render(fmt.Sprintf("CLEAN %d", s.Clean)),
-			styles.ModifiedBadge.Render(fmt.Sprintf("DIRTY %d", s.Dirty)),
-			styles.Label.Render(fmt.Sprintf("AHEAD %d", s.Ahead)),
-			styles.Label.Render(fmt.Sprintf("BEHIND %d", s.Behind)),
-			styles.Label.Render(fmt.Sprintf("LOCAL %d", s.LocalOnly)),
-			styles.Label.Render(fmt.Sprintf("DETACHED %d", s.Detached)),
-		}, "  ")
-		// The stats box is status-specific chrome and stays outside the table.
-		_, _ = fmt.Fprintln(out, styles.StatBox.Render(stats))
+		_, _ = fmt.Fprintln(out, renderStatusCounts(project.Summary))
 		_, _ = fmt.Fprintln(out)
 
 		if len(project.Worktrees) == 0 {
@@ -238,6 +225,35 @@ func renderStatusText(cmd *cobra.Command, all bool, projects []statusProjectPayl
 		_, _ = fmt.Fprintln(out, worktreeTable(tableWidth(), project.Worktrees, opts))
 		_, _ = fmt.Fprintln(out)
 	}
+}
+
+// renderStatusCounts prints the seven summary counters as one plain line: labels in
+// FgComment, numbers in the default foreground, and yellow only where the count
+// signals something worth acting on.
+func renderStatusCounts(s statusSummaryJSON) string {
+	lbl := lipgloss.NewStyle().Foreground(styles.FgComment)
+	warn := lipgloss.NewStyle().Foreground(styles.Yellow)
+
+	segment := func(label string, n int, warnCount bool) string {
+		num := strconv.Itoa(n)
+		if n == 0 {
+			return styles.Dimmed.Render(label + " " + num)
+		}
+		if warnCount {
+			return lbl.Render(label) + " " + warn.Render(num)
+		}
+		return lbl.Render(label) + " " + num
+	}
+
+	return strings.Join([]string{
+		segment("TOTAL", s.Total, false),
+		segment("CLEAN", s.Clean, false),
+		segment("DIRTY", s.Dirty, true),
+		segment("AHEAD", s.Ahead, false),
+		segment("BEHIND", s.Behind, true),
+		segment("LOCAL", s.LocalOnly, false),
+		segment("DETACHED", s.Detached, true),
+	}, "  ")
 }
 
 func upstreamLabelJSON(item worktreeJSON) string {

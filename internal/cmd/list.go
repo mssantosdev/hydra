@@ -176,10 +176,6 @@ func branchLabelJSON(item worktreeJSON) string {
 func renderListText(cmd *cobra.Command, all bool, projects []projectWorktrees) {
 	out := cmd.OutOrStdout()
 
-	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, hydraHeaderBox("Worktree Status"))
-	_, _ = fmt.Fprintln(out)
-
 	// Only show the columns this invocation can populate: a --topic-filtered listing
 	// already knows the topic, and a blank column costs width the branch needs.
 	opts := worktreeTableOpts{

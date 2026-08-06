@@ -84,7 +84,7 @@ func Print(msg string) {
 
 // Header prints a styled header.
 func Header(title string) {
-	Logger.Print(styles.AppHeader.Render(title))
+	Logger.Print(styles.Header.Render(title))
 }
 
 // Subtitle prints a styled subtitle.

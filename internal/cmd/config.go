@@ -266,7 +266,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	}
 
 	return emit(cmd, "global configuration", payload, nil, func() {
-		fmt.Println(styles.AppHeader.Render(" HYDRA "))
+		fmt.Println(styles.Header.Render("HYDRA"))
 		fmt.Println()
 		fmt.Println(styles.Title.Render("Configuration"))
 		fmt.Println()

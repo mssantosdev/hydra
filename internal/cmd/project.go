@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/config/registry"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -123,14 +125,17 @@ func runProjectLs(cmd *cobra.Command, args []string) error {
 			return
 		}
 
+		lbl := lipgloss.NewStyle().Foreground(styles.FgComment)
+		okMarker := lipgloss.NewStyle().Foreground(styles.Green)
+		warnMarker := lipgloss.NewStyle().Foreground(styles.Yellow)
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-16s  %-8s  %s\n",
-			styles.Label.Render("NAME"),
-			styles.Label.Render("CONFIG"),
-			styles.Label.Render("ROOT"))
+			lbl.Render("NAME"),
+			lbl.Render("CONFIG"),
+			lbl.Render("ROOT"))
 		for _, entry := range entries {
-			marker := styles.Success.Render("ok")
+			marker := okMarker.Render("ok")
 			if !entry.Exists {
-				marker = styles.WarningBadge.Render("!")
+				marker = warnMarker.Render("!")
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-16s  %-8s  %s\n", entry.Name, marker, entry.Root)
 		}

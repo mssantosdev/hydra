@@ -49,19 +49,19 @@ func TestGetInvalidTheme(t *testing.T) {
 	// An unknown name falls back to the first-party default, never to a borrowed palette.
 	theme := Get("invalid-theme")
 
-	if theme.Name != "hydra" {
-		t.Errorf("Expected default theme hydra for invalid input, got %s", theme.Name)
+	if theme.Name != "terminal" {
+		t.Errorf("Expected default theme terminal for invalid input, got %s", theme.Name)
 	}
 }
 
-// The default must be the one palette this project owns. Shipping a borrowed community
-// palette as the face of the tool is what this asserts against.
-func TestDefaultThemeIsFirstParty(t *testing.T) {
-	if Current.Name != "hydra" {
-		t.Errorf("Current theme is %q, want hydra", Current.Name)
+// The default must inherit the user's terminal palette rather than impose one. `hydra`
+// remains available as an explicit opt-in for anyone who wants a fixed look.
+func TestDefaultThemeDefersToTheTerminal(t *testing.T) {
+	if Current.Name != "terminal" {
+		t.Errorf("Current theme is %q, want terminal", Current.Name)
 	}
-	if Get("").Name != "hydra" {
-		t.Errorf("empty name resolved to %q, want hydra", Get("").Name)
+	if Get("").Name != "terminal" {
+		t.Errorf("empty name resolved to %q, want terminal", Get("").Name)
 	}
 }
 

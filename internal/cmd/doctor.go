@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/config/registry"
 	"github.com/mssantosdev/hydra/internal/git"
@@ -817,16 +819,19 @@ func countDoctorFailures(reports []doctorReport) int {
 }
 
 func printDoctorText(reports []doctorReport) {
+	okIcon := lipgloss.NewStyle().Foreground(styles.Green)
+	warnIcon := lipgloss.NewStyle().Foreground(styles.Yellow)
+	failIcon := lipgloss.NewStyle().Foreground(styles.Red)
 	for _, report := range reports {
 		fmt.Printf("%s\n", styles.Title.Render("Project: "+report.Project))
 		fmt.Printf("%s\n\n", styles.Dimmed.Render(report.Root))
 		for _, check := range report.Checks {
-			icon := styles.Success.Render("✓")
+			icon := okIcon.Render("✓")
 			switch check.Status {
 			case "warn":
-				icon = styles.WarningBadge.Render("!")
+				icon = warnIcon.Render("!")
 			case "fail":
-				icon = styles.Error.Render("✗")
+				icon = failIcon.Render("✗")
 			}
 			target := check.ID
 			if check.Worktree != "" {
