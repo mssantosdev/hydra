@@ -54,9 +54,27 @@ GOLANGCI_VERSION ?= 2.12.2
 # It additionally runs the race detector, which the CI pipeline currently has
 # commented out ("until the CI race-test environment is fixed"). Locally there is
 # no such constraint, so hydra does not inherit that gap.
-.PHONY: gate gate-fmt gate-vet gate-lint gate-themes gate-vuln gate-test gate-race themes
+.PHONY: gate gate-fmt gate-vet gate-lint gate-themes gate-vuln gate-test gate-race themes pages
 gate: gate-fmt gate-vet gate-lint gate-themes gate-vuln gate-test gate-race
 	@echo "gate: all checks passed"
+
+pages:
+	@# Publish docs/guide.html as the entire site on an orphan gh-pages branch.
+	@# Pages sourced from /docs would serve every .md in that tree as its own URL — harmless
+	@# on a public repo, but it publishes pages nobody reviewed and couples a docs edit to a
+	@# site deploy. This keeps the published surface to exactly the one file.
+	@set -e; \
+	tmp=$$(mktemp -d); \
+	cp docs/guide.html $$tmp/index.html; \
+	touch $$tmp/.nojekyll; \
+	email=$$(git config user.email); name=$$(git config user.name); \
+	origin=$$(git remote get-url origin); rev=$$(git rev-parse --short HEAD); \
+	cd $$tmp && git init -q -b gh-pages . && git add -A && \
+	git -c user.email="$$email" -c user.name="$$name" \
+	    commit -q -m "publish guide from $$rev" && \
+	git push -q --force "$$origin" gh-pages:gh-pages; \
+	rm -rf $$tmp
+	@echo "published -> https://mssantosdev.github.io/hydra/"
 
 themes:
 	python3 scripts/gen-themes.py

@@ -10,7 +10,19 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
-## [Unreleased]
+## [0.4.0] - 2026-08-06
+
+Breaking for anyone who never set a theme, and for anyone who ran `hydra status`
+interactively expecting a table.
+
+- The default theme is now `terminal`, which inherits the terminal's own palette and paints
+  no background. Set `hydra config set theme hydra` for the previous fixed palette.
+- `hydra status` with no arguments on a TTY opens an interactive board instead of printing a
+  table. `--output text` and `--output json` are unchanged, and a pipe still gets the
+  envelope, so scripts are unaffected.
+- `hydra init` in an existing workspace returns `project_exists` instead of `internal`. Code
+  that branched on `internal` for that case must be updated; `internal` never meant this.
+
 
 ### Added
 
@@ -58,8 +70,8 @@ is permanently bound to different content in the Go checksum database, so it can
 - **A first-party `hydra` theme.** The tool shipped five borrowed community palettes (tokyonight,
   catppuccin, dracula, nord, onedark) and none of its own, so its face was someone else's design
   decision. The new palette's role names are shared with `docs/guide.html`, which renders them
-  against a light ground: one design system in two media rather than two palettes that resemble
-  each other. `hydra config` still selects any of the previous five.
+  on the same neutral dark ground: one design system rather than two palettes that resemble each
+  other. `hydra config` still selects any of the previous five.
 
 - **`scripts/gen-themes.py`**, which parses the ten `hydra` roles out of `internal/ui/themes/themes.go`
   and emits `contrib/ghostty/hydra` and `contrib/omp/hydra.json`. An ad-hoc ghostty theme had
@@ -163,6 +175,7 @@ Closes the last route by which one class of bug kept regenerating.
   For a consumer this is strictly narrowing: an exit status that was wrongly 0 becomes the
   correct non-zero. Nothing that exited correctly changes.
 
+[0.4.0]: https://github.com/mssantosdev/hydra/compare/v0.3.9...v0.4.0
 [0.3.9]: https://github.com/mssantosdev/hydra/compare/v0.3.8...v0.3.9
 
 ## [0.3.8] - 2026-08-06

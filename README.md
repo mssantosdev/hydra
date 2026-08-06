@@ -137,7 +137,7 @@ The map key under each group **is** the repo alias. It determines both `.bare/<a
 
 Complete documentation is in [`docs/`](docs/):
 
-- **[Visual guide](docs/guide.html)** — a single self-contained page covering install, the model,
+- **[Visual guide](https://mssantosdev.github.io/hydra/)** ([source](docs/guide.html)) — a single self-contained page covering install, the model,
   the interactive routes, and the machine contract. Every terminal panel in it is verbatim output
   from a real run. Open it directly in a browser; it makes no external requests.
 - **[Getting Started](docs/README.md)** — Overview and quick start
