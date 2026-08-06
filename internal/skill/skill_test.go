@@ -18,7 +18,9 @@ import (
 func TestSkillDocumentsEveryCommand(t *testing.T) {
 	var registered []string
 	for _, c := range cmd.RootCommand().Commands() {
-		if !c.IsAvailableCommand() || c.Name() == "help" {
+		// Hidden commands count as registered: they remain invocable, so the skill must
+		// document them. `ui` is hidden as a deprecated alias of `status` and still works.
+		if c.Name() == "help" {
 			continue
 		}
 		registered = append(registered, c.Name())

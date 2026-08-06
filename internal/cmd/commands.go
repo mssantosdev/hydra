@@ -112,7 +112,10 @@ func describeSurface() commandsJSON {
 	var walk func(parent string, c *cobra.Command)
 	walk = func(parent string, c *cobra.Command) {
 		for _, child := range c.Commands() {
-			if !child.IsAvailableCommand() || child.Name() == "help" {
+			// Hidden commands are INCLUDED: hiding keeps a command out of the human help listing,
+			// but it stays invocable, so it stays part of the published surface. Excluding it
+			// would mean an agent reading this could not discover a command that works.
+			if child.Name() == "help" {
 				continue
 			}
 			name := strings.TrimSpace(parent + " " + child.Name())

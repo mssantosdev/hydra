@@ -65,7 +65,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 | `remove` | delete a worktree | `--delete-branch`, `--force`, `--yes` |
 | `topic` | `list`, `show`, `attach`, `detach`, `remove` | `--with-worktrees`, `--yes` |
 | `list` | list worktrees | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
-| `status` | tracking, dirtiness, merged-ness vs a ref | `--topic`, `--filter`, `--against REF` |
+| `status` | bare on TTY: full-screen board; agents: `--output json` | `--topic`, `--filter`, `--against`, `--all` |
 | `path` | print one worktree's absolute path | `--topic` |
 | `where` | where hydra thinks it is; works outside a workspace | — |
 | `switch` | change directory to a worktree (TTY) | `--cd` |
@@ -80,7 +80,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 | `skill` | emit this skill | `--install` |
 | `init-shell` | install the helper `switch` needs | `--install` |
 | `completion` | shell completion script | — |
-| `ui` | full-screen register for humans; needs a TTY. Agents: use `status` | — |
+| `ui` | hidden alias of `status` | — |
 
 ## Error codes
 

@@ -1,4 +1,4 @@
-// Package browser is the interactive reporting surface: a full-screen register of every
+// Package browser is the interactive reporting surface: a full-screen board of every
 // worktree in a workspace, with filtering and selection.
 //
 // It exists because the interactive surface had a hole. Eight mutating flows (add, sync,
@@ -10,8 +10,8 @@
 //
 // Two rules carry over from the rest of hydra and are not negotiable here:
 //
-//   - Nothing is cached. Every refresh re-reads git, because a register that renders stale
-//     state is worse than no register. The rows are recomputed, never patched.
+//   - Nothing is cached. Every refresh re-reads git, because a board that renders stale
+//     state is worse than no board. The rows are recomputed, never patched.
 //   - `behind` stays dated. The footer carries the fetch timestamp the rows were computed
 //     against, since hydra never fetches to answer a query.
 package browser
@@ -22,12 +22,23 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Row is one worktree as the register displays it. The caller builds these from the same
+// AgainstInfo answers "where is this worktree relative to REF", mirroring againstJSON
+// from internal/cmd.
+type AgainstInfo struct {
+	Ref    string
+	Ahead  int
+	Behind int
+	Merged bool
+}
+
+// Row is one worktree as the board displays it. The caller builds these from the same
 // collectors the `status` command uses, so the two views cannot disagree.
 type Row struct {
+	Project  string // always set; used for headers in --all mode
 	Group    string
 	Repo     string
 	Name     string
@@ -40,10 +51,29 @@ type Row struct {
 	Dirty    bool
 	Changes  int
 	Detached bool
+	Against  *AgainstInfo // nil when --against was not passed
 }
 
-// Loader recomputes the register from disk. It is called on entry and on every refresh
+// Counts is the seven summary counters status emits; the board computes them from rows.
+type Counts struct {
+	Total     int
+	Clean     int
+	Dirty     int
+	Ahead     int
+	Behind    int
+	LocalOnly int
+	Detached  int
+}
+
+// Loader recomputes the board from disk. It is called on entry and on every refresh
 // rather than once, so the view can never drift from git.
+
+// State is the board's initial scope. Selectors from the invoking command are
+// mapped here so the board opens pre-filtered rather than showing everything.
+type State struct {
+	Filter string
+}
+
 type Loader func() ([]Row, string, error)
 
 // Result is what the browser hands back when it exits. Path is empty unless the user
@@ -77,12 +107,13 @@ type model struct {
 	quit    bool
 	project string
 	loaded  bool
+	summary Counts
 }
 
 // New builds the browser over a loader. The first load happens in Init so a slow git read
 // cannot block the terminal from switching to the alternate screen.
-func New(project string, load Loader) tea.Model {
-	return &model{load: load, project: project, width: 100, height: 30}
+func New(project string, load Loader, initial State) tea.Model {
+	return &model{load: load, project: project, filter: initial.Filter, width: 100, height: 30}
 }
 
 type loadedMsg struct {
@@ -117,11 +148,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rows = msg.rows
 		m.asOf = msg.asOf
 		sort.SliceStable(m.rows, func(i, j int) bool {
+			if m.rows[i].Project != m.rows[j].Project {
+				return m.rows[i].Project < m.rows[j].Project
+			}
 			if m.rows[i].Group != m.rows[j].Group {
 				return m.rows[i].Group < m.rows[j].Group
 			}
 			return m.rows[i].Name < m.rows[j].Name
 		})
+		m.summary = summarizeRows(m.rows)
 		m.applyFilter()
 		m.status = fmt.Sprintf("%d worktree(s)", len(m.rows))
 		return m, nil
@@ -184,6 +219,14 @@ func (m *model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Dirty is the filter a human reaches for most; a shortcut beats retyping it.
 		m.filter = "dirty"
 		m.applyFilter()
+	case "y":
+		if row, ok := m.current(); ok {
+			if err := clipboard.WriteAll(row.Path); err != nil {
+				m.status = fmt.Sprintf("clipboard unavailable: %v", err)
+			} else {
+				m.status = "copied " + row.Name
+			}
+		}
 	case "enter":
 		if row, ok := m.current(); ok {
 			m.chosen = &Result{Path: row.Path, Name: row.Name}
@@ -239,6 +282,33 @@ func (m *model) current() (Row, bool) {
 	return m.rows[m.view[m.cursor]], true
 }
 
+// summarizeRows mirrors summarizeStatus in internal/cmd/status.go.
+func summarizeRows(items []Row) Counts {
+	var summary Counts
+	summary.Total = len(items)
+	for _, item := range items {
+		if item.Detached {
+			summary.Detached++
+		}
+		if item.Upstream == "local-only" && !item.Detached {
+			summary.LocalOnly++
+		}
+		if item.Dirty {
+			summary.Dirty++
+		}
+		if item.Ahead > 0 {
+			summary.Ahead++
+		}
+		if item.Behind > 0 {
+			summary.Behind++
+		}
+		if !item.Dirty && item.Ahead == 0 && item.Behind == 0 && !item.Detached && item.Upstream != "local-only" {
+			summary.Clean++
+		}
+	}
+	return summary
+}
+
 // applyFilter keeps the filter vocabulary identical to `--filter` on the non-interactive
 // commands, because a human who learns a word here will type it into a script tomorrow.
 // The CLI accepts exactly `dirty`, `behind` and `branch:<glob>`; anything else falls
@@ -273,7 +343,7 @@ func matches(r Row, q string) bool {
 	if want, ok := cutPrefix(q, "topic:"); ok {
 		return want != "" && strings.Contains(strings.ToLower(r.Topic), want)
 	}
-	hay := strings.ToLower(strings.Join([]string{r.Repo, r.Branch, r.Name, r.Topic, r.Group}, " "))
+	hay := strings.ToLower(strings.Join([]string{r.Project, r.Repo, r.Branch, r.Name, r.Topic, r.Group}, " "))
 	return strings.Contains(hay, q)
 }
 

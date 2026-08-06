@@ -847,21 +847,28 @@ check "a pruned registration only suggests a command it can complete" \
   '(cd "$T/ws" && { "$HYDRA" doctor --fix --output json || true; } 2>/dev/null |
     jq -e "[.data.checks[]|select(.fixed)|.message|test(\"hydra add [a-z].* [a-z]\")or(test(\"hydra add\")|not)]|all" >/dev/null)'
 
-# ------------------------------------------------------------------ 19. the interactive register refuses a pipe rather than corrupting it (0.4.x)
+# ------------------------------------------------------------------ 19. the board is a TTY affordance, never a change to the piped contract (0.4.x)
 echo
-echo "== 19. hydra ui needs a terminal, and says which =="
+echo "== 19. bare status pipes JSON; the board is TTY-only =="
 
-# A full-screen program in a pipe would emit escape sequences as data. It must refuse with
-# needs_input and hand back the non-interactive equivalent.
-{ "$HYDRA" ui --output json 2>/dev/null || true; } > "$T/ui.json"
-check "ui refuses without a tty" \
-  'jq -e ".error.code==\"needs_input\"" "$T/ui.json" >/dev/null'
-check "ui names what is missing" \
-  'jq -e ".error.details.missing==\"tty\"" "$T/ui.json" >/dev/null'
-check "ui points at the non-interactive route" \
-  'jq -e "[.next[].argv|join(\" \")]|any(contains(\"status\"))" "$T/ui.json" >/dev/null'
-{ "$HYDRA" ui >/dev/null 2>&1; } && ui_exit=0 || ui_exit=$?
-check "ui exits 7 for needs_input" '[ "'"$ui_exit"'" = "7" ]'
+# `--output auto` has always meant "JSON when stdout is not a terminal". Bare `status` now
+# opens an interactive board on a TTY, and that must NOT change what a pipe gets: every
+# script calling `hydra status` depends on the envelope. An earlier cut of this refused with
+# needs_input here, which turned a working invocation into exit 7.
+{ "$HYDRA" status --output json >"$T/st.json" 2>/dev/null; } && st_exit=0 || st_exit=$?
+check "bare status pipes an envelope, not a refusal" \
+  'jq -e ".outcome==\"success\" and (.data.worktrees|type==\"array\")" "$T/st.json" >/dev/null'
+check "bare status piped exits 0" '[ "'"$st_exit"'" = "0" ]'
+{ "$HYDRA" status >"$T/st2.json" 2>/dev/null; } && st2_exit=0 || st2_exit=$?
+check "auto output with no tty is JSON, not needs_input" \
+  'jq -e ".schema==3" "$T/st2.json" >/dev/null'
+check "auto output with no tty exits 0" '[ "'"$st2_exit"'" = "0" ]'
+
+# `ui` is a hidden alias: an alias must behave exactly like its target, so it pipes too.
+{ "$HYDRA" ui --output json >"$T/ui.json" 2>/dev/null; } && ui_exit=0 || ui_exit=$?
+check "ui pipes the same envelope as status" \
+  'jq -e ".outcome==\"success\"" "$T/ui.json" >/dev/null'
+check "ui piped exits 0 like its target" '[ "'"$ui_exit"'" = "0" ]'
 check "ui is published in the surface" \
   '"$HYDRA" commands --output json | jq -e ".data.commands[]|select(.name==\"ui\")" >/dev/null'
 

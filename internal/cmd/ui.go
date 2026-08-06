@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -11,134 +12,128 @@ import (
 	"github.com/mssantosdev/hydra/internal/ui/browser"
 )
 
-// uiCmd is the interactive reporting surface.
-//
-// Eight mutating flows already prompt when run bare on a terminal. Every REPORTING command
-// was flags-only, so exploring a workspace required already knowing the flag that would
-// answer the question. This closes that half: browse the register, filter it, and leave
-// with the same answer `hydra switch` gives.
-//
-// It is a separate command rather than a change to bare `hydra` on purpose. Bare `hydra`
-// prints help, which is what a caller and every shell completion already expect; taking
-// that over would be a breaking change to earn an entry point that a name provides for
-// free.
+// uiCmd is a hidden alias of status. Bare `hydra status` on a terminal opens the
+// interactive register; `hydra ui` remains for scripts and muscle memory.
 var uiCmd = &cobra.Command{
 	Use:     "ui",
 	Aliases: []string{"tui"},
-	Short:   "Browse the workspace interactively",
-	Long: `Browse every worktree in the project as a live register.
+	Hidden:  true,
+	Short:   "Hidden alias of hydra status",
+	Long: `Hidden alias of hydra status.
 
 DESCRIPTION
-  A full-screen view of the same data "hydra status" reports, with filtering and
-  selection. Every refresh re-reads git rather than patching what is on screen, so the
-  register cannot drift from disk.
-
-  Selecting a worktree prints its path on stdout and exits, which is exactly what
-  "hydra switch" does — so it composes the same way:
-
-    cd "$(hydra ui)"
-
-  Requires a terminal. Without one it returns needs_input (exit 7) rather than
-  rendering escape codes into a pipe.
-
-KEYS
-  ↑ ↓ / j k     move            enter    select and print the path
-  /             filter          d        filter to dirty worktrees
-  g G           top / bottom    r        re-read git
-  ctrl+d ctrl+u half page       q        quit without selecting
-
-FILTER
-  Bare text matches repo, branch, worktree name, topic and group. The words "dirty",
-  "behind" and "ahead" filter by state, and "topic:<id>" by membership — the same
-  vocabulary as --filter on the non-interactive commands.
-
-EXIT CODES
-  0  a worktree was selected, or the browser was quit cleanly
-  2  not in a project
-  7  needs_input (no terminal)
+  Delegates to "hydra status". On a terminal with default output, status opens the
+  same full-screen register this command used to own; with --output text or --output
+  json it renders the non-interactive status view instead.
 
 SEE ALSO
-  hydra status   - the same data, non-interactively
-  hydra switch   - select a worktree by name`,
+  hydra status   - the supported entry point`,
 	Args: cobra.NoArgs,
-	RunE: runUI,
+	RunE: runStatus,
 }
 
 func init() {
 	rootCmd.AddCommand(uiCmd)
 }
 
-func runUI(cmd *cobra.Command, _ []string) error {
-	if err := loadProject(); err != nil {
-		return err
+// explicitOutputMode reports whether --output was set to text or json (including via
+// HYDRA_OUTPUT), as opposed to auto.
+func explicitOutputMode() bool {
+	return outMode == output.ModeText || outMode == output.ModeJSON
+}
+
+// statusLaunchesBoard reports whether this invocation should open the register
+// rather than render status to stdout.
+func statusLaunchesBoard(args []string) bool {
+	return len(args) == 0 && !explicitOutputMode()
+}
+
+func boardProjectLabel(targets []projectTarget, all bool) string {
+	if all {
+		return "all projects"
 	}
-
-	// A full-screen program in a pipe would emit escape sequences as data. This is the
-	// same refusal every prompting command already makes, with the same code.
-	if !interactive() {
-		return output.Errorf(output.CodeNeedsInput,
-			"hydra ui needs a terminal").
-			WithDetail("missing", "tty").
-			WithNext(output.Next{
-				Argv: []string{"hydra", "status", "--output", "json"},
-				Why:  "the same data, without a terminal",
-			})
+	if len(targets) > 0 {
+		return targets[0].Name
 	}
+	if cfg != nil {
+		return cfg.Project
+	}
+	return ""
+}
 
-	root := projectRoot
-	conf := cfg
-
-	load := func() ([]browser.Row, string, error) {
-		worktrees, _ := collectWorktrees(conf, root)
-
-		// Membership is recorded, never inferred, and this is the same index `list` and
-		// `status` decorate from — so the three views cannot disagree about a topic.
-		idx, err := newTopicIndex(root)
-		if err != nil {
-			idx = nil
-		}
-
-		rows := make([]browser.Row, 0, len(worktrees))
+// newBoardLoader builds the register loader shared by status's interactive path.
+// Every refresh re-reads git through the same resolver list/status use, so selector
+// semantics cannot drift between the board and the non-interactive views.
+func newBoardLoader(targets []projectTarget, sel Selector) browser.Loader {
+	return func() ([]browser.Row, string, error) {
+		rows := make([]browser.Row, 0)
 		var asOf string
-		for _, wt := range worktrees {
-			item, err := wt.withTracking()
+		for _, target := range targets {
+			resolved, _, _, err := resolveTargets(sessionFor(target), sel, true)
 			if err != nil {
-				// One unreadable worktree must not blank the register; it is shown with
-				// what is known instead of dropped silently.
-				item = wt.json()
+				return nil, "", err
 			}
-			idx.decorate(&item)
-
-			up := "local-only"
-			if item.Upstream != nil && *item.Upstream != "" {
-				up = *item.Upstream
+			project := target.Name
+			if target.Cfg != nil {
+				project = target.Cfg.Project
 			}
-			if item.UpstreamAsOf != nil && *item.UpstreamAsOf > asOf {
-				asOf = *item.UpstreamAsOf
+			for _, entry := range resolved {
+				rows = append(rows, worktreeItemToRow(project, entry.Item, &asOf))
 			}
-			topicID := ""
-			if item.Topic != nil {
-				topicID = *item.Topic
-			}
-			rows = append(rows, browser.Row{
-				Group:    item.Group,
-				Repo:     item.Repo,
-				Name:     item.Name,
-				Branch:   item.Branch,
-				Path:     item.Path,
-				Upstream: up,
-				Topic:    topicID,
-				Ahead:    item.Ahead,
-				Behind:   item.Behind,
-				Dirty:    item.Dirty,
-				Changes:  item.Changes,
-				Detached: item.Detached,
-			})
 		}
 		return rows, asOf, nil
 	}
+}
 
-	model := browser.New(conf.Project, load)
+func worktreeItemToRow(project string, item worktreeJSON, asOf *string) browser.Row {
+	up := "local-only"
+	if item.Upstream != nil && *item.Upstream != "" {
+		up = *item.Upstream
+	}
+	if item.UpstreamAsOf != nil && *item.UpstreamAsOf > *asOf {
+		*asOf = *item.UpstreamAsOf
+	}
+	topicID := ""
+	if item.Topic != nil {
+		topicID = *item.Topic
+	}
+	return browser.Row{
+		Project:  project,
+		Group:    item.Group,
+		Repo:     item.Repo,
+		Name:     item.Name,
+		Branch:   item.Branch,
+		Path:     item.Path,
+		Upstream: up,
+		Topic:    topicID,
+		Ahead:    item.Ahead,
+		Behind:   item.Behind,
+		Dirty:    item.Dirty,
+		Changes:  item.Changes,
+		Detached: item.Detached,
+		Against:  againstInfoForBoard(item.Against),
+	}
+}
+
+func againstInfoForBoard(against *againstJSON) *browser.AgainstInfo {
+	if against == nil {
+		return nil
+	}
+	return &browser.AgainstInfo{
+		Ref:    against.Ref,
+		Ahead:  against.Ahead,
+		Behind: against.Behind,
+		Merged: against.Merged,
+	}
+}
+
+// runStatusBoard opens the full-screen register. The register renders to stderr;
+// stdout carries only a selected path, so `cd "$(hydra status)"` works.
+func runStatusBoard(cmd *cobra.Command, targets []projectTarget, sel Selector, all bool) error {
+	load := newBoardLoader(targets, sel)
+	model := browser.New(boardProjectLabel(targets, all), load, browser.State{
+		Filter: boardInitialFilter(sel),
+	})
 	final, err := tea.NewProgram(model,
 		tea.WithAltScreen(),
 		tea.WithOutput(os.Stderr), // the register is chrome; stdout stays the answer
@@ -147,12 +142,37 @@ func runUI(cmd *cobra.Command, _ []string) error {
 		return output.Wrap(output.CodeInternal, err, "the browser failed")
 	}
 
-	// stdout carries only the selection, so `cd "$(hydra ui)"` works. Quitting prints
-	// nothing and still exits 0: choosing not to choose is not a failure.
+	// stdout carries only the selection. Quitting prints nothing and still exits 0:
+	// choosing not to choose is not a failure.
 	if sel, ok := browser.Chosen(final); ok {
 		if _, err := fmt.Fprintln(cmd.OutOrStdout(), sel.Path); err != nil {
 			return output.Wrap(output.CodeInternal, err, "failed to write the selected path")
 		}
 	}
 	return nil
+}
+
+// boardInitialFilter maps the resolved selector flags onto the register's filter
+// vocabulary so the board opens pre-scoped.
+func boardInitialFilter(sel Selector) string {
+	if sel.Topic != "" {
+		return "topic:" + sel.Topic
+	}
+	for _, entry := range sel.Filter {
+		value := strings.TrimSpace(entry)
+		switch value {
+		case "dirty", "behind":
+			return value
+		}
+		if strings.HasPrefix(value, "branch:") {
+			return value
+		}
+	}
+	if sel.Group != "" {
+		return sel.Group
+	}
+	if len(sel.Repos) == 1 {
+		return sel.Repos[0]
+	}
+	return ""
 }

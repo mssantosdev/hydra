@@ -71,6 +71,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Bare `status` on a terminal opens the board. Without a terminal it falls through to
+	// the normal render path rather than refusing: `--output auto` has always meant "JSON
+	// when stdout is not a terminal", and every script that pipes `hydra status` depends on
+	// it. Refusing here would turn a working invocation into exit 7.
+	//
+	// `hydra ui` is different: naming the board explicitly and having no terminal IS a
+	// usage error, so that path still returns needs_input. See uiCmd.
+	if statusLaunchesBoard(args) && interactive() {
+		return runStatusBoard(cmd, targets, currentSelector(), statusAll)
+	}
+
 	projects, warnings, attempted, succeeded, err := collectProjectWorktrees(targets, currentSelector())
 	if err != nil {
 		return err

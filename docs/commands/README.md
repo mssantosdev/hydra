@@ -34,7 +34,7 @@ Complete reference for all Hydra commands. Global flags on every command:
 | Print worktree path | `hydra path <worktree>` | [Navigation](#hydra-path) |
 | Switch worktree | `hydra switch [<worktree>]` | [Navigation](#hydra-switch) |
 | List worktrees | `hydra list` / `hydra ls` | [Navigation](#hydra-list) |
-| Worktree status | `hydra status` | [Navigation](#hydra-status) |
+| Worktree status / interactive board | `hydra status` (`ui`/`tui` alias) | [Navigation](#hydra-status) |
 | Sync updates | `hydra sync [<alias>]` | [Sync](#hydra-sync) |
 | Diagnose workspace | `hydra doctor` | [Maintenance](#hydra-doctor) |
 | Prune stale entries | `hydra prune` | [Maintenance](#hydra-prune) |
@@ -54,7 +54,7 @@ See [Project Bootstrap](./project-bootstrap.md) for `init`, `new`, `repo add`, a
 
 ## Worktree Management
 
-See [Worktree Management](./worktree-management.md) for `add` and `remove`.
+See [Worktree Management](./worktree-management.md) for `add`, `remove`, and `status`.
 
 ## Topics and execution
 
@@ -106,14 +106,21 @@ Alias: `ls`.
 
 ### hydra status
 
-Per-worktree summary: branch, upstream tracking, dirty/clean state.
+Per-worktree summary: branch, upstream tracking, dirty/clean state. On a TTY with default output,
+opens a full-screen interactive board (same route as the deprecated `ui`/`tui` commands).
 
 ```bash
-hydra status
+hydra status                        # interactive board on a TTY
+hydra status --output text
+hydra status --output json          # agents and scripts
 hydra status --all
 hydra status --topic 2072958
-hydra status --against main       # is each branch merged into main yet?
+hydra status --against main         # ahead/behind/merged vs ref
 ```
+
+Without a TTY and no selector-narrowing flags, returns `needs_input` (exit 7). The board prints
+navigation hints on stderr; use `cd "$(hydra status)"` only with `--output text` and a selector.
+See [Worktree Management](./worktree-management.md#hydra-status) for keys and layout.
 
 ### Selectors
 

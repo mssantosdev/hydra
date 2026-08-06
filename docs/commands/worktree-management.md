@@ -1,7 +1,7 @@
 ---
 title: "Worktree Management Commands"
-description: "hydra add and hydra remove — create and delete Git worktrees"
-ai_context: "Reference for add and remove with flags, layout, and error codes"
+description: "hydra add, remove, and status — create, delete, and inspect Git worktrees"
+ai_context: "Reference for add, remove, and status with flags, layout, and error codes"
 ---
 
 # Worktree Management
@@ -107,6 +107,67 @@ Returns `worktree_exists` (exit 1) or reports the existing worktree in JSON outp
 
 ---
 
+## hydra status
+
+Worktree summary and the default interactive route on a TTY. `ui` and `tui` are deprecated aliases
+of `status`.
+
+### Two routes
+
+| Route | When | Output |
+|-------|------|--------|
+| Interactive board | `hydra status` on a TTY with default `--output auto` | Full-screen UI |
+| Machine or text | `--output text` or `--output json` | One row per worktree |
+
+Agents and scripts should use `hydra status --output json`. Without a TTY and without
+selector-narrowing flags (`--topic`, `--repos`, `--group`, `--all`, `--filter`), hydra returns
+`needs_input` (exit 7).
+
+### Interactive board
+
+- Rows load from the same selectors as `list` and `status --output json`.
+- Aggregate counts (total, dirty, behind, and similar) are derived from the loaded rows inside the
+  browser — not passed in as a separate summary field.
+- With `--against <ref>`, each row can show ahead/behind/merged vs that ref.
+- With `--all`, rows are grouped under per-project headers (`Project` on each row).
+- Navigation hints print on **stderr** so stdout stays clean for `cd "$(hydra status)"` when using
+  `--output text` with a selector.
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move selection |
+| `enter` | Confirm selection (print path on stdout in text mode) |
+| `y` | Copy selection to clipboard |
+| `/` | Filter rows |
+| `d` | Toggle dirty-only filter |
+| `r` | Refresh rows |
+| `q` | Quit |
+
+### Usage
+
+```bash
+hydra status
+hydra status --output json
+hydra status --all --against main
+hydra status --topic 2072958 --filter dirty
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--against` | Compare each branch to a ref (ahead/behind/merged) |
+| `--all` | Every registered project |
+| `--filter` | Narrow rows (`dirty`, `behind`, `branch:<glob>`) |
+| `--group` | Repositories in a group |
+| `--repos` | Comma-separated repo aliases |
+| `--topic` | Worktrees recorded for a unit of work |
+
+### Error codes
+
+Same selector and project errors as `list`. Non-TTY interactive invocation without narrowing flags
+returns `needs_input` (exit 7).
+
 ## hydra remove
 
 Remove a worktree for a repository branch.
@@ -195,6 +256,7 @@ hydra also refuses to delete the repo's default branch outright.
 |------|---------|
 | Locate path (scripts) | `hydra path <worktree>` |
 | Switch (interactive) | `hydra switch <worktree>` |
+| Worktree status / board | `hydra status` (`ui`/`tui` alias) |
 | List worktrees | `hydra list` / `hydra ls` |
 | Retry failed hook | `hydra hooks run post_add` |
 

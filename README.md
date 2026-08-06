@@ -253,9 +253,8 @@ hydra topic remove JIRA-456 --with-worktrees
 | `hydra remove [<repo> <branch>]` | Remove a worktree |
 | `hydra path <worktree>` | Print a worktree's absolute path |
 | `hydra switch [<worktree>]` | Print path; auto-cd with shell helper |
-| `hydra ui` / `hydra tui` | Full-screen register: browse, filter, select (TTY) |
+| `hydra status` | Full-screen interactive board on a TTY (`ui`/`tui` are aliases); `--output json` for agents |
 | `hydra list` / `hydra ls` | List worktrees (`--all` includes every project) |
-| `hydra status` | Per-worktree tracking and dirtiness (`--all`) |
 | `hydra sync [<alias>]` | Fast-forward worktrees from upstreams |
 | `hydra doctor` | Diagnose workspace problems (`--fix`, `--all`) |
 | `hydra prune` | Drop stale worktree registrations (`--dry-run`) |
