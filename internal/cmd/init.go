@@ -101,8 +101,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 				"failed to register project %q, and %s was left behind: %v",
 				created.Project, configPath, removeErr)
 		}
-		return output.Wrap(output.CodeProjectUnknown, err,
-			"failed to register project %q", created.Project).
+		return output.Wrap(output.CodeProjectExists, err,
+			"project name %q is already registered", created.Project).
 			WithDetail("project", created.Project).
 			WithNext(output.Next{
 				Argv: []string{"hydra", "project", "ls", "--output", "json"},

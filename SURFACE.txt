@@ -139,6 +139,7 @@ where
   needs_input                  exit 7
   not_in_project               exit 2
   partial_failure              exit 4
+  project_exists               exit 1
   project_unknown              exit 2
   repo_unknown                 exit 1
   shell_helper_missing         exit 3

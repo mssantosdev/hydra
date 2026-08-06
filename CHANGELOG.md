@@ -9,6 +9,37 @@ Releases before `0.2.0` predate this file and are not reconstructed here; see th
 There is no `0.1.0`: that version string was published once in an earlier life of this repository and
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
+## [0.3.8] - 2026-08-06
+
+### Fixed
+
+- **A taken project name reported `project_unknown`**, which is the opposite problem: that
+  code means the name is absent from the registry. Telling a caller its name was unknown when
+  the name was correct and the collision was the point sent it to check its spelling. New code
+  `project_exists` (exit 1), introduced in the release that added the wrong one.
+
+### Verified, not changed
+
+Five of six contradictions reported by an adversarial round did not reproduce, each checked
+directly rather than taken on report:
+
+- `partial_failure` maps to exit 4, confirmed by forcing one deterministically. The report of
+  exit 1 came from `echo "exit=$?"` after a backgrounded command, which captures the launch
+  rather than the command.
+- Concurrent additions under the same alias leave the manifest and the checkout agreeing; the
+  loser fails with `worktree_exists`.
+- Three concurrent additions of the same remote and name all converge: every one reports
+  success, the bare repository stays valid, `doctor` is clean, and the worktrees are correct.
+- No lock hang: the same races complete in seconds under a timeout.
+- A `bare_unregistered` warning seen while an addition is mid-flight is a snapshot of work in
+  progress, not a fault.
+
+Also checked and correct: a manifest truncated mid-document fails, one missing `version` gives
+`config_version_unsupported`, and a valid manifest with no groups reports an empty workspace —
+which is exactly what `hydra init` produces and cannot be distinguished from it.
+
+[0.3.8]: https://github.com/mssantosdev/hydra/compare/v0.3.7...v0.3.8
+
 ## [0.3.7] - 2026-08-06
 
 Round five stopped rebuilding workspaces and went after invariants instead: agents were given

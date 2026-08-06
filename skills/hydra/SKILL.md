@@ -105,6 +105,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 | `busy` | 6 | a lock was held — **the only retryable code** |
 | `needs_input` | 7 | a value is missing; `details.missing`/`one_of` name it |
 | `git_failed` | 1 | an underlying git invocation failed |
+| `project_exists` | 1 | that project name is already registered (the opposite of `project_unknown`) |
 | `unknown_command` | 1 | no such subcommand; `details.did_you_mean`/`available` list real ones |
 | `internal` | 1 | anything unclassified, including a bad flag value |
 
@@ -113,8 +114,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 - Rebuilding `<group>/<repo>-<branch>` instead of reading `data[].path` — `--as` may have overridden it.
 - Treating `upstream: null` as a failure; it is a branch with no upstream yet.
 - Retrying anything but `busy`, or retrying `needs_input` without adding the flag.
-- Deleting the worktree after `hook_failed` from `add` — it was created correctly; fix the hook.
+- Deleting anything after a failure: a `hook_failed` worktree was created correctly, and an interrupted add is convergent — re-run it. Fix the hook, do not undo the work.
 - Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged. Ask first.
-- Deleting `.bare/<alias>.git` after an interrupted add; re-run the same command, it is convergent.
 - Passing `--force` to escape `worktree_dirty` without checking what is uncommitted.
 - Assuming `hydra run` gets a shell. It does not — pass `-- sh -c '…'` when you need one.

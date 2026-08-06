@@ -39,6 +39,11 @@ const (
 	// CodeUnknownCommand is a mistyped or invented subcommand. It is NOT internal:
 	// nothing broke, the caller named something that does not exist, and the recovery
 	// is a published list of what does.
+	// CodeProjectExists is a name already in the registry. Distinct from project_unknown,
+	// which is the opposite problem: that one means the name is absent. Reporting a taken
+	// name as "unknown" told the caller to check its spelling when the name was correct and
+	// the collision was the point.
+	CodeProjectExists  = "project_exists"
 	CodeUnknownCommand = "unknown_command"
 	CodeInternal       = "internal"
 )
@@ -65,6 +70,7 @@ var exitCodes = map[string]int{
 	CodeBranchProviderFailed:     1,
 	CodeBusy:                     6,
 	CodeNeedsInput:               7,
+	CodeProjectExists:            1,
 	CodeUnknownCommand:           1,
 	CodeInternal:                 1,
 }

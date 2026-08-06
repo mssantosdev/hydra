@@ -803,7 +803,7 @@ mkdir -p "$T/collide"
 { (cd "$T/collide" && "$HYDRA" init --project-name demo --output json) || true; } \
   2>/dev/null > "$T/collide.json"
 check "a name collision is rejected and names the taken registry" \
-  'jq -e ".error.code==\"project_unknown\" and (.next|length)>=1" "$T/collide.json" >/dev/null'
+  'jq -e ".error.code==\"project_exists\" and (.next|length)>=1" "$T/collide.json" >/dev/null'
 check "the rejected init left no manifest behind" \
   '! test -f "$T/collide/.hydra/config.yaml"'
 check "and a retry with a free name then succeeds" \

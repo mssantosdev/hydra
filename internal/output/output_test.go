@@ -267,6 +267,7 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		CodeBusy: 6,
 		// needs_input replaces blocking on a prompt when output is machine-readable.
 		CodeNeedsInput:     7,
+		CodeProjectExists:  1,
 		CodeUnknownCommand: 1,
 		CodeInternal:       1,
 	}
