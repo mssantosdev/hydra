@@ -1,8 +1,12 @@
-# Core coherence
+# The workspace model
 
-Status: accepted, unimplemented. Supersedes the change-pivot plan on the noun.
+What a hydra workspace is made of, who writes each part of it, how defaults are declared and
+resolved, and what is missing.
 
-## Why this exists
+Status: accepted. The first two items under Build order are implemented; the rest are not. Supersedes the
+change-pivot plan on the noun.
+
+## The problem
 
 hydra has five nouns — project, group, repo, worktree, topic. The two carrying the most
 architectural weight have no body.
@@ -16,7 +20,7 @@ either**.
 That is why a coherent description of the product was hard to write: the two most important concepts
 are implicit. Every item here gives an implicit noun a body.
 
-## The model
+## State, and who writes each part
 
 Four categories of state, one writer each. Everything below follows from this table.
 
@@ -33,7 +37,7 @@ Verified: deleting `state.yaml` leaves every worktree listed and loses only the 
 Consequence: WIP needs no heuristic. It is `observed − declared`. An earlier draft proposed
 "topic-less means baseline", which is wrong — an ad-hoc `feat/x` worktree has no topic either.
 
-## Bugs, each verified against the binary
+## Known defects
 
 **The manifest writer destroys comments and unknown keys.** `(*Config).Save`
 (`config/config.go:109`) marshals a closed struct over the whole file. Reproduced this session: a
@@ -127,7 +131,7 @@ There is no rule that a topic-owned branch cannot be declared.
 scriptable, plus `config unset`. Humans never browse a settings tree; they set defaults inside the
 command that needs them.
 
-## `config` must mean what its name says
+## Reading and setting configuration
 
 `config show` reports everything that applies here, resolved, with provenance:
 
@@ -151,7 +155,7 @@ Key namespace: bare keys (`theme`, `editor`) stay global; `project.`, `group.<na
 a name. `config set` already publishes its key space through `details.one_of`, so agents discover
 new keys for free.
 
-## Order
+## Build order
 
 Solid base first. Two of the top three are bugs, which is what that means.
 
@@ -199,7 +203,7 @@ composition: the manifest is a file, hooks are code, and both compose without hy
 or a concept of a user. A "once across machines" guarantee is a script's problem, not hydra's — every
 hook already runs once per operation.
 
-## Cut, with reasons
+## Rejected
 
 | | why |
 |---|---|
@@ -211,7 +215,7 @@ hook already runs once per operation.
 | declared vs topic-owned exclusivity | invented; no such rule is needed. |
 | `hydra group ls\|show`, `groups[]` aggregate, "topic owns its repo set" | no story survived — the same test that cut `depends_on`. |
 
-## Open
+## Open questions
 
 **Topic membership is the least durable data in hydra, and it is the only concept hydra invented.**
 It lives in one gitignored local file. Lose it and the worktrees survive while the structure of the

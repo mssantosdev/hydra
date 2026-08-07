@@ -147,11 +147,10 @@ Real, and no claim in the guide needs inventing:
 
 ### Accepted design work
 
-- [`docs/design/core-coherence.md`](docs/design/core-coherence.md) — group and topic carry
-  architectural weight and have no representation. Records the four state owners (registered,
-  declared, observed, recorded), the `branches:` declared shape and its API, the ordering that puts
-  the manifest writer and `add` convergence ahead of any feature, and what was cut with reasons.
-  Supersedes the change-pivot plan on the noun.
+- [`docs/design/workspace-model.md`](docs/design/workspace-model.md) — what a workspace is made of
+  and who writes each part: the four state owners (registered, declared, observed, recorded), the
+  `branches:` declared shape and its API, how defaults resolve across workspace, group and repo, and
+  the order the missing pieces land in. Supersedes the change-pivot plan on the noun.
 
 ## Accessibility & Inclusion
 
