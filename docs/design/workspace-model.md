@@ -3,8 +3,8 @@
 What a hydra workspace is made of, who writes each part of it, how defaults are declared and
 resolved, and what is missing.
 
-Status: accepted. The first two items under Build order are implemented; the rest are not. Supersedes the
-change-pivot plan on the noun.
+Status: **implemented**. Every item under Build order has landed, plus the level work (schema 3) and
+the hierarchy. Supersedes the change-pivot plan on the noun.
 
 ## The problem
 

@@ -14,6 +14,33 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Added
 
+- **Topic hierarchy: `parent:`, and `hydra topic close`.** Containment is opt-in and recorded —
+  a topic without a parent is flat, which stays the default. `topic close` is the gate: a leaf closes
+  immediately, and a topic with children closes only when every child is closed and every child's
+  branch has reached this topic's branch.
+
+  Closeability is **derived from git on every call**, never stored: a stored answer is wrong the
+  moment someone rebases. The rule is member-granular, because "is the child merged into the parent"
+  is ambiguous once the two span different repositories — for each child member `(repo, branch)` the
+  parent must have a member in that same repo to merge into. A child reaching into a repository its
+  parent does not cover reports `no_integration_target` rather than passing vacuously, which would
+  claim done over stranded work.
+
+  `topic_not_closeable` carries every reason at once in `details.blocked_by`, each naming the child
+  and, where relevant, the repo and branch. `--reopen` reverses a close. Cycles are refused: a topic
+  cannot be its own ancestor.
+
+  hydra still does not merge. It reports whether you *can* close; you merge.
+
+- **Four once-per-operation hook events**: `post_topic_start`, `pre_topic_close`,
+  `post_topic_close`, `pre_topic_remove`. `pre_topic_close` is the only place a check can veto
+  *finishing* a unit of work — `post_add` fires before any work exists, `pre_remove` when it is
+  being thrown away — so a quality gate finally has an honest home. They fire once per operation,
+  not once per worktree: wiring a notification to `post_add` posts one message per created worktree
+  for a single piece of work, and a `run_once:` flag would paper over that rather than fix it.
+  `pre_topic_remove` fires before the first member is touched, since teardown detaches per member
+  and a hook firing mid-loop would see a half-dismantled set.
+
 - **Schema 3: a group is an object.** It was the only noun in the model with nowhere to put
   anything — a bare map key, no properties, no command — while the override chain ran
   project → repo and skipped the level that means "these repositories belong together". So a family
