@@ -126,12 +126,12 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 	// Same locked read-modify-write as a clone: adopting is reached through the same
 	// `repo add` front door, so it is exposed to the same concurrent-registration race.
 	if err := config.Update(projectRoot, func(live *config.Config) error {
-		live.SetRepo(adoptGroup, alias, config.Repo{Remote: remoteURL, DefaultBranch: branch})
+		live.RegisterRepo(adoptGroup, alias, remoteURL, branch)
 		return nil
 	}); err != nil {
 		return classifyManifestErr(err)
 	}
-	cfg.SetRepo(adoptGroup, alias, config.Repo{Remote: remoteURL, DefaultBranch: branch})
+	cfg.RegisterRepo(adoptGroup, alias, remoteURL, branch)
 
 	repo := repoContextFor(cfg, projectRoot, config.RepoRef{Group: adoptGroup, Alias: alias, Repo: cfg.Groups[adoptGroup][alias]})
 	candidates, err := collectAdoptCandidates(checkoutPath, remoteURL, branch)
@@ -140,6 +140,8 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 	}
 
 	var worktrees []worktreeJSON
+	// Carry warnings from adopted worktrees ride the same envelope as everything else.
+	var adoptWarnings []string
 	for _, candidate := range candidates {
 		dirName := worktreeDirName(repo, candidate.Branch)
 		targetPath := worktreePath(projectRoot, repo.Group, dirName)
@@ -157,7 +159,9 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 				continue
 			}
 		}
-		if err := createWorktreeForBranch(cfg, repo, targetPath, candidate.Branch, ""); err != nil {
+		carried, err := createWorktreeForBranch(cfg, repo, targetPath, candidate.Branch, "")
+		adoptWarnings = append(adoptWarnings, carried...)
+		if err != nil {
 			return output.Wrap(output.CodeGitFailed, err, "failed to create worktree for %s", candidate.Branch)
 		}
 		wt, ok := findRepoWorktreeByBranch(repo, candidate.Branch)
@@ -181,7 +185,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 		Worktrees: worktrees,
 	}
 
-	return emit(cmd, fmt.Sprintf("adopted %s with %d worktree(s)", alias, len(worktrees)), payload, nil, func() {
+	return emit(cmd, fmt.Sprintf("adopted %s with %d worktree(s)", alias, len(worktrees)), payload, adoptWarnings, func() {
 		fmt.Printf("Adopted %s into %s/%s (%d worktree(s))\n", alias, adoptGroup, alias, len(worktrees))
 	})
 }

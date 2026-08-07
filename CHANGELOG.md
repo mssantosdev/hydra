@@ -57,6 +57,31 @@ is permanently bound to different content in the Go checksum database, so it can
   origin's branches in `details.one_of`, rather than falling through to the clone path's "nothing
   selected means the default branch" — which would have narrowed an existing declaration to one entry.
 
+- **`carry:` places the files a new worktree needs and git ignores.** A fresh worktree has every
+  tracked file and no `.env`, so it cannot run — and the workaround, copying it by hand per worktree
+  per repo, is learned in week one and paid forever, which is why it never appears in an issue
+  tracker. Declarable at the workspace and per repo, appending workspace-first so a shared dev
+  certificate and a repo's own `.env` both apply.
+
+  Two forms: a bare `- .env` copies from the source worktree (the worktree `--from` named when it has
+  one, else the repo's default-branch worktree — deterministic, never searched for), and `from:`/`to:`
+  reads a fixed workspace path. `mode: link` symlinks instead of copying.
+
+  It is not a hook. Placing files is materialisation and hydra already owns layout: it knows the
+  source worktree because it just resolved one, where a hook would have to rebuild
+  `<root>/<group>/<repo>` — a path `--as` can override — and a missing file would surface as
+  `hook_failed` rather than the warning it is. It runs before `post_add`, so a hook that installs
+  dependencies can rely on the configuration being present.
+
+  Carrying never overwrites: an existing file is reported `skipped`, so re-running is a genuine no-op
+  and an edited `.env` is never clobbered. A missing source is a warning naming the file, never a
+  failure — `apply` and `repo restore` replay **structure, not secrets**, and only `from:` entries
+  survive a fresh machine.
+
+  Every write is confined to the worktree by the kernel through `os.Root`, and an absolute or
+  `..`-containing path is refused when the manifest is parsed. A manifest is meant to be handed
+  between people, so it must not be able to write outside the workspace it describes.
+
 ### Fixed
 
 - **The project manifest no longer loses comments and unmodelled keys when hydra writes it.**
@@ -76,6 +101,19 @@ is permanently bound to different content in the Go checksum database, so it can
 
   Sequences are still replaced wholesale: a comment inside a list has no stable key to reattach to.
   The three other YAML writers named under 0.4.0's Known section are unchanged.
+
+- **Registering a repository that already existed silently dropped its other fields.** Three sites
+  replaced the whole manifest entry with a fresh struct
+  (`SetRepo(group, alias, Repo{Remote, DefaultBranch})`), which on a re-registration lost
+  `branch_pattern` and `branch_provider` — and would now lose `branches` and `carry`, so
+  `repo restore` would strip the declaration it had just consumed and a convergent `repo add` would
+  strip it on the second run. `RegisterRepo` reads the entry and sets only what changed. The
+  comment-preserving writer could not rescue this and briefly masked it: these are known struct
+  fields, so absent-in-struct means absent-on-disk.
+
+- **`repo restore` discarded the clone's warnings**, so a fresh machine restoring from a manifest
+  reported a clean rebuild of a workspace that could not run. They now ride the envelope per repo,
+  which is the surface that needs them most.
 
 - **`hydra add` was the one command that broke the convergence invariant it documents.** SKILL.md
   invariant 3 promises every command is convergent — twice is a no-op that exits 0, reported as

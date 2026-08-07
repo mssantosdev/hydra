@@ -56,6 +56,11 @@ type restoreRepoJSON struct {
 	Branch      string `json:"branch"`
 	Disposition string `json:"disposition"`
 	Error       string `json:"error,omitempty"`
+
+	// Warnings are this repository's non-fatal problems — most usefully the carried files
+	// that had no source, which is the normal state of a fresh machine. Per-repo rather than
+	// only aggregated, so a caller restoring twelve repos can tell which one cannot run.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type restoreJSON struct {
@@ -134,6 +139,9 @@ func runRepoRestore(cmd *cobra.Command, _ []string) error {
 		if entry.Disposition == "skipped" && entry.Error != "" {
 			warnings = append(warnings, fmt.Sprintf("%s/%s: %s",
 				entry.Group, entry.Repo, entry.Error))
+		}
+		for _, w := range entry.Warnings {
+			warnings = append(warnings, fmt.Sprintf("%s/%s: %s", entry.Group, entry.Repo, w))
 		}
 	}
 
@@ -323,7 +331,13 @@ func restoreOne(ref declaredRepo) (restoreRepoJSON, fanout.Disposition, error) {
 	case ref.Branch != "":
 		opts.Branches = []string{ref.Branch}
 	}
-	if _, _, err := performClone(opts, cfg, projectConfigPath, projectRoot); err != nil {
+	// performClone's warnings are kept, not dropped. They carry the carry-file failures, and
+	// this is the surface that needs them most: a fresh machine restoring from a manifest is
+	// exactly where a bare-form `.env` has no source worktree to copy from. Discarding them
+	// made `repo restore` claim a clean rebuild of a workspace that cannot run.
+	_, cloneWarnings, err := performClone(opts, cfg, projectConfigPath, projectRoot)
+	entry.Warnings = cloneWarnings
+	if err != nil {
 		entry.Disposition = "failed"
 		entry.Error = output.Classify(err).Message
 		return entry, fanout.Failed, err

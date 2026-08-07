@@ -305,7 +305,7 @@ func applyOne(repo repoContext, item applyItem) (string, error) {
 		}
 		return "failed", err
 	}
-	if err := createWorktreeForBranch(cfg, repo, target, item.Branch, ""); err != nil {
+	if _, err := createWorktreeForBranch(cfg, repo, target, item.Branch, ""); err != nil {
 		return "failed", err
 	}
 	if err := applyTopic(item, repo); err != nil {

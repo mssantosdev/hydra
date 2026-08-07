@@ -258,10 +258,11 @@ func startOne(repo repoContext, t fanout.Target) fanout.ItemResult {
 		}
 		return fanout.ItemResult{Disposition: fanout.Failed, Reason: output.Classify(err).Message, Err: err}
 	}
-	if err := createWorktreeForBranch(cfg, repo, t.Path, t.Branch, startFrom); err != nil {
+	carried, err := createWorktreeForBranch(cfg, repo, t.Path, t.Branch, startFrom)
+	if err != nil {
 		return fanout.ItemResult{Disposition: fanout.Failed, Reason: output.Classify(err).Message, Err: err}
 	}
-	return fanout.ItemResult{Disposition: fanout.Created, Reason: "created"}
+	return fanout.ItemResult{Disposition: fanout.Created, Reason: "created", HookWarnings: carried}
 }
 
 // resolveStartRepos decides which repositories to target.

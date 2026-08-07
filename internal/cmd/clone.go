@@ -298,12 +298,12 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		// whichever saved second silently erased the other's entry while reporting
 		// success. Update re-reads inside the lock so each registration merges.
 		if err := config.Update(root, func(live *config.Config) error {
-			live.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL})
+			live.RegisterRepo(opts.Group, opts.Alias, opts.URL, "")
 			return nil
 		}); err != nil {
 			return result, nil, classifyManifestErr(err)
 		}
-		c.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL})
+		c.RegisterRepo(opts.Group, opts.Alias, opts.URL, "")
 	}
 
 	bareExisted := false
@@ -348,12 +348,12 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 
 	// Record the resolved default branch now that the fetch has actually happened.
 	if err := config.Update(root, func(live *config.Config) error {
-		live.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL, DefaultBranch: defaultBranch})
+		live.RegisterRepo(opts.Group, opts.Alias, opts.URL, defaultBranch)
 		return nil
 	}); err != nil {
 		return result, warnings, classifyManifestErr(err)
 	}
-	c.SetRepo(opts.Group, opts.Alias, config.Repo{Remote: opts.URL, DefaultBranch: defaultBranch})
+	c.RegisterRepo(opts.Group, opts.Alias, opts.URL, defaultBranch)
 
 	branches, err := resolveCloneBranches(opts, repo, defaultBranch)
 	if err != nil {
@@ -428,10 +428,11 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 			}
 			return fanout.ItemResult{Disposition: fanout.Failed, Reason: err.Error(), Err: err}
 		}
-		if err := createWorktreeForBranch(c, repo, t.Path, t.Branch, ""); err != nil {
+		carried, err := createWorktreeForBranch(c, repo, t.Path, t.Branch, "")
+		if err != nil {
 			return fanout.ItemResult{Disposition: fanout.Failed, Reason: err.Error(), Err: err}
 		}
-		return fanout.ItemResult{Disposition: fanout.Created, Reason: "created"}
+		return fanout.ItemResult{Disposition: fanout.Created, Reason: "created", HookWarnings: carried}
 	})
 
 	var failures []map[string]string

@@ -24,6 +24,11 @@ type Config struct {
 	Groups   map[string]map[string]Repo `yaml:"groups"`
 	Defaults Defaults                   `yaml:"defaults,omitempty"`
 	Hooks    Hooks                      `yaml:"hooks,omitempty"`
+
+	// Carry names files every worktree in this workspace needs and git ignores. See
+	// CarryEntry; resolution appends workspace then repo, and a group level slots in
+	// between once a group can hold anything.
+	Carry []CarryEntry `yaml:"carry,omitempty"`
 }
 
 // Paths holds the project-relative layout knobs.
@@ -56,6 +61,10 @@ type Repo struct {
 	// that no longer exists on the remote is a warning, never a failure — one stale entry
 	// must not stop a workspace from being restored.
 	Branches []string `yaml:"branches,omitempty"`
+
+	// Carry is this repository's own ignored-but-required files — the `.env` a Go service
+	// needs, the `.env.local` a Bun app needs. Appended after the workspace's.
+	Carry []CarryEntry `yaml:"carry,omitempty"`
 }
 
 // Defaults holds project-wide defaults.
@@ -464,4 +473,30 @@ func (c *Config) HooksFor(event string) ([]Hook, bool) {
 // HookEvents lists every supported hook event name, in lifecycle order.
 func HookEvents() []string {
 	return []string{"post_clone", "post_add", "pre_remove", "post_remove", "post_sync"}
+}
+
+// RegisterRepo records a repository's remote and default branch WITHOUT discarding anything
+// else already recorded for it.
+//
+// Three call sites used to do `SetRepo(group, alias, Repo{Remote: …, DefaultBranch: …})`,
+// which replaces the whole entry. On a first registration that is harmless — there is nothing
+// to lose. On a re-registration it silently dropped `branch_pattern` and `branch_provider`,
+// and once declarations existed it would have dropped `branches` and `carry` too: `repo
+// restore` would strip the very declaration it had just consumed, and a convergent
+// `repo add` re-run would strip it on the second call.
+//
+// A field is only overwritten when the new value is non-empty, so re-registering with an
+// unchanged remote cannot blank a default branch that was resolved by an earlier fetch.
+func (c *Config) RegisterRepo(group, alias, remote, defaultBranch string) {
+	entry := Repo{}
+	if ref, ok := c.FindRepo(alias); ok && ref.Group == group {
+		entry = ref.Repo
+	}
+	if remote != "" {
+		entry.Remote = remote
+	}
+	if defaultBranch != "" {
+		entry.DefaultBranch = defaultBranch
+	}
+	c.SetRepo(group, alias, entry)
 }

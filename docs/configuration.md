@@ -74,6 +74,10 @@ The map key **is** the repo alias. It is the single source of truth for:
 |-------|------|---------|-------------|
 | `remote` | string | — | Git remote URL for the repository. |
 | `default_branch` | string | inferred from `origin/HEAD` | Branch name treated as the default worktree (`<group>/<alias>/` with no suffix). |
+| `branches` | list of strings | — | The **declared shape**: the branches this repo keeps worktrees for. `hydra repo restore` creates these, so a manifest alone reproduces a workspace. Written by `repo add --branches` and `repo set --branches`; never by `hydra add` or `hydra start`, which is what keeps work-in-progress out of a committed file. |
+| `branch_pattern` | string | inherits `defaults.branch_pattern` | Overrides the project pattern for this repo. |
+| `branch_provider` | string | inherits `defaults.branch_provider` | Overrides the project provider for this repo. |
+| `carry` | list | — | Files a new worktree needs that git ignores. See [`carry`](#carry-optional). |
 
 Example:
 
@@ -109,6 +113,57 @@ backend/api-feat-x/    # feature branch worktree
 2. `defaults.base_branch`
 3. The repo's `default_branch`
 4. `origin/HEAD` from the bare repository
+
+### `carry` (optional)
+
+Files a new worktree needs that git will not bring: a `.env`, a dev certificate, a
+`docker-compose.override.yml`. A fresh worktree has every tracked file and none of these, so it
+cannot run until someone copies them by hand — per worktree, per repo, every time.
+
+Declarable at the workspace (top level) and per repo. Resolution **appends**, workspace first, so a
+workspace-wide certificate and a repo's own `.env` both apply. A later level naming the same
+destination replaces that entry, which is how a repo changes *how* an inherited file arrives without
+having to suppress it first.
+
+Two forms, because the sources differ:
+
+```yaml
+carry:
+  - from: .shared/dev-ca.pem     # a WORKSPACE path — no repo, no source worktree
+    to: certs/ca.pem
+    mode: link                   # copy (default) | link
+
+groups:
+  backend:
+    api:
+      remote: git@github.com:org/my-api.git
+      carry:
+        - .env                   # from the SOURCE WORKTREE of this repo
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| *(bare string)* | string | Shorthand for `path:`. Copied from the same relative location in the source worktree. |
+| `path` | string | Source **and** destination, relative to the worktree. Mutually exclusive with `from`/`to`. |
+| `from` | string | Source path relative to the **workspace root**. |
+| `to` | string | Destination inside the worktree. Defaults to `from`. |
+| `mode` | string | `copy` (default) duplicates the file; `link` symlinks it, so one file is edited in one place. |
+
+**The source worktree** for a bare entry is the worktree of the branch `--from` named when it has
+one, otherwise the repo's default-branch worktree. Both are deterministic; hydra never searches other
+worktrees, because searching is guessing.
+
+**Carrying never overwrites.** A file already in the new worktree is left alone and reported as
+`skipped`, so re-running a command is a genuine no-op and an edited `.env` is never clobbered.
+
+**A missing source is a warning, never a failure.** On a fresh clone there is no source worktree, so
+bare entries cannot be satisfied — `repo restore` and `apply` replay **structure, not secrets**. Only
+`from:` entries, whose source is a fixed workspace path, survive a fresh machine. The warning names
+the file so you know what to provide.
+
+Paths may not escape: an absolute or `..`-containing `path`, `from` or `to` is **refused when the
+manifest is parsed**, and every write is confined to the worktree by the kernel. A manifest is meant
+to be shared, so it must not be able to write outside the workspace it describes.
 
 ### `hooks` (optional)
 

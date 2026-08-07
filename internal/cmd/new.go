@@ -329,7 +329,7 @@ func bootstrapLocalProject(projectRoot, configPath string, cfg *config.Config, o
 	}
 
 	targetPath := worktreePath(projectRoot, repo.Group, worktreeDirName(repo, opts.InitialBranch))
-	if err := createWorktreeForBranch(cfg, repo, targetPath, opts.InitialBranch, ""); err != nil {
+	if _, err := createWorktreeForBranch(cfg, repo, targetPath, opts.InitialBranch, ""); err != nil {
 		return err
 	}
 

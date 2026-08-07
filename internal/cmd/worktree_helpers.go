@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mssantosdev/hydra/internal/carry"
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/hooks"
@@ -562,9 +563,48 @@ func resolveAddBaseBranch(cfg *config.Config, repo repoContext, from string) (st
 		WithDetail("repo", repo.Alias)
 }
 
-// createWorktreeForBranch maps a branch's real existence to the right git creator,
-// so upstream tracking is configured whenever it can be.
-func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, branch, from string) error {
+// createWorktreeForBranch creates the worktree and places its carried files.
+//
+// It returns the carry warnings rather than stashing them in package state: start, apply and
+// clone create worktrees CONCURRENTLY through fanout, so a shared collector would be a data
+// race. Callers that report per-item warnings already have somewhere to put these.
+func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, branch, from string) ([]string, error) {
+	if err := createWorktreeOnly(cfg, repo, targetPath, branch, from); err != nil {
+		return nil, err
+	}
+	// Carry runs here rather than in each of the six callers, and BEFORE post_add: a hook
+	// that installs dependencies or starts a service can then rely on the configuration
+	// being in place. A missing source is a warning, never a failure — see internal/carry.
+	_, warnings := carry.Apply(
+		config.ResolveCarry(cfg, repo.Alias),
+		carry.Plan{
+			WorktreePath:   targetPath,
+			SourceWorktree: carrySourceWorktree(repo, from),
+			WorkspaceRoot:  projectRoot,
+		},
+	)
+	return warnings, nil
+}
+
+// carrySourceWorktree picks where bare-form entries copy from: the worktree of the branch
+// --from named when it has one, otherwise the repo's default-branch worktree. Both are
+// deterministic. It never searches other worktrees — searching is guessing, and the whole
+// point of a declaration is that it does not guess.
+func carrySourceWorktree(repo repoContext, from string) string {
+	if from != "" {
+		if wt, ok := findRepoWorktreeByBranch(repo, from); ok {
+			return wt.Path
+		}
+	}
+	if repo.DefaultBranch != "" {
+		if wt, ok := findRepoWorktreeByBranch(repo, repo.DefaultBranch); ok {
+			return wt.Path
+		}
+	}
+	return ""
+}
+
+func createWorktreeOnly(cfg *config.Config, repo repoContext, targetPath, branch, from string) error {
 	kind, err := git.ClassifyBranch(repo.BareRepo, branch)
 	if err != nil {
 		return output.Wrap(output.CodeGitFailed, err, "failed to classify branch %q", branch)

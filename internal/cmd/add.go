@@ -131,10 +131,13 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		created = false
 	}
 
+	var carryWarnings []string
 	if created {
-		if err := createWorktreeForBranch(cfg, repo, target, branch, addFrom); err != nil {
+		w, err := createWorktreeForBranch(cfg, repo, target, branch, addFrom)
+		if err != nil {
 			return err
 		}
+		carryWarnings = w
 	}
 
 	wt, ok := findRepoWorktreeByBranch(repo, branch)
@@ -149,7 +152,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if idx, err := newTopicIndex(projectRoot); err == nil {
 		idx.decorate(&item)
 	}
-	var warnings []string
+	warnings := carryWarnings
 	if trackErr != nil {
 		warnings = append(warnings, fmt.Sprintf("%s: %v", branch, trackErr))
 	}

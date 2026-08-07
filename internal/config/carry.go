@@ -1,0 +1,172 @@
+package config
+
+import (
+	"fmt"
+	"path"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// CarryMode is how a carried file gets into a new worktree.
+const (
+	// CarryCopy duplicates the file. Independent afterwards, and it survives the source
+	// worktree being removed.
+	CarryCopy = "copy"
+	// CarryLink symlinks it, so one file is edited in one place. Removing the source
+	// worktree breaks every link into it, which doctor reports.
+	CarryLink = "link"
+)
+
+// CarryEntry is one file a new worktree needs that git will not bring: a `.env`, a dev
+// certificate, a `docker-compose.override.yml`. A fresh worktree has every tracked file and
+// none of these, so it cannot run until someone copies them by hand, per worktree, per repo,
+// forever — a tax nobody reports as a bug because everyone learns the workaround in week one.
+//
+// This is deliberately NOT a hook. Placing files is materialisation, and hydra already owns
+// layout: it knows the source worktree because it just resolved one. A hook would have to
+// rebuild `<root>/<group>/<repo>`, which `--as` can override, and a missing file would come
+// back as `hook_failed` rather than the warning it actually is.
+//
+// Two forms, because the sources are genuinely different:
+//
+//	carry:
+//	  - .env                    # from the SOURCE WORKTREE of this repo
+//	  - from: .shared/dev.pem   # from a WORKSPACE path — no repo, no source worktree
+//	    to: certs/dev.pem
+//	    mode: link
+//
+// The bare form only means something where a source worktree exists, so it warns on a fresh
+// clone — `apply` and `repo restore` replay structure, not secrets. The `from:` form has a
+// fixed workspace-relative source and survives a fresh machine, which is why shared context
+// belongs in it.
+type CarryEntry struct {
+	// Path is the bare form: one path, relative to the worktree, taken from the source
+	// worktree at the same relative location.
+	Path string `yaml:"path,omitempty"`
+
+	// From is a workspace-relative source. To is where it lands inside the worktree, and
+	// defaults to From when omitted.
+	From string `yaml:"from,omitempty"`
+	To   string `yaml:"to,omitempty"`
+
+	// Mode is copy (default) or link.
+	Mode string `yaml:"mode,omitempty"`
+}
+
+// Dest is where this entry lands inside a worktree, relative to its root.
+func (e CarryEntry) Dest() string {
+	switch {
+	case e.To != "":
+		return e.To
+	case e.Path != "":
+		return e.Path
+	default:
+		return e.From
+	}
+}
+
+// FromWorkspace reports whether the source is a fixed workspace path rather than the source
+// worktree. These are the only entries that can be satisfied on a fresh clone.
+func (e CarryEntry) FromWorkspace() bool { return e.From != "" }
+
+// UnmarshalYAML accepts either a bare string or a mapping, so the common case reads as a
+// list of filenames instead of a list of single-key objects.
+func (e *CarryEntry) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		var s string
+		if err := value.Decode(&s); err != nil {
+			return err
+		}
+		e.Path = strings.TrimSpace(s)
+		return e.validate()
+	}
+	// A named type avoids recursing into this method.
+	type raw CarryEntry
+	var r raw
+	if err := value.Decode(&r); err != nil {
+		return err
+	}
+	*e = CarryEntry(r)
+	e.Path = strings.TrimSpace(e.Path)
+	e.From = strings.TrimSpace(e.From)
+	e.To = strings.TrimSpace(e.To)
+	e.Mode = strings.TrimSpace(e.Mode)
+	return e.validate()
+}
+
+// MarshalYAML writes the bare form back as a bare string, so a manifest a human wrote as
+// `- .env` does not come back as `- path: .env` the first time hydra saves it.
+func (e CarryEntry) MarshalYAML() (any, error) {
+	if e.Path != "" && e.From == "" && e.To == "" && e.Mode == "" {
+		return e.Path, nil
+	}
+	type raw CarryEntry
+	return raw(e), nil
+}
+
+// validate rejects entries that cannot be acted on, at parse time rather than at the moment
+// a worktree is being created — a manifest that names nothing, or names two sources, is a
+// mistake worth reporting before it is half-applied.
+func (e CarryEntry) validate() error {
+	switch {
+	case e.Path == "" && e.From == "":
+		return fmt.Errorf("carry entry needs either a path or a `from:`")
+	case e.Path != "" && e.From != "":
+		return fmt.Errorf("carry entry %q cannot have both a bare path and a `from:`", e.Path)
+	case e.Path != "" && e.To != "":
+		return fmt.Errorf("carry entry %q cannot have both a bare path and a `to:`; use from/to", e.Path)
+	}
+	if e.Mode != "" && e.Mode != CarryCopy && e.Mode != CarryLink {
+		return fmt.Errorf("carry entry %q has mode %q, want %q or %q", e.Dest(), e.Mode, CarryCopy, CarryLink)
+	}
+	// An absolute or escaping destination would write outside the worktree, which is not
+	// something a manifest should be able to ask for.
+	dest := e.Dest()
+	if path.IsAbs(dest) || strings.HasPrefix(path.Clean(dest), "..") {
+		return fmt.Errorf("carry destination %q must stay inside the worktree", dest)
+	}
+	if e.From != "" && (path.IsAbs(e.From) || strings.HasPrefix(path.Clean(e.From), "..")) {
+		return fmt.Errorf("carry source %q must stay inside the workspace", e.From)
+	}
+	return nil
+}
+
+// ResolveCarry returns the carry entries that apply to one repository, nearest level last.
+//
+// Levels are walked as an ORDERED LIST rather than being hardcoded, because the middle one
+// does not exist yet: `Groups` is map[string]map[string]Repo, so a group has nowhere to hold
+// anything. When it becomes an object, its entries slot into this slice and neither the
+// append semantics nor the tests around them change.
+//
+// Lists APPEND down the chain — a workspace carrying a shared certificate and a repo carrying
+// its own `.env` both apply. Replacing would force every repo to restate what it inherited,
+// and someone will forget one. A later level naming the same DESTINATION wins, so a repo can
+// override how an inherited file arrives without having to suppress it first.
+func ResolveCarry(c *Config, alias string) []CarryEntry {
+	if c == nil {
+		return nil
+	}
+	levels := [][]CarryEntry{c.Carry}
+	if ref, ok := c.FindRepo(alias); ok {
+		levels = append(levels, ref.Repo.Carry)
+	}
+
+	out := make([]CarryEntry, 0, 4)
+	at := map[string]int{}
+	for _, level := range levels {
+		for _, entry := range level {
+			dest := path.Clean(entry.Dest())
+			if i, seen := at[dest]; seen {
+				out[i] = entry
+				continue
+			}
+			at[dest] = len(out)
+			out = append(out, entry)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
