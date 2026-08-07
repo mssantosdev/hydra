@@ -36,6 +36,11 @@ type CloneOptions struct {
 	Group       string
 	Branches    []string
 	AllBranches bool
+
+	// Preselect ticks these in the interactive branch picker. `repo set` passes the repo's
+	// current declaration so the form shows the state it is about to replace; `repo add`
+	// leaves it empty and the resolved default branch is ticked instead.
+	Preselect   []string
 	Interactive bool
 }
 
@@ -565,7 +570,16 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 	}
 	// Pre-selection must be assigned BEFORE the form is built: huh binds the
 	// pointer, so assigning afterwards silently discards the default.
-	if resolvedDefault != "" {
+	//
+	// Preselect is what `repo set` passes: the repo's CURRENT declaration. Without it the
+	// form opened with only the default branch ticked, so pressing enter on a repo
+	// declaring [master, stage, prod] silently narrowed it to [master] — the form has to
+	// show the state it is about to replace. `repo add` has no prior state and falls back
+	// to the resolved default.
+	switch {
+	case len(opts.Preselect) > 0:
+		selected = append([]string(nil), opts.Preselect...)
+	case resolvedDefault != "":
 		selected = []string{resolvedDefault}
 	}
 

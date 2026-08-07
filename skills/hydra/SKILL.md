@@ -46,8 +46,8 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 
 **`worktree_dirty`?** Uncommitted work is in the way. For `sync`, choose `--dirty stash|reset|skip`. For `remove`, commit or pass `--force`. Never `--force` blindly.
 
-**Rebuilding a workspace elsewhere?** `repo restore` clones what the manifest declares
-(additive, `--jobs N`); `apply -` restores a captured worktree set. Repos and worktrees are separate.
+**Rebuilding a workspace elsewhere?** A manifest declaring `branches:` per repo is enough on its own — `repo restore` creates that set (additive, `--jobs N`), and `repo set <alias> --branches a,b` declares it later.
+Without a declaration only default branches are restored, and `apply -` replays a captured set. Repos and worktrees stay separate.
 
 **Workspace looks wrong?** `doctor --output json` first. `checks[].fixable` says whether
 `doctor --fix` can repair it.
@@ -58,7 +58,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 |---|---|---|
 | `init` | create `.hydra/config.yaml` here | `--project-name` |
 | `new` | bootstrap a project and its first repo | `--local`, `--remote-url` |
-| `repo` | `add` (`--adopt`), `list`, `remove`, `branches <url\|alias>`, `restore` | `--group`, `--branches`, `--as`, `--jobs` |
+| `repo` | `add` (`--adopt`), `set`, `list`, `remove`, `branches <url\|alias>`, `restore` | `--branches`, `--as`, `--group` (add), `--jobs` (restore) |
 | `add` | one worktree for one branch | `--as`, `--from` |
 | `start` | one branch across repositories; records a topic | `--repos`, `--topic`, `--slug`, `--kind` |
 | `apply` | create the worktrees described by JSON on stdin | `-`, `--dry-run` |

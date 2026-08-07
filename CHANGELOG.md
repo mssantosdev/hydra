@@ -37,6 +37,26 @@ is permanently bound to different content in the Go checksum database, so it can
   became false are fixed with it: the summary claimed "default-branch worktrees only" over a complete
   restore, and `next[]` sent you looking for a capture you no longer need.
 
+- **`hydra repo set <alias> --branches a,b,c`** changes a repository's declared shape after
+  registration. Without it the only way to edit a declaration was by hand in
+  `.hydra/config.yaml` — a file hydra also writes, so the user and the tool were competing over one
+  document.
+
+  The branch list is validated against origin, so a name that does not exist is refused rather than
+  written and discovered by whoever restores the workspace next. On a terminal with no `--branches`
+  the same multi-select `repo add` uses opens, and it now pre-selects the CURRENT declaration:
+  previously it ticked only the default branch, so pressing enter on a repo declaring
+  `[master, stage, prod]` would have silently narrowed it to `[master]`.
+
+  Declaring fewer branches never deletes a worktree. The response reports `before`, `branches` and
+  `undeclared` — the worktrees now outside the declaration — with a warning naming them, because a
+  narrowing should be visible when it happens rather than discovered later as drift. Removing a
+  worktree stays `hydra remove`, which asks about unmerged work.
+
+  Without `--branches` and without a terminal it returns `needs_input` naming the flag and listing
+  origin's branches in `details.one_of`, rather than falling through to the clone path's "nothing
+  selected means the default branch" — which would have narrowed an existing declaration to one entry.
+
 ### Fixed
 
 - **The project manifest no longer loses comments and unmodelled keys when hydra writes it.**

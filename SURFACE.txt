@@ -76,6 +76,8 @@ repo remove (rm)
 repo restore
   --dry-run                          bool
   --jobs                             int (default 1)
+repo set
+  --branches                         stringSlice
 run
   --filter                           stringArray
   --group                            string
