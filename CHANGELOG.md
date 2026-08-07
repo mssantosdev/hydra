@@ -10,6 +10,46 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
+## [Unreleased]
+
+### Fixed
+
+- **The project manifest no longer loses comments and unmodelled keys when hydra writes it.**
+  `.hydra/config.yaml` is documented as the shareable, committable half of the state directory, and
+  `Save` marshalled a closed struct over the whole file — so a manifest carrying
+  `# Team manifest — reviewed in PR #412`, an inline `# do not move` and an `owners:` list lost all
+  three to a single `hydra repo remove`, at exit 0, with no warning.
+
+  `Save` now encodes into a `yaml.Node` and merges the prior file's comments and unmodelled keys onto
+  it, amending the document instead of rebuilding it. Two rules the fix has to respect, both tested:
+  unknown keys are carried only when the file on disk declares the version being written, so a
+  migration that means to drop a field is not undone on the next save; and carrying applies only
+  inside fixed-field structs, because `groups` and each group's repo map are what `repo remove`
+  deletes from — at a map level a missing key means DELETED, and the first draft of this fix made
+  `repo remove` a no-op by treating it as unknown. The merge walks the Go type beside the nodes to
+  tell the two apart.
+
+  Sequences are still replaced wholesale: a comment inside a list has no stable key to reattach to.
+  The three other YAML writers named under 0.4.0's Known section are unchanged.
+
+- **`hydra add` was the one command that broke the convergence invariant it documents.** SKILL.md
+  invariant 3 promises every command is convergent — twice is a no-op that exits 0, reported as
+  `skipped` — and agents are told to rely on the invariants instead of probing. `add` returned
+  `worktree_exists` at exit 1 on a retry, so any provisioning script that re-ran its own steps died
+  on the second `add`: a cloud-init retry, a resumed setup, an agent re-issuing a call after a
+  timeout. `start`, `apply` and `clone` all already translated that code into a skip on the same
+  `checkWorktreeNameConflict` call; `add` let it escape.
+
+  `add` now reports `disposition: "created" | "skipped"` in its payload and exits 0 either way. The
+  field is additive — the worktree object is embedded, so every path a caller already reads is
+  unchanged. A directory held by a DIFFERENT branch is still `worktree_name_conflict` and still
+  fails.
+
+  Hooks fire only on creation, matching fanout's rule for `start`: re-running `add` must not
+  re-provision a worktree that already exists. That makes SKILL.md's old advice wrong — it said to
+  re-run `add` to retry a failed `post_add` — so the anti-pattern now points at
+  `hooks run post_add --worktree <name>`, which is explicit about what it reruns.
+
 ## [0.4.0] - 2026-08-06
 
 Breaking for anyone who never set a theme, and for anyone who ran `hydra status`

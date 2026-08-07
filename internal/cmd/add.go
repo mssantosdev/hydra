@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/mssantosdev/hydra/internal/hooks"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 )
@@ -83,6 +84,17 @@ func init() {
 	rootCmd.AddCommand(addCmd)
 }
 
+// addJSON is add's payload: the worktree, plus whether THIS invocation created it.
+//
+// The embedded struct is promoted in JSON, so the shape callers already read is unchanged
+// and `disposition` is purely additive. It exists because invariant 3 requires a
+// convergent no-op to be *reported* as skipped, and the envelope is the only place a
+// caller is allowed to read that from — summary text is explicitly not a contract.
+type addJSON struct {
+	worktreeJSON
+	Disposition string `json:"disposition"`
+}
+
 func runAdd(cmd *cobra.Command, args []string) error {
 	alias, branch, err := resolveAddTarget(args)
 	if err != nil {
@@ -101,13 +113,28 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return output.Wrap(output.CodeInternal, err, "invalid --as value")
 	}
 
+	target := worktreePath(projectRoot, repo.Group, dirName)
+
+	// Invariant 3 promises every command is convergent: twice is a no-op that exits 0 and
+	// reports `skipped`. start, apply and clone already translate worktree_exists into a
+	// skip here — startOne does it on this exact call — and add was the one command that
+	// let it escape as exit 1, so a provisioning script re-running its own steps died on
+	// the second `add`.
+	//
+	// Only THIS branch already having a worktree is the desired state. A directory held by
+	// a DIFFERENT branch is worktree_name_conflict and still fails.
+	created := true
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, branch); err != nil {
-		return err
+		if output.Classify(err).Code != output.CodeWorktreeExists {
+			return err
+		}
+		created = false
 	}
 
-	target := worktreePath(projectRoot, repo.Group, dirName)
-	if err := createWorktreeForBranch(cfg, repo, target, branch, addFrom); err != nil {
-		return err
+	if created {
+		if err := createWorktreeForBranch(cfg, repo, target, branch, addFrom); err != nil {
+			return err
+		}
 	}
 
 	wt, ok := findRepoWorktreeByBranch(repo, branch)
@@ -127,27 +154,45 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		warnings = append(warnings, fmt.Sprintf("%s: %v", branch, trackErr))
 	}
 
-	hookResult, hookErr := runHookEvent("post_add", hooksContextFor(repo, branch, wt.Path), wt.Path)
-	warnings = append(warnings, hookResult.Warnings...)
-
-	// The hook failure has to ride the envelope. It used to be returned only as the
-	// process error, so `add` exited 1 while stdout said `outcome: success` with an empty
-	// warnings array — the worktree was created correctly and the failure was invisible to
-	// anything reading the envelope.
+	// Hooks fire only on creation, matching fanout's rule for start: re-running add must
+	// not re-provision a worktree that already exists. Retrying a failed post_add is
+	// `hydra hooks run post_add --worktree <name>`, which is explicit about what it reruns.
 	var addErr *output.Error
-	if hookErr != nil {
-		addErr = output.Classify(hookErr)
+	var hookErr error
+	if created {
+		var hookResult hooks.Result
+		hookResult, hookErr = runHookEvent("post_add", hooksContextFor(repo, branch, wt.Path), wt.Path)
+		warnings = append(warnings, hookResult.Warnings...)
+
+		// The hook failure has to ride the envelope. It used to be returned only as the
+		// process error, so `add` exited 1 while stdout said `outcome: success` with an empty
+		// warnings array — the worktree was created correctly and the failure was invisible to
+		// anything reading the envelope.
+		if hookErr != nil {
+			addErr = output.Classify(hookErr)
+		}
+	}
+
+	disposition, verb := "created", "created"
+	if !created {
+		disposition, verb = "skipped", "already present"
 	}
 	emitErr := emitResult(cmd, output.Result{
-		Summary:  fmt.Sprintf("worktree %s created for %s", wt.Qualified(), wt.BranchLabel()),
-		Data:     item,
+		Summary:  fmt.Sprintf("worktree %s %s for %s", wt.Qualified(), verb, wt.BranchLabel()),
+		Data:     addJSON{worktreeJSON: item, Disposition: disposition},
 		Warnings: warnings,
 		Err:      addErr,
 	}, func() {
 		wd, _ := os.Getwd()
 		cdHint, switchHint := navigationHints(wd, wt)
 		fmt.Println()
-		fmt.Println(styles.Success.Render("✓ Worktree created"))
+		if created {
+			fmt.Println(styles.Success.Render("✓ Worktree created"))
+		} else {
+			// Printing "created" over a worktree that was already there is the text half of
+			// the same lie the exit code used to tell.
+			fmt.Println(styles.Success.Render("✓ Worktree already present"))
+		}
 		fmt.Printf("  Repo:   %s/%s\n", repo.Group, repo.Alias)
 		fmt.Printf("  Branch: %s\n", wt.BranchLabel())
 		fmt.Printf("  Path:   %s\n", wt.Path)

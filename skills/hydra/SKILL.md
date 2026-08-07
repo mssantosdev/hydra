@@ -114,7 +114,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 
 - Rebuilding `<group>/<repo>-<branch>` instead of reading `data[].path` — `--as` may have overridden it.
 - Treating `upstream: null` as a failure; it is a branch with no upstream yet.
-- Retrying anything but `busy`, or retrying `needs_input` without adding the flag. Never delete after a failure: a `hook_failed` worktree was created correctly and an interrupted add is convergent, so re-run it and fix the hook rather than undoing the work.
+- Retrying anything but `busy`, or retrying `needs_input` without adding the flag. Never delete after a failure: a `hook_failed` worktree was created correctly. Re-running `add` is safe but reports `skipped` and does NOT re-run the hook — fix the hook, then `hooks run post_add --worktree <name>`.
 - Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged. Ask first.
 - Passing `--force` to escape `worktree_dirty` without checking what is uncommitted.
 - Assuming `hydra run` gets a shell. It does not — pass `-- sh -c '…'` when you need one.

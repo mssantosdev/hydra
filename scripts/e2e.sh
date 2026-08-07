@@ -36,6 +36,12 @@ mkdir -p "$T/ws" && cd "$T/ws"
 "$HYDRA" add api stage --output json >/dev/null
 ok "init + clone + add"
 
+# add is documented convergent (invariant 3). It used to exit 1 with worktree_exists on a
+# retry, which killed any provisioning script re-running its own steps — a cloud-init retry,
+# a resumed setup. start, apply and clone always treated this as a skip; add did not.
+check "add is convergent: retry exits 0"  '"$HYDRA" add api stage --output json >/dev/null'
+check "retry reports skipped"             '"$HYDRA" add api stage --output json | jq -e ".data.disposition==\"skipped\""'
+
 # ------------------------------------------------ 1. layout (step 4)
 echo "== 1. sibling layout, nothing inside the git dir =="
 check "backend/api exists"            'test -d backend/api'

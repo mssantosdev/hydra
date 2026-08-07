@@ -108,6 +108,30 @@ func TestAdd_NameConflictIsRefused(t *testing.T) {
 	}
 }
 
+// TestAdd_IsConvergent pins invariant 3 for add specifically. start, apply and clone all
+// translated worktree_exists into a skip; add let it escape as exit 1, so a provisioning
+// script that re-ran its own steps — a cloud-init retry, a resumed setup — died on the
+// second add while the worktree it wanted was already there.
+func TestAdd_IsConvergent(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"add", "api", "stage"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("first add: %v", err)
+	}
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"add", "api", "stage"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("second add must be a no-op at exit 0, got %v (code %q)",
+			err, output.Classify(err).Code)
+	}
+}
+
 // TestAdd_UnknownBaseIsBranchUnknown covers the resolution chain's failure mode:
 // an unknown branch is created, but an unknown BASE cannot be invented.
 func TestAdd_UnknownBaseIsBranchUnknown(t *testing.T) {
