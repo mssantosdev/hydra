@@ -94,6 +94,11 @@ type Defaults struct {
 type Hook struct {
 	Run      string `yaml:"run"`
 	Optional bool   `yaml:"optional,omitempty"`
+
+	// Timeout bounds this hook, as a Go duration ("30s", "5m"). Empty uses the package
+	// default. "0" disables the bound for a hook that genuinely has no upper limit — an
+	// explicit choice, where an unbounded hook used to be the only behaviour.
+	Timeout string `yaml:"timeout,omitempty"`
 }
 
 // Hooks holds the per-event hook chains.
@@ -237,9 +242,20 @@ func mergePreserving(old, new *yaml.Node, t reflect.Type, carryUnknown bool) {
 		return
 	}
 	for i := 0; i+1 < len(old.Content); i += 2 {
-		if !seen[old.Content[i].Value] {
-			new.Content = append(new.Content, old.Content[i], old.Content[i+1])
+		key := old.Content[i].Value
+		if seen[key] {
+			continue
 		}
+		// UNKNOWN means the struct has no field for it. A key the struct DOES model but left
+		// out of the new document was cleared on purpose — `omitempty` makes an empty field
+		// and an absent one look identical here — and carrying it back would undo the clearing
+		// silently. That is not hypothetical: it briefly hid three call sites replacing a repo
+		// entry with a fresh struct, so `branches` and `carry` appeared to survive a
+		// re-registration that had in fact dropped them.
+		if childType(t, key) != nil {
+			continue
+		}
+		new.Content = append(new.Content, old.Content[i], old.Content[i+1])
 	}
 }
 

@@ -82,6 +82,21 @@ is permanently bound to different content in the Go checksum database, so it can
   `..`-containing path is refused when the manifest is parsed. A manifest is meant to be handed
   between people, so it must not be able to write outside the workspace it describes.
 
+- **Hooks take a `timeout:`, and have one by default.** Hooks were the one unbounded wait in hydra —
+  the state lock is 5s, the manifest lock 10s, `run` takes `--timeout` — so a hook that hung hung the
+  tool with no way to say "give up". That is worst exactly where hooks earn their place, on an
+  instance bootstrap whose own deadline is minutes: a network hiccup in someone's `npm ci` hangs the
+  boot. Default 10m, generous because a cold-cache dependency install genuinely takes minutes;
+  `timeout: 0` keeps the old unbounded behaviour as a deliberate choice. A hook that outlives its
+  bound is reported as `timed out after <d>` rather than as whatever exit status killing it produced.
+
+- **`HYDRA_TOPIC` and `HYDRA_SOURCE_WORKTREE` are exported to hooks.** A `post_add` fired by
+  `start --topic X` could not name X, so "do something for this unit of work" was impossible from a
+  hook — a hole in the extension surface that is the product. And finding the originating worktree
+  meant rebuilding `<root>/<group>/<repo>`, which SKILL.md lists as an anti-pattern in the same
+  breath, because `--as` can override the derived name. Both are always exported, even empty, so a
+  hook under `set -u` can test them without aborting on an unset variable.
+
 ### Fixed
 
 - **The project manifest no longer loses comments and unmodelled keys when hydra writes it.**
@@ -114,6 +129,13 @@ is permanently bound to different content in the Go checksum database, so it can
 - **`repo restore` discarded the clone's warnings**, so a fresh machine restoring from a manifest
   reported a clean rebuild of a workspace that could not run. They now ride the envelope per repo,
   which is the surface that needs them most.
+
+- **The comment-preserving writer resurrected fields that had been cleared on purpose.**
+  `omitempty` makes an empty field and an absent one identical in the encoded document, so carrying
+  back "anything the new document lacks" undid deliberate clearing — and it briefly hid the
+  whole-entry-replacement bug above, making `branches` and `carry` look like they survived a
+  re-registration that had dropped them. Carrying is now confined to keys the struct genuinely does
+  not model.
 
 - **`hydra add` was the one command that broke the convergence invariant it documents.** SKILL.md
   invariant 3 promises every command is convergent — twice is a no-op that exits 0, reported as

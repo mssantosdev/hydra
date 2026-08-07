@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/mssantosdev/hydra/internal/carry"
 	"github.com/mssantosdev/hydra/internal/hooks"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
@@ -93,6 +94,11 @@ func init() {
 type addJSON struct {
 	worktreeJSON
 	Disposition string `json:"disposition"`
+
+	// Carried is the per-entry outcome for this worktree's declared files. Warnings say why
+	// something is missing; this also says which files were placed or skipped, which is what a
+	// caller checking "can this worktree actually run" needs. Omitted when nothing is declared.
+	Carried []carry.Result `json:"carried,omitempty"`
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
@@ -131,13 +137,13 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		created = false
 	}
 
-	var carryWarnings []string
+	var carried carryOutcome
 	if created {
 		w, err := createWorktreeForBranch(cfg, repo, target, branch, addFrom)
 		if err != nil {
 			return err
 		}
-		carryWarnings = w
+		carried = w
 	}
 
 	wt, ok := findRepoWorktreeByBranch(repo, branch)
@@ -152,7 +158,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if idx, err := newTopicIndex(projectRoot); err == nil {
 		idx.decorate(&item)
 	}
-	warnings := carryWarnings
+	warnings := carried.Warnings
 	if trackErr != nil {
 		warnings = append(warnings, fmt.Sprintf("%s: %v", branch, trackErr))
 	}
@@ -182,7 +188,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	emitErr := emitResult(cmd, output.Result{
 		Summary:  fmt.Sprintf("worktree %s %s for %s", wt.Qualified(), verb, wt.BranchLabel()),
-		Data:     addJSON{worktreeJSON: item, Disposition: disposition},
+		Data:     addJSON{worktreeJSON: item, Disposition: disposition, Carried: carried.Results},
 		Warnings: warnings,
 		Err:      addErr,
 	}, func() {

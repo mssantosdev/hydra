@@ -164,3 +164,57 @@ groups:
 		t.Errorf("groups = %d, want 1", len(reloaded.Groups))
 	}
 }
+
+// A key the struct MODELS but that was cleared on purpose must stay cleared. `omitempty` makes
+// an empty field and an absent one identical in the encoded document, so carrying "anything the
+// new document lacks" undoes deliberate clearing — and it briefly hid three call sites that
+// replaced a repo entry with a fresh struct, making `branches` and `carry` look like they
+// survived a re-registration that had dropped them.
+func TestSaveDoesNotResurrectClearedKnownFields(t *testing.T) {
+	path := writeManifest(t, t.TempDir(), `version: "2"
+project: shop
+paths:
+    bare_dir: .bare
+groups:
+    svc:
+        api:
+            remote: git@example.com:org/api.git
+            branches:
+                - main
+                - stage
+            carry:
+                - .env
+owners:
+    - platform-team
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	ref, ok := cfg.FindRepo("api")
+	if !ok {
+		t.Fatal("api is not registered")
+	}
+	ref.Repo.Branches = nil
+	ref.Repo.Carry = nil
+	cfg.SetRepo(ref.Group, ref.Alias, ref.Repo)
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if strings.Contains(string(got), "branches:") {
+		t.Errorf("a deliberately cleared `branches` came back:\n%s", got)
+	}
+	if strings.Contains(string(got), "carry:") {
+		t.Errorf("a deliberately cleared `carry` came back:\n%s", got)
+	}
+	// The genuinely unknown key is still preserved — that is the whole point of the merge.
+	if !strings.Contains(string(got), "platform-team") {
+		t.Errorf("an unmodelled key was dropped:\n%s", got)
+	}
+}

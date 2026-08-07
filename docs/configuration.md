@@ -165,6 +165,12 @@ Paths may not escape: an absolute or `..`-containing `path`, `from` or `to` is *
 manifest is parsed**, and every write is confined to the worktree by the kernel. A manifest is meant
 to be shared, so it must not be able to write outside the workspace it describes.
 
+**Carry what git ignores.** A carried file that is *not* in `.gitignore` is an untracked file like
+any other, so the worktree reports `dirty` the moment it is created and `hydra remove` refuses it
+until you commit, stash or `--force`. That is not hydra being surprising — the file genuinely is
+untracked — but it is why `carry` is for `.env` and friends rather than for anything git could have
+brought itself.
+
 ### `hooks` (optional)
 
 Declarative shell commands run at lifecycle events. Each event holds an ordered list of hook entries.
@@ -183,6 +189,12 @@ Hook entry:
 |-------|------|---------|-------------|
 | `run` | string | — | Shell command executed via `sh -c`. |
 | `optional` | bool | `false` | When `true`, a non-zero exit logs a warning and continues; when `false`, failure returns `hook_failed` (exit 1). |
+| `timeout` | duration | `10m` | Go duration (`30s`, `5m`) bounding this hook. `0` disables the bound. A hook that outlives it is killed and reported as `timed out after <d>`. |
+
+Hooks used to be the one unbounded wait in hydra — the state lock is 5s, the manifest lock 10s,
+`run` takes `--timeout` — so a hook that hung hung the tool, worst on an instance bootstrap whose own
+deadline is minutes. The default is generous because a dependency install on a cold cache genuinely
+takes minutes; a bound that fires during normal work would be worse than none.
 
 **Injected environment variables** (every hook):
 
@@ -196,6 +208,12 @@ Hook entry:
 | `HYDRA_BRANCH` | Branch name |
 | `HYDRA_WORKTREE_PATH` | Absolute worktree path |
 | `HYDRA_BARE_PATH` | Absolute bare repository path |
+| `HYDRA_TOPIC` | Topic this worktree belongs to, empty when none |
+| `HYDRA_SOURCE_WORKTREE` | Worktree a new one was derived from, empty when none |
+
+`HYDRA_TOPIC` and `HYDRA_SOURCE_WORKTREE` are always exported, even empty, so a hook running under
+`set -u` can test them without aborting on an unset variable. Use `HYDRA_SOURCE_WORKTREE` rather than
+rebuilding `<root>/<group>/<repo>` — `--as` can override the derived name.
 
 **Important:** a failing hook never rolls back work Hydra already completed. For example, a failed `post_add` hook does not remove the worktree — fix the hook and run `hydra hooks run post_add`.
 

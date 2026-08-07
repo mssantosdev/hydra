@@ -432,7 +432,7 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		if err != nil {
 			return fanout.ItemResult{Disposition: fanout.Failed, Reason: err.Error(), Err: err}
 		}
-		return fanout.ItemResult{Disposition: fanout.Created, Reason: "created", HookWarnings: carried}
+		return fanout.ItemResult{Disposition: fanout.Created, Reason: "created", HookWarnings: carried.Warnings}
 	})
 
 	var failures []map[string]string

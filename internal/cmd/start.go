@@ -262,7 +262,7 @@ func startOne(repo repoContext, t fanout.Target) fanout.ItemResult {
 	if err != nil {
 		return fanout.ItemResult{Disposition: fanout.Failed, Reason: output.Classify(err).Message, Err: err}
 	}
-	return fanout.ItemResult{Disposition: fanout.Created, Reason: "created", HookWarnings: carried}
+	return fanout.ItemResult{Disposition: fanout.Created, Reason: "created", HookWarnings: carried.Warnings}
 }
 
 // resolveStartRepos decides which repositories to target.

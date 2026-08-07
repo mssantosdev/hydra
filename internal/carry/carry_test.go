@@ -168,3 +168,50 @@ func TestApply_LinkModePlacesASymlink(t *testing.T) {
 		t.Errorf("symlink does not resolve: %q %v", got, err)
 	}
 }
+
+// The containment guarantee is the kernel's, not a string check's. This is the case a
+// filepath.Join plus a prefix comparison cannot catch: the destination path is entirely
+// innocent, and a SYMLINK already inside the worktree redirects it outside.
+//
+// Revert BOTH root.MkdirAll and root.OpenFile to their plain os equivalents and this test
+// fails with "a write escaped the worktree" — verified. MkdirAll is the call that actually
+// refuses here, since os.Root will not traverse the symlinked directory; OpenFile alone being
+// reverted is caught by it. Every other carry test passes either way, which is why this one
+// exists.
+func TestApply_SymlinkInsideTheWorktreeCannotRedirectAWrite(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "svc", "api")
+	dst := filepath.Join(root, "svc", "api-stage")
+	outside := filepath.Join(root, "outside")
+
+	write(t, filepath.Join(src, ".env"), "SECRET=from-source\n")
+	if err := os.MkdirAll(filepath.Join(dst), 0o750); err != nil {
+		t.Fatalf("mkdir dst: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o750); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	// `config/` inside the worktree points out of it. Nothing about "config/.env" looks
+	// dangerous, and filepath.Join(dst, "config/.env") stays lexically inside dst.
+	if err := os.Symlink(outside, filepath.Join(dst, "config")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	results, warnings := Apply([]config.CarryEntry{
+		{Path: ".env", From: "", To: ""},
+		{From: "svc/api/.env", To: "config/.env"},
+	}, Plan{WorktreePath: dst, SourceWorktree: src, WorkspaceRoot: root})
+
+	if _, err := os.Stat(filepath.Join(outside, ".env")); err == nil {
+		t.Fatal("a write escaped the worktree through a symlink")
+	}
+	var refused bool
+	for _, r := range results {
+		if r.Dest == "config/.env" && r.Disposition != Placed {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Errorf("the redirected write was not refused: %+v (warnings %v)", results, warnings)
+	}
+}

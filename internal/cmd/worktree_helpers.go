@@ -568,14 +568,14 @@ func resolveAddBaseBranch(cfg *config.Config, repo repoContext, from string) (st
 // It returns the carry warnings rather than stashing them in package state: start, apply and
 // clone create worktrees CONCURRENTLY through fanout, so a shared collector would be a data
 // race. Callers that report per-item warnings already have somewhere to put these.
-func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, branch, from string) ([]string, error) {
+func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, branch, from string) (carryOutcome, error) {
 	if err := createWorktreeOnly(cfg, repo, targetPath, branch, from); err != nil {
-		return nil, err
+		return carryOutcome{}, err
 	}
 	// Carry runs here rather than in each of the six callers, and BEFORE post_add: a hook
 	// that installs dependencies or starts a service can then rely on the configuration
 	// being in place. A missing source is a warning, never a failure — see internal/carry.
-	_, warnings := carry.Apply(
+	results, warnings := carry.Apply(
 		config.ResolveCarry(cfg, repo.Alias),
 		carry.Plan{
 			WorktreePath:   targetPath,
@@ -583,7 +583,15 @@ func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, b
 			WorkspaceRoot:  projectRoot,
 		},
 	)
-	return warnings, nil
+	return carryOutcome{Results: results, Warnings: warnings}, nil
+}
+
+// carryOutcome keeps the per-entry results beside the warnings. Warnings alone answer "why is my
+// .env missing"; the results also say which files WERE placed or skipped, which is what an agent
+// checking that a worktree is runnable actually needs.
+type carryOutcome struct {
+	Results  []carry.Result
+	Warnings []string
 }
 
 // carrySourceWorktree picks where bare-form entries copy from: the worktree of the branch
@@ -636,22 +644,33 @@ func createWorktreeOnly(cfg *config.Config, repo repoContext, targetPath, branch
 }
 
 // hooksContextFor builds the hook environment for a worktree operation.
+//
+// Topic is resolved here rather than threaded by each caller: every command that creates or
+// removes a worktree already has the (repo, branch) pair, and the topic is one lookup away, so
+// making six call sites remember to pass it is how it ends up empty in five of them.
 func hooksContextFor(repo repoContext, branch, worktreePath string) hooks.Context {
-	return hooks.Context{
+	ctx := hooks.Context{
 		Group:        repo.Group,
 		Repo:         repo.Alias,
 		Branch:       branch,
 		WorktreePath: worktreePath,
 		BarePath:     repo.BareRepo,
 	}
+	// A hook fired by `start --topic X` could not name X, so acting on a unit of work was
+	// impossible from a hook. Best-effort: a missing or unreadable store leaves it empty rather
+	// than failing an operation that has already succeeded.
+	if id, ok, err := topicStore().TopicOf(repo.Alias, branch); err == nil && ok {
+		ctx.Topic = id
+	}
+	ctx.SourceWorktree = carrySourceWorktree(repo, "")
+	return ctx
 }
 
 func branchChoicesForRepo(repo repoContext) ([]branchChoice, string, error) {
 	branches, err := git.GetRemoteBranchesFromBare(repo.BareRepo)
 	if err != nil {
-		return nil, "", output.Wrap(output.CodeGitFailed, err, "failed to list branches for %q", repo.Alias)
+		return nil, "", err
 	}
-
 	worktrees, err := listRepoWorktrees(repo)
 	if err != nil {
 		return nil, "", err

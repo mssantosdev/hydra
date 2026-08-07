@@ -1,11 +1,13 @@
 package hooks
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -167,6 +169,10 @@ func TestEnvListsEveryDocumentedVariable(t *testing.T) {
 	want := []string{
 		"HYDRA_EVENT", "HYDRA_PROJECT", "HYDRA_PROJECT_ROOT", "HYDRA_GROUP",
 		"HYDRA_REPO", "HYDRA_BRANCH", "HYDRA_WORKTREE_PATH", "HYDRA_BARE_PATH",
+		// A hook fired by `start --topic X` could not name X, and finding the originating
+		// worktree meant rebuilding a path `--as` can override. Both are always exported, even
+		// empty, so a hook under `set -u` does not abort on an unset variable.
+		"HYDRA_TOPIC", "HYDRA_SOURCE_WORKTREE",
 	}
 	if len(env) != len(want) {
 		t.Fatalf("Env() = %v, want %d variables", env, len(want))
@@ -175,5 +181,86 @@ func TestEnvListsEveryDocumentedVariable(t *testing.T) {
 		if !strings.HasPrefix(env[i], key+"=") {
 			t.Errorf("Env()[%d] = %q, want it to set %s", i, env[i], key)
 		}
+	}
+}
+
+// Every other wait in hydra is bounded; hooks were the exception, so a hook that hung hung the
+// tool with no way to say "give up". That is worst on an instance bootstrap, whose own deadline
+// is measured in minutes.
+func TestRun_BoundsAHangingHook(t *testing.T) {
+	var out bytes.Buffer
+	start := time.Now()
+	_, err := Run(
+		[]config.Hook{{Run: "sleep 30", Timeout: "150ms"}},
+		Context{Event: "post_add"}, t.TempDir(), &out,
+	)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("a hook that outlives its timeout must fail")
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("waited %s; the bound was not enforced", elapsed)
+	}
+	// The reason has to name the bound. "signal: killed" tells a reader nothing about what
+	// they hit or how to change it.
+	if !strings.Contains(err.Error(), "timed out after 150ms") {
+		t.Errorf("error does not name the timeout: %v", err)
+	}
+}
+
+// An explicit "0" keeps the old unbounded behaviour available as a deliberate choice.
+func TestRun_ZeroTimeoutIsUnbounded(t *testing.T) {
+	var out bytes.Buffer
+	if _, err := Run(
+		[]config.Hook{{Run: "true", Timeout: "0"}},
+		Context{Event: "post_add"}, t.TempDir(), &out,
+	); err != nil {
+		t.Fatalf("an unbounded hook that succeeds must succeed: %v", err)
+	}
+}
+
+func TestRun_InvalidTimeoutIsRefused(t *testing.T) {
+	var out bytes.Buffer
+	_, err := Run(
+		[]config.Hook{{Run: "true", Timeout: "soon"}},
+		Context{Event: "post_add"}, t.TempDir(), &out,
+	)
+	if err == nil {
+		t.Fatal("an unparseable timeout must be refused rather than silently ignored")
+	}
+	if !strings.Contains(err.Error(), "invalid timeout") {
+		t.Errorf("error should name the problem: %v", err)
+	}
+}
+
+// A post_add fired by `start --topic X` could not name X, so "do something for this unit of
+// work" was impossible from a hook — a hole in the surface that is the product.
+func TestContext_ExportsTopicAndSourceWorktree(t *testing.T) {
+	env := Context{Topic: "PAY-4417", SourceWorktree: "/ws/svc/api"}.Env()
+	var sawTopic, sawSource bool
+	for _, kv := range env {
+		if kv == "HYDRA_TOPIC=PAY-4417" {
+			sawTopic = true
+		}
+		if kv == "HYDRA_SOURCE_WORKTREE=/ws/svc/api" {
+			sawSource = true
+		}
+	}
+	if !sawTopic || !sawSource {
+		t.Errorf("env = %v", env)
+	}
+
+	// Exported even when empty, so a hook under `set -u` testing -n "$HYDRA_TOPIC" does not
+	// abort on an unset variable.
+	empty := Context{}.Env()
+	var hasTopicKey bool
+	for _, kv := range empty {
+		if strings.HasPrefix(kv, "HYDRA_TOPIC=") {
+			hasTopicKey = true
+		}
+	}
+	if !hasTopicKey {
+		t.Error("HYDRA_TOPIC must always be exported, even empty")
 	}
 }

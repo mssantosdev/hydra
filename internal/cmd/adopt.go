@@ -160,7 +160,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 			}
 		}
 		carried, err := createWorktreeForBranch(cfg, repo, targetPath, candidate.Branch, "")
-		adoptWarnings = append(adoptWarnings, carried...)
+		adoptWarnings = append(adoptWarnings, carried.Warnings...)
 		if err != nil {
 			return output.Wrap(output.CodeGitFailed, err, "failed to create worktree for %s", candidate.Branch)
 		}
