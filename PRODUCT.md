@@ -145,6 +145,14 @@ Real, and no claim in the guide needs inventing:
 5. **Both audiences, one artifact.** Anything a developer can learn from the tool, an agent can
    obtain as structured data.
 
+### Accepted design work
+
+- [`docs/design/core-coherence.md`](docs/design/core-coherence.md) — group and topic carry
+  architectural weight and have no representation. Records the four state owners (registered,
+  declared, observed, recorded), the `branches:` declared shape and its API, the ordering that puts
+  the manifest writer and `add` convergence ahead of any feature, and what was cut with reasons.
+  Supersedes the change-pivot plan on the noun.
+
 ## Accessibility & Inclusion
 
 - The CLI must degrade to plain ASCII with no ANSI leakage under `NO_COLOR` or when piped; one

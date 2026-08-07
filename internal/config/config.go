@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -105,8 +107,37 @@ func DefaultConfig(project string) *Config {
 // The manifest lives inside <root>/.hydra/, so the parent may not exist yet on a
 // fresh workspace; every caller would otherwise have to MkdirAll first, and one
 // forgetting is a confusing "no such file or directory".
+//
+// It PRESERVES the comments and unrecognised keys of the file it replaces. A plain
+// yaml.Marshal of this struct silently deleted both: a manifest carrying
+// "# reviewed in PR #412", a ci: block and an owners: list lost all three to a
+// single `hydra repo remove`, producing a deletion nobody asked for inside a
+// reviewed diff. .hydra/config.yaml is documented as the shareable, committable
+// half of the directory, so it has to survive being written by the tool that owns
+// it. See mergePreserving for the rules.
 func (c *Config) Save(path string) error {
-	data, err := yaml.Marshal(c)
+	// Node.Encode yields the MAPPING for c, not a document node — unlike
+	// yaml.Unmarshal, which wraps its result in one. Reaching for out.Content[0] here
+	// lands on the "version" KEY scalar, and mergePreserving's Kind check then bails
+	// silently, so every comment is dropped with no error. Keep the two levels
+	// straight: `out` is the mapping, `old.Content[0]` is the mapping inside a
+	// document.
+	var out yaml.Node
+	if err := out.Encode(c); err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// A missing or unreadable prior file is not an error: Save is also how a manifest
+	// is created. Only a file we can parse can donate comments.
+	if prior, err := os.ReadFile(path); err == nil { //nolint:gosec // G304: path comes from the workspace root, not caller input
+		var old yaml.Node
+		if yaml.Unmarshal(prior, &old) == nil && len(old.Content) == 1 {
+			doc := old.Content[0]
+			mergePreserving(doc, &out, reflect.TypeOf(c), sameSchema(doc, c.Version))
+		}
+	}
+
+	data, err := yaml.Marshal(&out)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -120,6 +151,115 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
+}
+
+// sameSchema reports whether the file on disk declares the version we are writing.
+// Unknown keys are carried over only within one schema version: a migration that
+// means to DROP a field would otherwise resurrect it on the next write, which is
+// the one case where preserving unknowns is wrong.
+func sameSchema(doc *yaml.Node, writing string) bool {
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		if doc.Content[i].Value == "version" {
+			return doc.Content[i+1].Value == writing
+		}
+	}
+	return false
+}
+
+// mergePreserving copies comments — and, inside fixed-field structs, keys this binary
+// does not model — from the file on disk onto the document about to be written.
+//
+// It walks the Go type alongside the nodes because struct and map mean opposite things
+// here. A struct has a closed set of fields, so a key on disk that the struct lacks is
+// a key we do not understand and must not destroy. A MAP's keys are data: `groups` and
+// each group's repo map are exactly the things `repo remove` deletes from, so a key
+// missing from the new document means DELETED, and carrying it back would silently undo
+// the removal. Comments are carried at every level; unknown keys only where the type
+// says the field set is closed.
+//
+// Sequences are replaced wholesale: a comment inside a list has no stable key to
+// reattach to, and guessing by index would move a comment onto a different entry, which
+// is worse than dropping it.
+func mergePreserving(old, new *yaml.Node, t reflect.Type, carryUnknown bool) {
+	if old.Kind != yaml.MappingNode || new.Kind != yaml.MappingNode {
+		return
+	}
+	t = deref(t)
+	closedFields := t != nil && t.Kind() == reflect.Struct
+	seen := map[string]bool{}
+	for i := 0; i+1 < len(new.Content); i += 2 {
+		key, val := new.Content[i], new.Content[i+1]
+		seen[key.Value] = true
+		oldKey, oldVal := lookup(old, key.Value)
+		if oldKey == nil {
+			continue
+		}
+		// Comments live on the key node for "# above the field" and on either node for
+		// trailing ones, so all three are carried, and only when the new document has
+		// none of its own to lose.
+		if key.HeadComment == "" {
+			key.HeadComment = oldKey.HeadComment
+		}
+		if key.LineComment == "" {
+			key.LineComment = oldKey.LineComment
+		}
+		if key.FootComment == "" {
+			key.FootComment = oldKey.FootComment
+		}
+		if val.LineComment == "" {
+			val.LineComment = oldVal.LineComment
+		}
+		mergePreserving(oldVal, val, childType(t, key.Value), carryUnknown)
+	}
+	if !carryUnknown || !closedFields {
+		return
+	}
+	for i := 0; i+1 < len(old.Content); i += 2 {
+		if !seen[old.Content[i].Value] {
+			new.Content = append(new.Content, old.Content[i], old.Content[i+1])
+		}
+	}
+}
+
+// childType resolves the Go type behind one key of a mapping: a struct field looked up
+// by its yaml tag, or a map's element type. Returning nil means "unknown", which makes
+// the level behave as a map — the conservative choice, since it only ever suppresses
+// unknown-key carrying and never resurrects a deletion.
+func childType(t reflect.Type, key string) reflect.Type {
+	t = deref(t)
+	if t == nil {
+		return nil
+	}
+	switch t.Kind() {
+	case reflect.Map:
+		return t.Elem()
+	case reflect.Struct:
+		for i := range t.NumField() {
+			f := t.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+			if name == key {
+				return f.Type
+			}
+		}
+	}
+	return nil
+}
+
+func deref(t reflect.Type) reflect.Type {
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t
+}
+
+// lookup returns the key and value nodes for name in a mapping, or nil.
+func lookup(mapping *yaml.Node, name string) (*yaml.Node, *yaml.Node) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == name {
+			return mapping.Content[i], mapping.Content[i+1]
+		}
+	}
+	return nil, nil
 }
 
 // ErrUnsupportedVersion reports a .hydra/config.yaml whose schema version this binary
