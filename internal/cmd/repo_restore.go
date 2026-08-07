@@ -59,12 +59,17 @@ type restoreRepoJSON struct {
 }
 
 type restoreJSON struct {
-	DryRun  bool              `json:"dry_run"`
-	Total   int               `json:"total"`
-	Cloned  int               `json:"cloned"`
-	Present int               `json:"present"`
-	Failed  int               `json:"failed"`
-	Repos   []restoreRepoJSON `json:"repos"`
+	DryRun  bool `json:"dry_run"`
+	Total   int  `json:"total"`
+	Cloned  int  `json:"cloned"`
+	Present int  `json:"present"`
+	Failed  int  `json:"failed"`
+
+	// Declared is how many worktrees the manifest asked for across every repo, so a caller
+	// can tell "one per repo because that is all the manifest knew" from "this is the
+	// declared shape" without re-reading the manifest itself.
+	Declared int               `json:"declared"`
+	Repos    []restoreRepoJSON `json:"repos"`
 }
 
 func runRepoRestore(cmd *cobra.Command, _ []string) error {
@@ -77,7 +82,7 @@ func runRepoRestore(cmd *cobra.Command, _ []string) error {
 	}
 
 	declared := declaredRepos(cfg)
-	payload := restoreJSON{DryRun: restoreDryRun, Total: len(declared)}
+	payload := restoreJSON{DryRun: restoreDryRun, Total: len(declared), Declared: declaredWorktrees(declared)}
 	var warnings []string
 
 	// Each repository is its own bare repo, so cloning them concurrently contends on
@@ -154,10 +159,7 @@ func runRepoRestore(cmd *cobra.Command, _ []string) error {
 		Data:     payload,
 		Warnings: warnings,
 		Err:      restoreErr,
-		Next: []output.Next{{
-			Argv: []string{"hydra", "apply", "-"},
-			Why:  "the manifest carries repositories, not worktrees; feed it a captured `hydra list --output json` to restore those",
-		}},
+		Next:     restoreNext(declared),
 	}, func() { printRestoreText(payload, summary) }); emitErr != nil {
 		return emitErr
 	}
@@ -173,6 +175,12 @@ type declaredRepo struct {
 	Alias  string
 	Remote string
 	Branch string
+
+	// Branches is the repo's declared shape when the manifest carries one. It is why this
+	// command can now rebuild a workspace on its own: before, only the default branch was
+	// recoverable and the caller was pointed at a captured `hydra list --output json` for
+	// everything else — which also dragged that machine's topic membership along.
+	Branches []string
 }
 
 // declaredRepos flattens the manifest into a stable order, so two runs report the same
@@ -188,10 +196,11 @@ func declaredRepos(c *config.Config) []declaredRepo {
 			// remote's HEAD", which is the only defensible answer.
 			branch := repo.DefaultBranch
 			out = append(out, declaredRepo{
-				Group:  group,
-				Alias:  alias,
-				Remote: repo.Remote,
-				Branch: branch,
+				Group:    group,
+				Alias:    alias,
+				Remote:   repo.Remote,
+				Branch:   branch,
+				Branches: repo.Branches,
 			})
 		}
 	}
@@ -219,11 +228,43 @@ func restoreSummary(p restoreJSON) string {
 	if p.Failed > 0 {
 		return fmt.Sprintf("%s %d, %d already present, %d failed", verb, p.Cloned, p.Present, p.Failed)
 	}
-	// Say that worktrees are NOT complete. The manifest records repositories and their
-	// default branch only, so a workspace restored from it has one worktree per repo —
-	// not the set the source had open. Reporting only the repository count invited the
-	// conclusion that the restore was finished.
+	// Say what was actually restored. A manifest that declares `branches:` per repo IS the
+	// complete shape, so claiming "default-branch worktrees only" would understate it the
+	// same way reporting the repository count alone once overstated it. A manifest without
+	// declared branches still gets one worktree per repo, and still says so.
+	if p.Declared > 0 {
+		return fmt.Sprintf("%s %d, %d already present; %d declared worktree(s)", verb, p.Cloned, p.Present, p.Declared)
+	}
 	return fmt.Sprintf("%s %d, %d already present; default-branch worktrees only", verb, p.Cloned, p.Present)
+}
+
+// restoreNext points at `apply -` only when the manifest cannot describe the shape itself.
+// Suggesting it unconditionally told the caller to go find a captured `hydra list` even when
+// the manifest had just produced the complete set — and that capture also carries the source
+// machine's topic membership, which a structural restore has no business adopting.
+func restoreNext(declared []declaredRepo) []output.Next {
+	for _, ref := range declared {
+		if len(ref.Branches) > 0 {
+			return nil
+		}
+	}
+	return []output.Next{{
+		Argv: []string{"hydra", "apply", "-"},
+		Why:  "this manifest declares no `branches:`, so only default branches were restored; feed a captured `hydra list --output json` for the rest",
+	}}
+}
+
+// declaredWorktrees counts the worktrees the manifest EXPLICITLY asks for. A repo with no
+// `branches:` contributes zero, not one: restore has always created its default branch, and
+// counting that as a declaration would make every legacy manifest claim a shape it does not
+// have — which is the difference between "this is the whole workspace" and "this is all the
+// manifest knew".
+func declaredWorktrees(declared []declaredRepo) int {
+	n := 0
+	for _, ref := range declared {
+		n += len(ref.Branches)
+	}
+	return n
 }
 
 func printRestoreText(p restoreJSON, summary string) {
@@ -271,9 +312,15 @@ func restoreOne(ref declaredRepo) (restoreRepoJSON, fanout.Disposition, error) {
 		Alias: ref.Alias,
 		Group: ref.Group,
 	}
-	// Naming a branch the manifest never recorded would fail on a repository that has
-	// no such branch; leaving it empty makes the clone resolve the remote's default.
-	if ref.Branch != "" {
+	// Prefer the declared shape when the manifest carries one: that is the whole point of
+	// recording it, and without it a restored workspace is missing every long-lived branch
+	// the team keeps checked out. Falling back to the single default branch — and to empty,
+	// which lets the clone resolve the remote's HEAD — keeps manifests written before
+	// `branches:` existed working unchanged.
+	switch {
+	case len(ref.Branches) > 0:
+		opts.Branches = ref.Branches
+	case ref.Branch != "":
 		opts.Branches = []string{ref.Branch}
 	}
 	if _, _, err := performClone(opts, cfg, projectConfigPath, projectRoot); err != nil {

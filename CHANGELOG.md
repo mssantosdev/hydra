@@ -12,6 +12,31 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ## [Unreleased]
 
+### Added
+
+- **The manifest can declare a repository's shape: `branches:`.** It recorded repositories and their
+  default branch only, so a workspace rebuilt from a manifest had one worktree per repo and
+  `repo restore` ended by pointing the caller at a captured `hydra list --output json` for the rest —
+  a snapshot that also carries the source machine's topic membership. `repo add --branches
+  main,stage,prod` created three worktrees and remembered none of it.
+
+  A manifest that declares `branches: [master, stage, prod]` now reproduces the whole shape on its
+  own: no snapshot, no topics, no secrets. `repo restore` creates the declared set and `repo list`
+  reports it.
+
+  `repo add --branches` persists the resolved set. That is a behaviour change to a shipped flag, and
+  the distinction it rests on is the point: naming a branch set is a **declaration**, while
+  `hydra add api feat/x` is **work**. Only the first writes the manifest, which is what keeps
+  work-in-progress out of a committed file — and makes "what is baseline" answerable without a
+  heuristic. Baseline is what the manifest declares; WIP is everything git has beyond it. An earlier
+  attempt inferred it from topic membership, which is wrong: an ad-hoc `feat/x` worktree has no
+  topic either.
+
+  Additive field, no schema bump. A manifest without `branches:` behaves exactly as before, including
+  the `apply -` hint — there the capture genuinely is the only way to get the rest. Two messages that
+  became false are fixed with it: the summary claimed "default-branch worktrees only" over a complete
+  restore, and `next[]` sent you looking for a capture you no longer need.
+
 ### Fixed
 
 - **The project manifest no longer loses comments and unmodelled keys when hydra writes it.**

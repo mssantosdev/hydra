@@ -147,6 +147,12 @@ type repoEntryJSON struct {
 	// the half-built state an interrupted add leaves and doctor reports.
 	BareExists bool `json:"bare_exists"`
 	Worktrees  int  `json:"worktrees"`
+
+	// Branches is the shape the manifest declares for this repo, so `repo list` answers
+	// "what should this workspace look like" and not only "what is on disk right now".
+	// Absent means the manifest declares nothing and restore falls back to the default
+	// branch.
+	Branches []string `json:"branches,omitempty"`
 }
 
 type repoListJSON struct {
@@ -167,6 +173,11 @@ func runRepoList(cmd *cobra.Command, args []string) error {
 			Remote:        repo.Remote,
 			DefaultBranch: repo.DefaultBranch,
 			BarePath:      repo.BareRepo,
+		}
+		// The manifest is the only source for the declared shape: repoContext carries what
+		// is on disk, and the declaration is deliberately not derived from that.
+		if ref, ok := cfg.FindRepo(repo.Alias); ok {
+			entry.Branches = ref.Repo.Branches
 		}
 		if _, err := os.Stat(repo.BareRepo); err == nil {
 			entry.BareExists = true

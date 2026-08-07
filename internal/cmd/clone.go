@@ -355,6 +355,29 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		return result, warnings, err
 	}
 
+	// Record the resolved branches as this repo's DECLARED shape, so the manifest alone is
+	// enough to rebuild the workspace. This is a second write rather than part of the one
+	// above because resolveCloneBranches can open a picker: writing the entry first is what
+	// makes a cancelled selection resumable — the bare clone stays registered and a re-run
+	// completes it instead of orphaning it on disk.
+	//
+	// The resolved set is recorded, not the raw --branches value, because resolution has
+	// already checked each name against the remote. A declaration nobody can satisfy would
+	// make every future restore warn.
+	if len(branches) > 0 {
+		if err := config.Update(root, func(live *config.Config) error {
+			ref, ok := live.FindRepo(opts.Alias)
+			if !ok {
+				return nil
+			}
+			ref.Repo.Branches = branches
+			live.SetRepo(ref.Group, ref.Alias, ref.Repo)
+			return nil
+		}); err != nil {
+			return result, warnings, classifyManifestErr(err)
+		}
+	}
+
 	// Converge each branch through the shared engine.
 	//
 	// SerialPerRepo is TRUE here, unlike sync: `git worktree add` with upstream

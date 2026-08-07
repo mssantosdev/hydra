@@ -43,6 +43,19 @@ type Repo struct {
 	// legitimately name branches differently.
 	BranchPattern  string `yaml:"branch_pattern,omitempty"`
 	BranchProvider string `yaml:"branch_provider,omitempty"`
+
+	// Branches is the DECLARED shape of this repository: the branches a workspace built
+	// from this manifest should have worktrees for. It is what makes the manifest enough
+	// to reproduce a setup — `repo restore` creates these, where before it could only
+	// create the default branch and had to tell the caller to go find a captured
+	// `hydra list --output json` for the rest.
+	//
+	// It is DECLARED state, so only commands where the user names the set write it:
+	// `repo add --branches` and `repo set --branches`. `hydra add` and `hydra start` never
+	// touch it, which is what keeps work-in-progress out of a committed file. A branch here
+	// that no longer exists on the remote is a warning, never a failure — one stale entry
+	// must not stop a workspace from being restored.
+	Branches []string `yaml:"branches,omitempty"`
 }
 
 // Defaults holds project-wide defaults.
