@@ -70,6 +70,12 @@ type hooksEventEntry struct {
 
 type hooksLsPayload struct {
 	Events []hooksEventEntry `json:"events"`
+
+	// Env names every variable a hook is given. Published so the contract is discoverable
+	// instead of only documented: an agent writing a hook can learn what it receives without
+	// reading the guide, and the docs gate asserts the guide's list against this. The guide
+	// listed eight for a commit after two more were added.
+	Env []string `json:"env"`
 }
 
 func runHooksLs(cmd *cobra.Command, args []string) error {
@@ -80,7 +86,7 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 		entries = append(entries, hooksEventEntry{Event: event, Count: len(hs)})
 	}
 
-	return emit(cmd, fmt.Sprintf("%d hook event(s) configured", len(entries)), hooksLsPayload{Events: entries}, nil, func() {
+	return emit(cmd, fmt.Sprintf("%d hook event(s) configured", len(entries)), hooksLsPayload{Events: entries, Env: hooks.EnvKeys()}, nil, func() {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %s\n",
 			styles.Label.Render("EVENT"),
 			styles.Label.Render("HOOKS"))

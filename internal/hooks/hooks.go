@@ -50,6 +50,28 @@ type Context struct {
 	SourceWorktree string
 }
 
+// EnvKeys names every variable a hook is given, in the order Env emits them.
+//
+// It exists so the contract is discoverable rather than only documented: `hooks ls` publishes
+// it, which lets an agent learn what a hook receives without reading the guide, and lets the
+// docs gate assert the guide's list against the binary. The published page listed eight
+// variables for one commit after two more were added — a self-describing surface is how that
+// stops being possible.
+func EnvKeys() []string {
+	return []string{
+		"HYDRA_EVENT",
+		"HYDRA_PROJECT",
+		"HYDRA_PROJECT_ROOT",
+		"HYDRA_GROUP",
+		"HYDRA_REPO",
+		"HYDRA_BRANCH",
+		"HYDRA_WORKTREE_PATH",
+		"HYDRA_BARE_PATH",
+		"HYDRA_TOPIC",
+		"HYDRA_SOURCE_WORKTREE",
+	}
+}
+
 // Env renders the injected HYDRA_* variables.
 func (c Context) Env() []string {
 	return []string{

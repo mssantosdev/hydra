@@ -97,6 +97,11 @@ is permanently bound to different content in the Go checksum database, so it can
   breath, because `--as` can override the derived name. Both are always exported, even empty, so a
   hook under `set -u` can test them without aborting on an unset variable.
 
+  `hooks ls --output json` now publishes the whole list as `env[]`, so a hook author can discover
+  what a hook receives instead of reading it off a page — and `make gate` asserts the guide and the
+  field reference against that list. The published page advertised eight variables for one commit
+  after two more existed, which is exactly the drift a self-describing surface prevents.
+
 ### Fixed
 
 - **The project manifest no longer loses comments and unmodelled keys when hydra writes it.**

@@ -68,5 +68,26 @@ if [ -x ./hydra ] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
+# --- the hook environment the guide and the field reference advertise ---
+# The published page listed eight variables for a commit after two more were added, so a reader
+# writing a hook was told less than the tool gives. `hooks ls --output json` publishes the list
+# precisely so this can be checked instead of remembered.
+if [ -x ./hydra ] && command -v jq >/dev/null 2>&1; then
+  d=$(mktemp -d)
+  # `hooks ls` needs a workspace, and this runs from the repo root — so it is invoked inside a
+  # throwaway one. The `|| true` matters under `set -euo pipefail`: without it a non-zero exit
+  # from hydra propagates through the pipe into the assignment and kills the whole check silently.
+  ( cd "$d" && HYDRA_CONFIG_DIR="$d/cfg" "$OLDPWD/hydra" init --project-name docs-gate >/dev/null 2>&1 ) || true
+  keys=$( ( cd "$d" && HYDRA_CONFIG_DIR="$d/cfg" "$OLDPWD/hydra" hooks ls --output json 2>/dev/null ) | jq -r '.data.env[]?' 2>/dev/null || true )
+  rm -rf "$d"
+  if [ -n "$keys" ]; then
+    for doc in docs/guide.html docs/configuration.md; do
+      for key in $keys; do
+        grep -q "$key" "$doc" || note "$doc never mentions $key, which every hook receives"
+      done
+    done
+  fi
+fi
+
 [ "$fail" -eq 0 ] || { echo "check-docs-claims: docs contradict the build" >&2; exit 1; }
-echo "check-docs-claims: version, theme, card and command count all agree with the build"
+echo "check-docs-claims: version, theme, card, command count and hook env all agree with the build"
