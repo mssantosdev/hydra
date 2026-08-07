@@ -371,8 +371,32 @@ func worktreeDirName(repo repoContext, branch string) string {
 // worktreePath is the only place a worktree path is composed, and it is used
 // solely to decide where a NEW worktree goes. Existing worktrees always report
 // their path through git.
+// worktreePath places a worktree under its group's directory.
+//
+// The group's `path:` is consulted here rather than at the nine call sites, all of which pass a
+// group NAME: threading a resolved directory through every one of them is how five of them end up
+// still using the name. It reads the package config the same way projectRoot is read — inconsistent
+// with taking projectRoot as an argument, but the alternative is nine signatures.
+//
+// An empty or absent path means the group name, which is what every workspace did before groups
+// could hold anything, so a version-2 manifest lays out identically.
 func worktreePath(projectRoot, group, dirName string) string {
-	return filepath.Join(projectRoot, group, dirName)
+	return filepath.Join(groupDir(projectRoot, group), dirName)
+}
+
+// groupDir resolves a group's directory, honouring its `path:`.
+//
+// Every site that needs it goes through here. Four computed it independently as
+// filepath.Join(root, group), and three of them — doctor's orphan scan, prune, and remove's
+// empty-group cleanup — all swallow a missing directory, so a group with a `path:` would have
+// silently disabled the orphan check and both cleanups while reporting success. That is the exact
+// class of bug a documented feature hides best: nothing fails, the work just stops happening.
+func groupDir(projectRoot, group string) string {
+	dir := group
+	if cfg != nil {
+		dir = cfg.Groups[group].Dir(group)
+	}
+	return filepath.Join(projectRoot, dir)
 }
 
 // listRepoWorktrees returns a repo's worktrees straight from git.

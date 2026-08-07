@@ -53,7 +53,7 @@ func TestUpdateMergesConcurrentRegistrations(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	for i := range writers {
-		if _, ok := reloaded.Groups["g"][aliasFor(i)]; !ok {
+		if _, ok := reloaded.Groups["g"].Repos[aliasFor(i)]; !ok {
 			t.Errorf("%s is missing: a concurrent write erased it", aliasFor(i))
 		}
 	}
@@ -74,7 +74,7 @@ func TestUpdateSeesWritesItDidNotMake(t *testing.T) {
 
 	var sawFirst bool
 	if err := config.Update(root, func(live *config.Config) error {
-		_, sawFirst = live.Groups["g"]["first"]
+		_, sawFirst = live.Groups["g"].Repos["first"]
 		return nil
 	}); err != nil {
 		t.Fatalf("second update: %v", err)

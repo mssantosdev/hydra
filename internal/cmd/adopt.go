@@ -133,7 +133,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 	}
 	cfg.RegisterRepo(adoptGroup, alias, remoteURL, branch)
 
-	repo := repoContextFor(cfg, projectRoot, config.RepoRef{Group: adoptGroup, Alias: alias, Repo: cfg.Groups[adoptGroup][alias]})
+	repo := repoContextFor(cfg, projectRoot, config.RepoRef{Group: adoptGroup, Alias: alias, Repo: cfg.Groups[adoptGroup].Repos[alias]})
 	candidates, err := collectAdoptCandidates(checkoutPath, remoteURL, branch)
 	if err != nil {
 		return output.Wrap(output.CodeInternal, err, "failed to scan sibling checkouts")

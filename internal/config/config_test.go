@@ -20,7 +20,9 @@ func TestLoadRejectsForeignVersions(t *testing.T) {
 	for _, body := range []string{
 		"version: \"1.0\"\nproject: old\n",
 		"project: no-version\n",
-		"version: \"3\"\nproject: future\n",
+		// Newer than this binary. Version 2 is the one exception, and only because the 2 → 3
+		// change renests groups without changing what any field means.
+		"version: \"4\"\nproject: future\n",
 	} {
 		path := writeConfig(t, t.TempDir(), body)
 

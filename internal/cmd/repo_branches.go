@@ -50,7 +50,7 @@ func runRepoBranches(cmd *cobra.Command, args []string) error {
 	// have to repeat a URL hydra already knows.
 	if cfg != nil {
 		if ref, ok := cfg.FindRepo(remote); ok {
-			if resolved := cfg.Groups[ref.Group][ref.Alias].Remote; resolved != "" {
+			if resolved := cfg.Groups[ref.Group].Repos[ref.Alias].Remote; resolved != "" {
 				remote = resolved
 			}
 		}

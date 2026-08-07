@@ -72,7 +72,7 @@ func TestAdopt_ExistingCheckout(t *testing.T) {
 	}
 
 	cfg := env.LoadConfig()
-	if _, ok := cfg.Groups["backend"]["api"]; !ok {
+	if _, ok := cfg.Groups["backend"].Repos["api"]; !ok {
 		t.Fatal("alias not registered under group")
 	}
 

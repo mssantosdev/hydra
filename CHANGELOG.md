@@ -14,6 +14,28 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Added
 
+- **Schema 3: a group is an object.** It was the only noun in the model with nowhere to put
+  anything — a bare map key, no properties, no command — while the override chain ran
+  project → repo and skipped the level that means "these repositories belong together". So a family
+  convention had to be repeated on every repo, and `base_branch` could not vary below the project at
+  all.
+
+  A group now carries `path`, `defaults`, `hooks`, `carry` and `repos`. Resolution is
+  **workspace → group → repo**: scalars nearest-wins, lists (`hooks`, `carry`) append. An empty value
+  means *inherit*, not *clear*.
+
+  `path:` places a group's worktrees, which is the design that replaced putting a slash in the group
+  NAME — a slash made selectors, completion and rename ambiguous, where a path field does not.
+  `platform/infra` goes in the field; names stay one segment.
+
+  hydra still does not decide what a group means. `go-projects`/`java-projects` and `backend`/`web`
+  are equally valid partitions: every level carries the same keys, the chain is the only rule.
+
+  **Version 2 manifests still load.** A v2 group maps straight to its repositories; it is renested in
+  memory and written back as version 3 on the next mutation, comments and unmodelled keys included.
+  No migration command, and the upgrade lands as a diff in a file that was already committed. Anything
+  older or newer is still refused, so a manifest from a hydra that knows more is never half-read.
+
 - **The manifest can declare a repository's shape: `branches:`.** It recorded repositories and their
   default branch only, so a workspace rebuilt from a manifest had one worktree per repo and
   `repo restore` ended by pointing the caller at a captured `hydra list --output json` for the rest —

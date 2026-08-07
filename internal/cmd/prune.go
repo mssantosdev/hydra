@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/config/registry"
@@ -99,8 +98,8 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, group := range cfg.SortedGroups() {
-		groupDir := filepath.Join(projectRoot, group)
-		entries, err := os.ReadDir(groupDir)
+		dir := groupDir(projectRoot, group)
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
@@ -111,7 +110,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 		if pruneDryRun {
 			continue
 		}
-		if err := os.Remove(groupDir); err != nil {
+		if err := os.Remove(dir); err != nil {
 			return output.Wrap(output.CodeInternal, err, "failed to remove empty group %s", group)
 		}
 	}

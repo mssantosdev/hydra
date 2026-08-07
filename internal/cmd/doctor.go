@@ -552,14 +552,14 @@ func diagnoseGroupDirs(cfg *config.Config, projectRoot, bareRoot string) []docto
 
 	var checks []doctorCheck
 	for _, group := range cfg.SortedGroups() {
-		groupDir := filepath.Join(projectRoot, group)
-		entries, err := os.ReadDir(groupDir)
+		dir := groupDir(projectRoot, group)
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			path := filepath.Join(groupDir, name)
+			path := filepath.Join(dir, name)
 			rel := filepath.ToSlash(filepath.Join(group, name))
 
 			if entry.Type()&os.ModeSymlink != 0 {

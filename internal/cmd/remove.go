@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -305,7 +304,7 @@ func resolveRemoveTarget(args []string) (worktreeContext, error) {
 
 // removeGroupDirIfEmpty drops a group directory that has no entries left.
 func removeGroupDirIfEmpty(root, group string) (bool, error) {
-	dir := filepath.Join(root, group)
+	dir := groupDir(root, group)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {

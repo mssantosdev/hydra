@@ -40,7 +40,7 @@ hooks:
 
 | Type | Default | Description |
 |------|---------|-------------|
-| string | — | Must be exactly `"2"`. Any other value yields `config_version_unsupported` (exit 2). |
+| string | — | `"3"` is current. `"2"` still loads and is upgraded on the next write. Anything else yields `config_version_unsupported` (exit 2), so a manifest written by a newer hydra is never half-read. |
 
 ### `project` (optional)
 
@@ -60,7 +60,30 @@ Hydra does not support a configurable worktree root path. Worktrees always live 
 
 | Type | Default | Description |
 |------|---------|-------------|
-| map of maps | `{}` | Top-level keys are **group** names (directory names such as `backend`, `frontend`). Each group maps **alias → repo**. |
+| map of groups | `{}` | Top-level keys are **group** names. Each group is an object carrying its own `path`, `defaults`, `hooks`, `carry` and `repos`. |
+
+#### Group entry (`groups.<group>`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `repos` | map | — | alias → repo. The alias is the single source of the bare path and the worktree base name. |
+| `path` | string | the group name | Directory this group's worktrees live under, relative to the workspace root. Use it for nesting (`platform/infra`) — group **names** stay one segment, because a slash in the key makes selectors, completion and rename ambiguous while a path field does not. |
+| `defaults` | object | — | Overrides the workspace defaults for every repo in this group. |
+| `hooks` | object | — | Hook chains for this group's repos. |
+| `carry` | list | — | Files every worktree in this group needs. See [`carry`](#carry-optional). |
+
+**Resolution is workspace → group → repo.** Scalars are nearest-wins: a repo's `branch_pattern` beats
+its group's, which beats the workspace's. An empty value means *inherit*, not *clear*. Lists —
+`hooks` and `carry` — **append**, so a workspace-wide certificate and a repo's own `.env` both apply.
+
+hydra does not decide what a group means. `go-projects`/`java-projects` and `backend`/`web` are
+equally valid partitions: every level carries the same keys, the chain is the only rule, and what
+belongs where is your modelling choice.
+
+**Version 2 manifests still load.** Before schema 3 a group mapped straight to its repositories, with
+nowhere to put the group's own settings. Such a manifest is renested in memory and written back as
+version 3 on the next mutation, comments included — no migration command, and the upgrade shows up as
+a diff in a file you had already committed.
 
 #### Repo entry (`groups.<group>.<alias>`)
 

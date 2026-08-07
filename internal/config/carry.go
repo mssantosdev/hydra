@@ -149,7 +149,7 @@ func ResolveCarry(c *Config, alias string) []CarryEntry {
 	}
 	levels := [][]CarryEntry{c.Carry}
 	if ref, ok := c.FindRepo(alias); ok {
-		levels = append(levels, ref.Repo.Carry)
+		levels = append(levels, c.Groups[ref.Group].Carry, ref.Repo.Carry)
 	}
 
 	out := make([]CarryEntry, 0, 4)
@@ -169,4 +169,53 @@ func ResolveCarry(c *Config, alias string) []CarryEntry {
 		return nil
 	}
 	return out
+}
+
+// ResolveDefaults collapses the workspace → group → repo chain for one repository.
+//
+// SCALARS resolve nearest-wins: a repo's own value beats its group's, which beats the workspace's.
+// That is the level the model was missing — the chain ran project → repo and skipped the one that
+// means "these repositories belong together", so a family convention had to be repeated on every
+// repo, and `base_branch` could not vary below the project at all.
+//
+// An empty value is not a value: it means "inherit", not "clear". A group cannot blank a workspace
+// default by declaring an empty string, because a YAML author writing `base_branch: ""` almost
+// always means they left it unset rather than that they want the fallback suppressed.
+func ResolveDefaults(c *Config, alias string) Defaults {
+	if c == nil {
+		return Defaults{}
+	}
+	out := c.Defaults
+	ref, ok := c.FindRepo(alias)
+	if !ok {
+		return out
+	}
+	for _, level := range []Defaults{c.Groups[ref.Group].Defaults, repoDefaults(ref.Repo)} {
+		if level.BaseBranch != "" {
+			out.BaseBranch = level.BaseBranch
+		}
+		if level.BranchPattern != "" {
+			out.BranchPattern = level.BranchPattern
+		}
+		if level.BranchProvider != "" {
+			out.BranchProvider = level.BranchProvider
+		}
+		// A bool has no "unset", so strictness is turned ON by any level and never off by a
+		// silent zero value. Escaping an inherited strict pattern is a deliberate edit at the
+		// level that set it, not an accident of a child having no opinion.
+		if level.BranchPatternStrict {
+			out.BranchPatternStrict = true
+		}
+	}
+	return out
+}
+
+// repoDefaults lifts a repo's own override fields into a Defaults so the chain is one loop over
+// levels rather than three special cases. Repo keeps its fields flat because they predate the group
+// level and are referenced by name in manifests already in use.
+func repoDefaults(r Repo) Defaults {
+	return Defaults{
+		BranchPattern:  r.BranchPattern,
+		BranchProvider: r.BranchProvider,
+	}
 }

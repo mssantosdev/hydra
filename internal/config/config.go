@@ -14,16 +14,23 @@ import (
 // SchemaVersion is the only .hydra/config.yaml schema version this binary understands.
 // It is the CONFIG schema version and is unrelated to hydra's release version.
 // There is no compatibility layer: older workspaces are re-created by hand.
-const SchemaVersion = "2"
+const SchemaVersion = "3"
+
+// LegacySchemaVersion is the shape hydra wrote before a group could hold anything: `groups`
+// mapped a group name straight to its repositories, so there was nowhere to put a group's own
+// layout, defaults, hooks or carried files. A version-2 manifest still LOADS — it is renested in
+// memory — and is written back as version 3 on the next mutation, so no workspace needs a
+// migration step and the upgrade is visible in the diff of a file that was already committed.
+const LegacySchemaVersion = "2"
 
 // Config represents a hydra project (workspace) configuration.
 type Config struct {
-	Version  string                     `yaml:"version"`
-	Project  string                     `yaml:"project"`
-	Paths    Paths                      `yaml:"paths"`
-	Groups   map[string]map[string]Repo `yaml:"groups"`
-	Defaults Defaults                   `yaml:"defaults,omitempty"`
-	Hooks    Hooks                      `yaml:"hooks,omitempty"`
+	Version  string           `yaml:"version"`
+	Project  string           `yaml:"project"`
+	Paths    Paths            `yaml:"paths"`
+	Groups   map[string]Group `yaml:"groups"`
+	Defaults Defaults         `yaml:"defaults,omitempty"`
+	Hooks    Hooks            `yaml:"hooks,omitempty"`
 
 	// Carry names files every worktree in this workspace needs and git ignores. See
 	// CarryEntry; resolution appends workspace then repo, and a group level slots in
@@ -34,6 +41,72 @@ type Config struct {
 // Paths holds the project-relative layout knobs.
 type Paths struct {
 	BareDir string `yaml:"bare_dir"`
+}
+
+// Group is a partition of the workspace and everything that applies to the repositories in it.
+//
+// It became an object because it was the only noun in the model with nowhere to put anything: a
+// bare map key, no properties, no command. Yet the override chain ran project → repo, skipping the
+// level that means "these repositories belong together" — so `branch_pattern` had to be repeated
+// on every repo in a family, and `base_branch` could not vary below the project at all.
+//
+// hydra does NOT decide what a group means. `go-projects`/`java-projects` and `backend`/`web` are
+// equally valid partitions, so every level carries the same keys and the resolution chain is the
+// only rule; what belongs where is the user's modelling choice.
+type Group struct {
+	// Path places this group's worktrees, relative to the workspace root. Empty means the group
+	// name itself, which is what every workspace did before this field existed.
+	//
+	// This is why group names stay one path segment and `/` is still rejected in them: a slash in
+	// the KEY made the selector, completion and rename semantics ambiguous, where a path field is
+	// unambiguous and does the same job. `platform/infra` belongs here, not in the name.
+	Path string `yaml:"path,omitempty"`
+
+	Defaults Defaults     `yaml:"defaults,omitempty"`
+	Hooks    Hooks        `yaml:"hooks,omitempty"`
+	Carry    []CarryEntry `yaml:"carry,omitempty"`
+
+	// Repos maps alias → repository. The alias is the key because it is the single source of the
+	// bare path and the worktree directory base name.
+	Repos map[string]Repo `yaml:"repos"`
+}
+
+// Dir returns the directory this group's worktrees live under, relative to the workspace root.
+func (g Group) Dir(name string) string {
+	if g.Path != "" {
+		return g.Path
+	}
+	return name
+}
+
+// UnmarshalYAML accepts both shapes so a version-2 manifest keeps working.
+//
+// The two are told apart structurally rather than by consulting the version: a v3 group is a
+// mapping with a `repos` key, a v2 group is a mapping of aliases straight to repositories. Reading
+// the version would mean decoding the document twice, and a manifest whose `version` disagrees with
+// its own shape is exactly the half-migrated state doctor has to be able to report.
+func (g *Group) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("group must be a mapping, got %v", value.Kind)
+	}
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		if value.Content[i].Value == "repos" {
+			type raw Group
+			var r raw
+			if err := value.Decode(&r); err != nil {
+				return err
+			}
+			*g = Group(r)
+			return nil
+		}
+	}
+	// Legacy: the whole mapping is the repo set.
+	var repos map[string]Repo
+	if err := value.Decode(&repos); err != nil {
+		return err
+	}
+	*g = Group{Repos: repos}
+	return nil
 }
 
 // Repo describes a repository registered under a group. The map key that points
@@ -125,7 +198,7 @@ func DefaultConfig(project string) *Config {
 		Version: SchemaVersion,
 		Project: project,
 		Paths:   Paths{BareDir: ".bare"},
-		Groups:  make(map[string]map[string]Repo),
+		Groups:  make(map[string]Group),
 	}
 }
 
@@ -160,7 +233,9 @@ func (c *Config) Save(path string) error {
 		var old yaml.Node
 		if yaml.Unmarshal(prior, &old) == nil && len(old.Content) == 1 {
 			doc := old.Content[0]
-			mergePreserving(doc, &out, reflect.TypeOf(c), sameSchema(doc, c.Version))
+			carry := sameSchema(doc, c.Version)
+			normalizeLegacyGroups(doc)
+			mergePreserving(doc, &out, reflect.TypeOf(c), carry)
 		}
 	}
 
@@ -186,11 +261,49 @@ func (c *Config) Save(path string) error {
 // the one case where preserving unknowns is wrong.
 func sameSchema(doc *yaml.Node, writing string) bool {
 	for i := 0; i+1 < len(doc.Content); i += 2 {
-		if doc.Content[i].Value == "version" {
-			return doc.Content[i+1].Value == writing
+		if doc.Content[i].Value != "version" {
+			continue
 		}
+		found := doc.Content[i+1].Value
+		if found == writing {
+			return true
+		}
+		// The 2 → 3 change RENESTS groups and removes no field, so a key this binary does not
+		// model is just as unknown afterwards and dropping it on the upgrade would be the same
+		// silent data loss this merge exists to prevent. A future migration that genuinely means
+		// to drop a field must exclude itself here, deliberately.
+		return found == LegacySchemaVersion && writing == SchemaVersion
 	}
 	return false
+}
+
+// normalizeLegacyGroups rewrites a version-2 group mapping into the version-3 shape IN THE OLD
+// NODE, before the merge runs.
+//
+// Without it the upgrade loses every comment attached to a repository entry: `groups.svc.api` moves
+// to `groups.svc.repos.api`, so the merge looks for `api` beside `path`/`defaults`/`repos` and finds
+// nothing. Aligning the shapes first keeps the merge generic — it never learns about versions — and
+// means the one commit where a manifest is most likely to be annotated is not the one that eats the
+// annotations.
+func normalizeLegacyGroups(doc *yaml.Node) {
+	_, groups := lookup(doc, "groups")
+	if groups == nil || groups.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(groups.Content); i += 2 {
+		group := groups.Content[i+1]
+		if group.Kind != yaml.MappingNode {
+			continue
+		}
+		if key, _ := lookup(group, "repos"); key != nil {
+			continue // already v3
+		}
+		inner := &yaml.Node{Kind: yaml.MappingNode, Tag: group.Tag, Content: group.Content}
+		group.Content = []*yaml.Node{
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: "repos"},
+			inner,
+		}
+	}
 }
 
 // mergePreserving copies comments — and, inside fixed-field structs, keys this binary
@@ -330,15 +443,24 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config %s: %w", path, err)
 	}
 
-	if cfg.Version != SchemaVersion {
+	// A version-2 manifest LOADS. Its only difference is that a group maps straight to its
+	// repositories, which Group.UnmarshalYAML renests, so nothing else in the document changes
+	// meaning. Refusing it would have made every command fail until the user ran a migration for
+	// a purely structural change — and the next mutation writes version 3 anyway, so the upgrade
+	// lands as a one-line diff in a file that was already committed.
+	//
+	// Anything OLDER or NEWER is still refused: the gate exists so a manifest written by a hydra
+	// that knows more than this one is never silently half-read.
+	if cfg.Version != SchemaVersion && cfg.Version != LegacySchemaVersion {
 		return nil, &ErrUnsupportedVersion{Path: path, Version: cfg.Version}
 	}
+	cfg.Version = SchemaVersion
 
 	if cfg.Paths.BareDir == "" {
 		cfg.Paths.BareDir = ".bare"
 	}
 	if cfg.Groups == nil {
-		cfg.Groups = make(map[string]map[string]Repo)
+		cfg.Groups = make(map[string]Group)
 	}
 	if cfg.Project == "" {
 		cfg.Project = filepath.Base(ProjectRoot(path))
@@ -408,7 +530,7 @@ func FindConfig(startDir string) (string, *Config, error) {
 // FindRepo locates a repo by alias across all groups.
 func (c *Config) FindRepo(alias string) (RepoRef, bool) {
 	for _, group := range c.SortedGroups() {
-		if repo, ok := c.Groups[group][alias]; ok {
+		if repo, ok := c.Groups[group].Repos[alias]; ok {
 			return RepoRef{Group: group, Alias: alias, Repo: repo}, true
 		}
 	}
@@ -419,13 +541,13 @@ func (c *Config) FindRepo(alias string) (RepoRef, bool) {
 func (c *Config) Repos() []RepoRef {
 	var refs []RepoRef
 	for _, group := range c.SortedGroups() {
-		aliases := make([]string, 0, len(c.Groups[group]))
-		for alias := range c.Groups[group] {
+		aliases := make([]string, 0, len(c.Groups[group].Repos))
+		for alias := range c.Groups[group].Repos {
 			aliases = append(aliases, alias)
 		}
 		sort.Strings(aliases)
 		for _, alias := range aliases {
-			refs = append(refs, RepoRef{Group: group, Alias: alias, Repo: c.Groups[group][alias]})
+			refs = append(refs, RepoRef{Group: group, Alias: alias, Repo: c.Groups[group].Repos[alias]})
 		}
 	}
 	return refs
@@ -444,21 +566,25 @@ func (c *Config) SortedGroups() []string {
 // SetRepo registers or replaces a repo under a group.
 func (c *Config) SetRepo(group, alias string, repo Repo) {
 	if c.Groups == nil {
-		c.Groups = make(map[string]map[string]Repo)
+		c.Groups = make(map[string]Group)
 	}
-	if c.Groups[group] == nil {
-		c.Groups[group] = make(map[string]Repo)
+	entry := c.Groups[group]
+	if entry.Repos == nil {
+		entry.Repos = make(map[string]Repo)
 	}
-	c.Groups[group][alias] = repo
+	entry.Repos[alias] = repo
+	c.Groups[group] = entry
 }
 
 // RemoveRepo drops a repo, and the group when it becomes empty.
 func (c *Config) RemoveRepo(group, alias string) {
-	if c.Groups[group] == nil {
+	if c.Groups[group].Repos == nil {
 		return
 	}
-	delete(c.Groups[group], alias)
-	if len(c.Groups[group]) == 0 {
+	delete(c.Groups[group].Repos, alias)
+	// A group with no repositories left is removed entirely, including whatever it declared. Its
+	// defaults and carried files describe repositories that are no longer there.
+	if len(c.Groups[group].Repos) == 0 {
 		delete(c.Groups, group)
 	}
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -91,9 +92,9 @@ func TestResolveCarry_AppendsWorkspaceThenRepo(t *testing.T) {
 	c := &Config{
 		Version: SchemaVersion,
 		Carry:   []CarryEntry{{From: ".shared/ca.pem", To: "certs/ca.pem"}},
-		Groups: map[string]map[string]Repo{
-			"svc": {"api": {Remote: "git@example.com:o/api.git", Carry: []CarryEntry{{Path: ".env"}}}},
-		},
+		Groups: map[string]Group{"svc": {Repos: map[string]Repo{
+			"api": {Remote: "git@example.com:o/api.git", Carry: []CarryEntry{{Path: ".env"}}},
+		}}},
 	}
 
 	got := ResolveCarry(c, "api")
@@ -106,10 +107,10 @@ func TestResolveCarry_AppendsWorkspaceThenRepo(t *testing.T) {
 
 	// A repo naming the same DESTINATION overrides how the inherited file arrives, without
 	// having to suppress it first.
-	c.Groups["svc"]["api"] = Repo{
+	c.SetRepo("svc", "api", Repo{
 		Remote: "git@example.com:o/api.git",
 		Carry:  []CarryEntry{{From: ".shared/ca.pem", To: "certs/ca.pem", Mode: CarryLink}},
-	}
+	})
 	got = ResolveCarry(c, "api")
 	if len(got) != 1 {
 		t.Fatalf("resolved = %+v, want one entry after the override", got)
@@ -120,7 +121,7 @@ func TestResolveCarry_AppendsWorkspaceThenRepo(t *testing.T) {
 }
 
 func TestResolveCarry_EmptyWhenNothingDeclared(t *testing.T) {
-	c := &Config{Version: SchemaVersion, Groups: map[string]map[string]Repo{"svc": {"api": {}}}}
+	c := &Config{Version: SchemaVersion, Groups: map[string]Group{"svc": {Repos: map[string]Repo{"api": {}}}}}
 	if got := ResolveCarry(c, "api"); got != nil {
 		t.Errorf("resolved = %+v, want nil", got)
 	}
@@ -136,21 +137,21 @@ func TestResolveCarry_EmptyWhenNothingDeclared(t *testing.T) {
 func TestRegisterRepo_PreservesEverythingElse(t *testing.T) {
 	c := &Config{
 		Version: SchemaVersion,
-		Groups: map[string]map[string]Repo{
-			"svc": {"api": {
+		Groups: map[string]Group{"svc": {Repos: map[string]Repo{
+			"api": {
 				Remote:         "git@example.com:o/api.git",
 				DefaultBranch:  "main",
 				BranchPattern:  "{kind}/{slug}",
 				BranchProvider: "/usr/local/bin/branch-name",
 				Branches:       []string{"main", "stage", "prod"},
 				Carry:          []CarryEntry{{Path: ".env"}},
-			}},
-		},
+			},
+		}}},
 	}
 
 	c.RegisterRepo("svc", "api", "git@example.com:o/api.git", "master")
 
-	got := c.Groups["svc"]["api"]
+	got := c.Groups["svc"].Repos["api"]
 	if got.DefaultBranch != "master" {
 		t.Errorf("default branch = %q, want the new value", got.DefaultBranch)
 	}
@@ -166,7 +167,119 @@ func TestRegisterRepo_PreservesEverythingElse(t *testing.T) {
 
 	// An empty value must not blank what a previous fetch resolved.
 	c.RegisterRepo("svc", "api", "", "")
-	if got := c.Groups["svc"]["api"]; got.DefaultBranch != "master" || got.Remote == "" {
+	if got := c.Groups["svc"].Repos["api"]; got.DefaultBranch != "master" || got.Remote == "" {
 		t.Errorf("an empty re-registration blanked a field: %+v", got)
+	}
+}
+
+// A version-2 manifest maps a group straight to its repositories. It must keep loading — refusing
+// would make every command fail until the user ran a migration for a purely structural change — and
+// it must be written back as version 3, so the upgrade lands as a one-line diff in a file that was
+// already committed.
+func TestLoadUpgradesLegacyGroupShape(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, `# Team manifest — reviewed in PR #412
+version: "2"
+project: shop
+paths:
+    bare_dir: .bare
+groups:
+    backend:
+        api:
+            # the only repo anyone should add to
+            remote: git@example.com:org/api.git
+            default_branch: main
+owners:
+    - platform-team
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("a version-2 manifest must still load: %v", err)
+	}
+	if cfg.Version != SchemaVersion {
+		t.Errorf("version = %q, want it normalised to %q", cfg.Version, SchemaVersion)
+	}
+	ref, ok := cfg.FindRepo("api")
+	if !ok {
+		t.Fatal("the legacy shape did not renest into Group.Repos")
+	}
+	if ref.Repo.Remote == "" || ref.Group != "backend" {
+		t.Errorf("renested wrongly: %+v", ref)
+	}
+
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(got), `version: "3"`) {
+		t.Errorf("the upgrade was not written:\n%s", got)
+	}
+	if !strings.Contains(string(got), "repos:") {
+		t.Errorf("the v3 shape was not written:\n%s", got)
+	}
+	// The upgrade relocates every repo entry, which is exactly when a manifest is most likely to
+	// be annotated — so the merge aligns the shapes before comparing rather than losing them.
+	for _, want := range []string{
+		"# Team manifest — reviewed in PR #412",
+		"# the only repo anyone should add to",
+		"platform-team",
+	} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("%q did not survive the upgrade:\n%s", want, got)
+		}
+	}
+
+	// And it is idempotent: loading the upgraded file gives the same repo.
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("reload after upgrade: %v", err)
+	}
+	if _, ok := again.FindRepo("api"); !ok {
+		t.Error("api did not survive a round trip through version 3")
+	}
+}
+
+// A group's `path:` places its worktrees, which is the design that replaced putting a slash in the
+// group NAME — a slash made the selector, completion and rename semantics ambiguous.
+func TestGroupDir(t *testing.T) {
+	if got := (Group{}).Dir("backend"); got != "backend" {
+		t.Errorf("an empty path means the group name, got %q", got)
+	}
+	if got := (Group{Path: "platform/infra"}).Dir("infra"); got != "platform/infra" {
+		t.Errorf("Dir = %q, want the declared path", got)
+	}
+}
+
+// The chain the model was missing: a group's value beats the workspace's, and a repo's beats both.
+func TestResolveDefaults_NearestLevelWins(t *testing.T) {
+	c := &Config{
+		Version:  SchemaVersion,
+		Defaults: Defaults{BaseBranch: "main", BranchPattern: "{slug}"},
+		Groups: map[string]Group{
+			"backend": {
+				Defaults: Defaults{BaseBranch: "develop"},
+				Repos: map[string]Repo{
+					"api":      {Remote: "r"},
+					"monorepo": {Remote: "r", BranchPattern: "{kind}/{slug}"},
+				},
+			},
+		},
+	}
+
+	// The group overrides the workspace; the workspace still supplies what the group omits.
+	if got := ResolveDefaults(c, "api"); got.BaseBranch != "develop" || got.BranchPattern != "{slug}" {
+		t.Errorf("api resolved to %+v", got)
+	}
+	// The repo overrides the group.
+	if got := ResolveDefaults(c, "monorepo"); got.BranchPattern != "{kind}/{slug}" || got.BaseBranch != "develop" {
+		t.Errorf("monorepo resolved to %+v", got)
+	}
+	// An unknown alias falls back to the workspace rather than inventing anything.
+	if got := ResolveDefaults(c, "nope"); got.BaseBranch != "main" {
+		t.Errorf("unknown alias resolved to %+v", got)
 	}
 }

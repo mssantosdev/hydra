@@ -196,7 +196,7 @@ type declaredRepo struct {
 func declaredRepos(c *config.Config) []declaredRepo {
 	var out []declaredRepo
 	for group, repos := range c.Groups {
-		for alias, repo := range repos {
+		for alias, repo := range repos.Repos {
 			// Do NOT guess "main". A manifest entry can legitimately lack a default
 			// branch, and a repository whose branches are prod/stage then failed with
 			// `branch "main" does not exist on origin` — a guess presented as the

@@ -445,7 +445,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
       <div class="tree">shop<span class="c">/</span>                                  <span class="c"># project — one workspace</span>
 ├── .hydra<span class="c">/</span>
-│   ├── config.yaml                  <span class="c"># the manifest (schema 2)</span>
+│   ├── config.yaml                  <span class="c"># the manifest (schema 3)</span>
 │   └── state.yaml                   <span class="c"># topic membership, under flock</span>
 ├── .bare<span class="c">/</span>
 │   ├── checkout-api.git             <span class="c"># git data, once per repo</span>
@@ -1006,7 +1006,7 @@ feat/split-tender
       <p><span lang="en"><strong><code>projects.yaml</code></strong> sits beside it: the global registry mapping project names to workspace roots. Machine state, not hand-edited.</span><span lang="pt-BR"><strong><code>projects.yaml</code></strong> fica ao lado: o registro global que mapeia nomes de projeto às raízes do workspace. Estado da máquina, não editado manualmente.</span></p>
 
       <figure>
-        <div class="plate">version: <span class="hi">"2"</span>                    <span class="dim"># must be exactly "2"</span>
+        <div class="plate">version: <span class="hi">"3"</span>                    <span class="dim"># must be exactly "2"</span>
 project: shop
 paths:
   bare_dir: <span class="hi">".bare"</span>           <span class="dim"># git data only — never work here</span>

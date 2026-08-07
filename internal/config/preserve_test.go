@@ -132,7 +132,7 @@ groups:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	delete(cfg.Groups["svc"], "worker")
+	cfg.RemoveRepo("svc", "worker")
 	delete(cfg.Groups, "infra")
 	if err := cfg.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -157,7 +157,7 @@ groups:
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if _, ok := reloaded.Groups["svc"]["api"]; !ok {
+	if _, ok := reloaded.Groups["svc"].Repos["api"]; !ok {
 		t.Error("api did not survive the removal of its sibling")
 	}
 	if len(reloaded.Groups) != 1 {
