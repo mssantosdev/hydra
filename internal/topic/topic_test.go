@@ -300,3 +300,92 @@ func seedState(t *testing.T, root, body string) {
 		t.Fatalf("write: %v", err)
 	}
 }
+
+// Containment is opt-in and recorded, never inferred. The refusal in this package's doc is about
+// deriving membership from branch STEMS — a fuzzy query used as a destructive handle — which a
+// declared parent has nothing to do with.
+func TestSetParentAndChildren(t *testing.T) {
+	root := t.TempDir()
+	s := Open(root)
+	for _, id := range []string{"epic", "feat-a", "feat-b"} {
+		if err := s.Attach(id, Member{Repo: "api", Branch: id}); err != nil {
+			t.Fatalf("attach %s: %v", id, err)
+		}
+	}
+	for _, child := range []string{"feat-a", "feat-b"} {
+		if err := s.SetParent(child, "epic"); err != nil {
+			t.Fatalf("set parent on %s: %v", child, err)
+		}
+	}
+
+	kids, err := s.Children("epic")
+	if err != nil {
+		t.Fatalf("children: %v", err)
+	}
+	if len(kids) != 2 {
+		t.Fatalf("children = %+v, want two", kids)
+	}
+	// A topic with no parent is flat, which stays the default.
+	if top, _, _ := s.Get("epic"); top.Parent != "" {
+		t.Errorf("epic should have no parent, got %q", top.Parent)
+	}
+}
+
+// A cycle would make closeability non-terminating and force every walk to carry a visited set.
+// Refusing the edge that closes it keeps every reader simple.
+func TestSetParentRefusesCycles(t *testing.T) {
+	root := t.TempDir()
+	s := Open(root)
+	for _, id := range []string{"a", "b", "c"} {
+		if err := s.Attach(id, Member{Repo: "api", Branch: id}); err != nil {
+			t.Fatalf("attach: %v", err)
+		}
+	}
+	if err := s.SetParent("b", "a"); err != nil {
+		t.Fatalf("b under a: %v", err)
+	}
+	if err := s.SetParent("c", "b"); err != nil {
+		t.Fatalf("c under b: %v", err)
+	}
+
+	// a under c would close a → b → c → a.
+	if err := s.SetParent("a", "c"); err == nil {
+		t.Error("a cycle must be refused")
+	}
+	// And the trivial self-parent.
+	if err := s.SetParent("a", "a"); err == nil {
+		t.Error("a topic must not be its own parent")
+	}
+	// Nothing was written by either refusal.
+	if top, _, _ := s.Get("a"); top.Parent != "" {
+		t.Errorf("a refused edge was recorded: %q", top.Parent)
+	}
+}
+
+// Closed is stored because closing is an act. Closeability is not, because a stored answer would be
+// wrong the moment someone rebases.
+func TestSetClosedRoundTrips(t *testing.T) {
+	root := t.TempDir()
+	s := Open(root)
+	if err := s.Attach("feat", Member{Repo: "api", Branch: "feat/x"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if top, _, _ := s.Get("feat"); top.Closed {
+		t.Error("a new topic is open")
+	}
+	if err := s.SetClosed("feat", true); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if top, _, _ := s.Get("feat"); !top.Closed {
+		t.Error("close did not persist")
+	}
+	if err := s.SetClosed("feat", false); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if top, _, _ := s.Get("feat"); top.Closed {
+		t.Error("reopen did not persist")
+	}
+	if err := s.SetClosed("nope", true); err == nil {
+		t.Error("closing an unrecorded topic must fail rather than create one")
+	}
+}

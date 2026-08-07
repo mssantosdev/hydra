@@ -26,6 +26,7 @@ var (
 	startFrom     string
 	startAll      bool
 	startDryRun   bool
+	startParent   string
 	startNoAssign bool
 )
 
@@ -101,6 +102,8 @@ func init() {
 	startCmd.Flags().StringVar(&startFrom, "from", "", "Base ref for a brand-new branch")
 	startCmd.Flags().BoolVar(&startAll, "all", false, "Target every registered repository")
 	startCmd.Flags().BoolVar(&startDryRun, "dry-run", false, "Report what would happen and change nothing")
+	startCmd.Flags().StringVar(&startParent, "parent", "",
+		"Record this topic as contained by another (opt-in; without it the topic is flat)")
 	startCmd.Flags().BoolVar(&startNoAssign, "no-assign", false,
 		"Create the worktrees without recording topic membership")
 }
@@ -204,6 +207,24 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// state a detach-first removal produces, and just as invisible.
 	attachWarnings := attachStartResults(topicID, results, &payload)
 	warnings = append(warnings, attachWarnings...)
+
+	// Containment and the once-per-topic event both come after membership: a parent recorded on a
+	// topic with no members, or a "work started" notification for a topic that failed to create
+	// anything, would both be announcing something that does not exist yet.
+	if topicID != "" && startParent != "" {
+		if err := topicStore().SetParent(topicID, startParent); err != nil {
+			warnings = append(warnings, fmt.Sprintf("could not record parent %s: %v", startParent, err))
+		}
+	}
+	if topicID != "" && len(payload.Created) > 0 {
+		// ONCE, not once per worktree. Wiring a notification to post_add posts N times for one
+		// piece of work, which is how the channel gets muted.
+		topicStart, topicErr := runHookEvent("post_topic_start", topicHookContext(topicID), projectRoot)
+		warnings = append(warnings, topicStart.Warnings...)
+		if topicErr != nil {
+			warnings = append(warnings, topicErr.Error())
+		}
+	}
 
 	fillStartPayload(&payload, results)
 	_, _, failed, _ := fanout.Summarize(results)

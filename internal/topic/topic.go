@@ -54,6 +54,21 @@ type Member struct {
 type Topic struct {
 	ID      string   `yaml:"-" json:"id"`
 	Members []Member `yaml:"members" json:"members"`
+
+	// Parent is CONTAINMENT: the topic this one integrates into. It is opt-in, and a topic
+	// without one is flat — which stays the default, because depth must not tax anyone who did
+	// not ask for it.
+	//
+	// This is a recorded relationship, not one inferred from a name. The refusal in this
+	// package's doc is about deriving membership from branch STEMS, which made a fuzzy query
+	// into a destructive handle; a declared parent has nothing to do with that.
+	Parent string `yaml:"parent,omitempty" json:"parent,omitempty"`
+
+	// Closed records that the work was declared finished. It is stored because closing is an
+	// act, where CLOSEABILITY is derived — from whether children are closed and whether their
+	// branches reached this topic's, which git answers and a stored flag would lie about after
+	// a rebase.
+	Closed bool `yaml:"closed,omitempty" json:"closed,omitempty"`
 }
 
 // document is the literal shape of state.yaml.
@@ -69,6 +84,8 @@ type document struct {
 
 type topicEntry struct {
 	Members []Member `yaml:"members"`
+	Parent  string   `yaml:"parent,omitempty"`
+	Closed  bool     `yaml:"closed,omitempty"`
 }
 
 // ErrClaimed reports that a worktree already belongs to a different topic.
@@ -143,7 +160,7 @@ func (s *Store) Get(id string) (Topic, bool, error) {
 	if !ok || entry == nil || len(entry.Members) == 0 {
 		return Topic{}, false, nil
 	}
-	return Topic{ID: id, Members: sortedMembers(entry.Members)}, true, nil
+	return topicFrom(id, entry), true, nil
 }
 
 // List returns every topic ordered by id.
@@ -158,7 +175,7 @@ func (s *Store) List() ([]Topic, error) {
 		if entry == nil || len(entry.Members) == 0 {
 			continue
 		}
-		out = append(out, Topic{ID: id, Members: sortedMembers(entry.Members)})
+		out = append(out, topicFrom(id, entry))
 	}
 	return out, nil
 }
@@ -407,4 +424,94 @@ func sortedMembers(in []Member) []Member {
 		return out[i].Branch < out[j].Branch
 	})
 	return out
+}
+
+// topicFrom builds the public shape from a stored entry, so every read path reports the same
+// fields — a construction that forgets `parent` reads as a flat topic, which is exactly the kind
+// of half-applied hierarchy that is hard to see.
+func topicFrom(id string, entry *topicEntry) Topic {
+	return Topic{
+		ID:      id,
+		Members: sortedMembers(entry.Members),
+		Parent:  entry.Parent,
+		Closed:  entry.Closed,
+	}
+}
+
+// SetParent records containment. An empty parent clears it, making the topic flat again.
+//
+// A topic cannot be its own ancestor: a cycle would make closeability non-terminating, and every
+// walk over the tree would need a visited set to avoid hanging. Refusing the edge that closes the
+// cycle keeps every reader simple.
+func (s *Store) SetParent(id, parent string) error {
+	if id == parent && id != "" {
+		return &ErrCycle{ID: id, Parent: parent}
+	}
+	return s.mutate(func(doc *document) error {
+		entry, ok := doc.Topics[id]
+		if !ok {
+			return &ErrUnknown{ID: id}
+		}
+		if parent != "" {
+			if _, ok := doc.Topics[parent]; !ok {
+				return &ErrUnknown{ID: parent}
+			}
+			// Walk up from the proposed parent: if this topic is already above it, the edge
+			// would close a loop.
+			for at := parent; at != ""; {
+				next, ok := doc.Topics[at]
+				if !ok {
+					break
+				}
+				if next.Parent == id {
+					return &ErrCycle{ID: id, Parent: parent}
+				}
+				at = next.Parent
+			}
+		}
+		entry.Parent = parent
+		return nil
+	})
+}
+
+// SetClosed records that a topic's work is finished, or reopens it.
+//
+// It stores only the declaration. Whether a topic MAY be closed is derived by the caller from
+// git and from its children, because a stored answer would be wrong the moment someone rebases.
+func (s *Store) SetClosed(id string, closed bool) error {
+	return s.mutate(func(doc *document) error {
+		entry, ok := doc.Topics[id]
+		if !ok {
+			return &ErrUnknown{ID: id}
+		}
+		entry.Closed = closed
+		return nil
+	})
+}
+
+// Children returns the topics whose parent is id, ordered.
+func (s *Store) Children(id string) ([]Topic, error) {
+	all, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	var out []Topic
+	for _, t := range all {
+		if t.Parent == id {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// ErrUnknown reports a topic id that was never recorded.
+type ErrUnknown struct{ ID string }
+
+func (e *ErrUnknown) Error() string { return fmt.Sprintf("topic %s is not recorded", e.ID) }
+
+// ErrCycle reports a parent edge that would make a topic its own ancestor.
+type ErrCycle struct{ ID, Parent string }
+
+func (e *ErrCycle) Error() string {
+	return fmt.Sprintf("topic %s cannot have %s as its parent: that would close a cycle", e.ID, e.Parent)
 }

@@ -143,6 +143,16 @@ type topicJSON struct {
 	// Dangling counts members whose worktree is gone, which "hydra doctor --fix"
 	// clears.
 	Dangling int `json:"dangling"`
+
+	// Parent is containment when declared, absent when the topic is flat — which stays the
+	// default. Reported because a recorded relationship nobody can read is indistinguishable from
+	// no relationship: `--parent` wrote it correctly and `topic list` showed nothing, so the
+	// feature looked broken.
+	Parent string `json:"parent,omitempty"`
+
+	// Closed is the declaration that the work is finished. Whether it MAY be closed is derived on
+	// demand by `topic close`, never stored.
+	Closed bool `json:"closed,omitempty"`
 }
 
 type topicListJSON struct {
@@ -225,7 +235,7 @@ func topicShowSummary(payload topicJSON) string {
 func describeTopic(t topic.Topic) topicJSON {
 	live := liveWorktreesByKey()
 
-	out := topicJSON{ID: t.ID, Members: make([]topicMemberJSON, 0, len(t.Members))}
+	out := topicJSON{ID: t.ID, Parent: t.Parent, Closed: t.Closed, Members: make([]topicMemberJSON, 0, len(t.Members))}
 	for _, member := range t.Members {
 		entry := topicMemberJSON{Repo: member.Repo, Branch: member.Branch}
 		if wt, ok := live[topicKey(member.Repo, member.Branch)]; ok {
@@ -436,6 +446,15 @@ func runTopicRemove(cmd *cobra.Command, args []string) error {
 	// 2. Enumerate targets, joining membership to the worktrees on disk. A member with
 	//    no worktree is detach-only rather than an error: that is exactly the drift an
 	//    interrupted removal leaves, and refusing here would make it unclearable.
+	// pre_topic_remove fires ONCE, before the first member is touched. Teardown detaches and
+	// commits per member, so a hook firing mid-loop would see a half-dismantled set — and this is
+	// the only point at which a check can still veto losing the whole unit of work.
+	preRemove, preErr := runHookEvent("pre_topic_remove", topicHookContext(t.ID), projectRoot)
+	if preErr != nil {
+		return preErr
+	}
+	topicRemoveWarnings := preRemove.Warnings
+
 	described := describeTopic(t)
 	live := liveWorktreesByKey()
 
@@ -479,9 +498,10 @@ func runTopicRemove(cmd *cobra.Command, args []string) error {
 	// 8. Report. partial_failure when any git step failed.
 	summary := topicRemoveSummary(payload, failures)
 	if emitErr := emitResult(cmd, output.Result{
-		Outcome: topicRemoveOutcome(failures),
-		Summary: summary,
-		Data:    payload,
+		Outcome:  topicRemoveOutcome(failures),
+		Summary:  summary,
+		Data:     payload,
+		Warnings: topicRemoveWarnings,
 	}, func() { printTopicRemoveText(payload, summary) }); emitErr != nil {
 		return emitErr
 	}

@@ -879,4 +879,19 @@ check "ui is published in the surface" \
   '"$HYDRA" commands --output json | jq -e ".data.commands[]|select(.name==\"ui\")" >/dev/null'
 
 echo
+# ------------------------------------------------ topic hierarchy
+echo "== topic hierarchy: containment, and a gate that will not lie =="
+"$HYDRA" start epic/login --repos api --topic epic-login --output json >/dev/null
+"$HYDRA" start feat/social --repos api --topic feat-social --parent epic-login --from epic/login --output json >/dev/null
+check "parent is recorded, not inferred"  '"$HYDRA" topic list --output json | jq -e ".data.topics[]|select(.id==\"feat-social\")|.parent==\"epic-login\""'
+check "a leaf closes immediately"         '"$HYDRA" topic close feat-social --output json | jq -e ".data.closed==true"'
+# Real work on the child, so the merge check has something to refuse. Until now the branches share
+# a commit, and an identical branch IS trivially an ancestor.
+( cd backend/api-feat-social && git -c user.email=t@t -c user.name=T commit -q --allow-empty -m work )
+check "epic refuses while a child is unmerged" '{ "$HYDRA" topic close epic-login --output json || true; } | jq -e ".error.code==\"topic_not_closeable\""'
+check "and names the member that is behind"    '{ "$HYDRA" topic close epic-login --output json || true; } | jq -e ".error.details.blocked_by[0].reason==\"not_merged\""'
+( cd backend/api-epic-login && git -c user.email=t@t -c user.name=T merge -q --no-edit feat/social )
+check "closes once the work has landed"        '"$HYDRA" topic close epic-login --output json | jq -e ".data.closed==true"'
+check "reopen is available"                    '"$HYDRA" topic close epic-login --reopen --output json | jq -e ".data.closed==false"'
+
 echo "ALL $pass ASSERTIONS PASSED"

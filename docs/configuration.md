@@ -205,6 +205,10 @@ Declarative shell commands run at lifecycle events. Each event holds an ordered 
 | `pre_remove` | Before a worktree is removed |
 | `post_remove` | After a worktree is removed (cwd is project root) |
 | `post_sync` | After a successful sync |
+| `post_topic_start` | **Once**, after `start --topic` created its worktrees |
+| `pre_topic_close` | **Once**, before a topic is closed — the only place a check can veto finishing a unit of work |
+| `post_topic_close` | **Once**, after a topic is closed |
+| `pre_topic_remove` | **Once**, before the first member of a topic is touched |
 
 Hook entry:
 
@@ -237,6 +241,13 @@ takes minutes; a bound that fires during normal work would be worse than none.
 `HYDRA_TOPIC` and `HYDRA_SOURCE_WORKTREE` are always exported, even empty, so a hook running under
 `set -u` can test them without aborting on an unset variable. Use `HYDRA_SOURCE_WORKTREE` rather than
 rebuilding `<root>/<group>/<repo>` — `--as` can override the derived name.
+
+The four topic events fire **once per operation**, not once per worktree. Wiring a notification to
+`post_add` posts one message per created worktree for a single piece of work; the fix is not a
+`run_once:` flag — that papers over a modelling error — but an event whose shape matches the thing it
+reports. `HYDRA_TOPIC` is set for all four; `HYDRA_REPO`, `HYDRA_BRANCH` and `HYDRA_WORKTREE_PATH` are
+empty, because a topic-level event has no single one and inventing one would make the hook look
+per-worktree.
 
 **Important:** a failing hook never rolls back work Hydra already completed. For example, a failed `post_add` hook does not remove the worktree — fix the hook and run `hydra hooks run post_add`.
 

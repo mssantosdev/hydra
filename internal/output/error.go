@@ -26,8 +26,12 @@ const (
 	CodePartialFailure           = "partial_failure"
 	CodeGitFailed                = "git_failed"
 	// Topic membership, the store behind it, and input the caller must supply.
-	CodeTopicUnknown            = "topic_unknown"
-	CodeTopicConflict           = "topic_conflict"
+	CodeTopicUnknown  = "topic_unknown"
+	CodeTopicConflict = "topic_conflict"
+	// CodeTopicNotCloseable: children are open, or their work has not reached this topic's
+	// branch yet. `details.blocked_by` names every reason at once, so a caller fixes them in one
+	// pass rather than one refusal at a time. Not retryable — something has to change first.
+	CodeTopicNotCloseable       = "topic_not_closeable"
 	CodeStateVersionUnsupported = "state_version_unsupported"
 	CodeBranchProviderFailed    = "branch_provider_failed"
 	// CodeBusy is the ONLY retryable code: a git lock or the topic state lock was
@@ -66,6 +70,7 @@ var exitCodes = map[string]int{
 	CodeGitFailed:                1,
 	CodeTopicUnknown:             1,
 	CodeTopicConflict:            1,
+	CodeTopicNotCloseable:        1,
 	CodeStateVersionUnsupported:  2,
 	CodeBranchProviderFailed:     1,
 	CodeBusy:                     6,

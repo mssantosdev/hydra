@@ -266,10 +266,11 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		// "another hydra is mid-write, retry me" from a real failure.
 		CodeBusy: 6,
 		// needs_input replaces blocking on a prompt when output is machine-readable.
-		CodeNeedsInput:     7,
-		CodeProjectExists:  1,
-		CodeUnknownCommand: 1,
-		CodeInternal:       1,
+		CodeNeedsInput:        7,
+		CodeTopicNotCloseable: 1,
+		CodeProjectExists:     1,
+		CodeUnknownCommand:    1,
+		CodeInternal:          1,
 	}
 
 	got := ExitCodes()

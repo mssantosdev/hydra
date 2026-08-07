@@ -40,9 +40,7 @@ consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 `--topic <id>` → recorded members. `--repos`/`--group`/`--all` → those repositories.
 `--filter dirty|behind|branch:<glob>` → narrow further. Combine freely; they intersect.
 
-**`topic_unknown`?** Never recorded. `details.known` lists the real ids; `topic attach <id> <worktree>` records it. Do not retry, and do not guess a branch name.
-
-**`busy`?** Another hydra holds a lock. Retry with backoff. This is the ONLY code worth retrying.
+**`topic_unknown`?** Never recorded. `details.known` lists real ids; `topic attach` records one. Never guess from a branch name. **`topic_not_closeable`?** `details.blocked_by` names every open or unmerged child at once. **`busy`?** A lock was held — retry with backoff, the ONLY retryable code.
 
 **`worktree_dirty`?** Uncommitted work is in the way. For `sync`, choose `--dirty stash|reset|skip`. For `remove`, commit or pass `--force`. Never `--force` blindly.
 
@@ -63,7 +61,7 @@ Without a declaration only default branches are restored, and `apply -` replays 
 | `start` | one branch across repositories; records a topic | `--repos`, `--topic`, `--slug`, `--kind` |
 | `apply` | create the worktrees described by JSON on stdin | `-`, `--dry-run` |
 | `remove` | delete a worktree | `--delete-branch`, `--force`, `--yes` |
-| `topic` | `list`, `show`, `attach`, `detach`, `remove` | `--with-worktrees`, `--yes` |
+| `topic` | `list`, `show`, `attach`, `detach`, `close`, `remove` | `--reopen`, `--with-worktrees`, `--yes` |
 | `list` | list worktrees | `--topic`, `--repos`, `--group`, `--filter`, `--against` |
 | `status` | bare on TTY: full-screen board; agents: `--output json` | `--topic`, `--filter`, `--against`, `--all` |
 | `path` | print one worktree's absolute path | `--topic` |
@@ -98,6 +96,7 @@ Without a declaration only default branches are restored, and `apply -` replays 
 | `worktree_name_conflict` | 1 | a name does not identify exactly one worktree |
 | `worktree_dirty` | 5 | destructive op blocked by uncommitted changes |
 | `topic_unknown` | 1 | id not recorded; `details.known` lists valid ids |
+| `topic_not_closeable` | 1 | a child is open or unmerged; `details.blocked_by` names every reason |
 | `topic_conflict` | 1 | that worktree already belongs to another topic |
 | `branch_provider_failed` | 1 | configured `branch_provider` failed or timed out |
 | `hook_failed` | 1 | a non-`optional` hook exited non-zero |

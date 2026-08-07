@@ -181,6 +181,19 @@ type Hooks struct {
 	PreRemove  []Hook `yaml:"pre_remove,omitempty"`
 	PostRemove []Hook `yaml:"post_remove,omitempty"`
 	PostSync   []Hook `yaml:"post_sync,omitempty"`
+
+	// The topic events fire ONCE PER OPERATION, not once per worktree. Wiring a notification to
+	// post_add posts N times for one piece of work, and the instinct — a run_once: flag — papers
+	// over the modelling error: notification was never a per-worktree event. The level says whose
+	// config a hook is; the event shape says how often it fires.
+	//
+	// PreTopicClose is the only place a check can veto finishing a unit of work. post_add fires
+	// before any work exists and pre_remove fires when it is being thrown away, so a quality gate
+	// had no honest home until this existed.
+	PostTopicStart []Hook `yaml:"post_topic_start,omitempty"`
+	PreTopicClose  []Hook `yaml:"pre_topic_close,omitempty"`
+	PostTopicClose []Hook `yaml:"post_topic_close,omitempty"`
+	PreTopicRemove []Hook `yaml:"pre_topic_remove,omitempty"`
 }
 
 // RepoRef is a flattened (group, alias, repo) tuple.
@@ -608,13 +621,24 @@ func (c *Config) HooksFor(event string) ([]Hook, bool) {
 		return c.Hooks.PostRemove, true
 	case "post_sync":
 		return c.Hooks.PostSync, true
+	case "post_topic_start":
+		return c.Hooks.PostTopicStart, true
+	case "pre_topic_close":
+		return c.Hooks.PreTopicClose, true
+	case "post_topic_close":
+		return c.Hooks.PostTopicClose, true
+	case "pre_topic_remove":
+		return c.Hooks.PreTopicRemove, true
 	}
 	return nil, false
 }
 
 // HookEvents lists every supported hook event name, in lifecycle order.
 func HookEvents() []string {
-	return []string{"post_clone", "post_add", "pre_remove", "post_remove", "post_sync"}
+	return []string{
+		"post_clone", "post_add", "pre_remove", "post_remove", "post_sync",
+		"post_topic_start", "pre_topic_close", "post_topic_close", "pre_topic_remove",
+	}
 }
 
 // RegisterRepo records a repository's remote and default branch WITHOUT discarding anything
