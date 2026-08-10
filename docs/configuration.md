@@ -418,6 +418,8 @@ hydra doctor --output json
 
 ## See Also
 
+- [Visual guide](https://mssantosdev.github.io/hydra/) — the published walkthrough, with every
+  terminal panel copied from a real run
 - [Commands](./commands/README.md) — Command reference
 - [Configuration example](../hydra.config.yaml.example) — Annotated template
 - [skills/hydra/SKILL.md](../skills/hydra/SKILL.md) — Agent contract and error codes

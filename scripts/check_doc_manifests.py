@@ -20,11 +20,16 @@ FILES = [
     "README.md",
     "docs/design/workspace-model.md",
     "docs/guide.html",
+    # Not a doc: the template configuration.md tells you to copy into your project root. It was
+    # the seventh schema-2 manifest and the least excusable, being the one a user runs verbatim.
+    "hydra.config.yaml.example",
 ]
 
 
 def blocks(path: pathlib.Path):
     text = path.read_text()
+    if path.suffix in {".yaml", ".example"} or path.name.endswith(".yaml.example"):
+        return [text]
     if path.suffix == ".html":
         raw = re.findall(r'<div class="plate">(version:.*?)</div>', text, re.S)
         return [re.sub(r"<[^>]+>", "", b) for b in raw]
@@ -39,7 +44,7 @@ def main() -> int:
         if not path.exists():
             continue
         for index, block in enumerate(blocks(path), 1):
-            if "groups:" not in block or not block.lstrip().startswith("version:"):
+            if "groups:" not in block:
                 continue
             # Skeletons using <placeholders> or {} stand in for shape, not for a real manifest.
             after = block.split("groups:", 1)[1][:40]
@@ -50,6 +55,11 @@ def main() -> int:
             except yaml.YAMLError as exc:
                 print(f"{name} #{index}: invalid YAML: {exc}")
                 problems += 1
+                continue
+            # Decide on the PARSED document, not on the text. Requiring the block to start with
+            # "version:" silently skipped the example template, whose first line is a comment —
+            # so the one manifest a user copies verbatim was the one the check never looked at.
+            if not isinstance(doc, dict) or "version" not in doc:
                 continue
             declared = 0
             for group, value in (doc.get("groups") or {}).items():

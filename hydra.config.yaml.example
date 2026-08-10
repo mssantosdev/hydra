@@ -1,52 +1,110 @@
-# Hydra Configuration Example (schema v2)
+# Hydra configuration example (schema v3)
 #
 # Copy this to your project root as .hydra/config.yaml and customize it.
+#
+# Written by `hydra init` and, for the `groups` section, by `repo add`, `repo set` and
+# `repo remove`. Everything else here is yours to hand-edit: hydra preserves your comments and
+# any keys it does not recognise when it writes the file, so this stays a document you own.
 
-version: "2"
+version: "3"
 project: my-project
 
 paths:
   # Directory for bare Git repositories (relative to this file)
   bare_dir: ".bare"
 
-# Groups organize repositories into logical directories.
-# The map key under each group IS the repo alias — it determines both
-# .bare/<alias>.git and the worktree directory base name.
-groups:
-  backend:
-    api:
-      remote: git@github.com:org/my-project-api.git
-      default_branch: main
-    worker:
-      remote: git@github.com:org/my-project-worker.git
-      default_branch: main
-
-  frontend:
-    web:
-      remote: git@github.com:org/my-project-web.git
-      default_branch: main
-    admin:
-      remote: git@github.com:org/my-project-admin.git
-
-  infra:
-    terraform:
-      remote: git@github.com:org/infrastructure-as-code.git
+# ---------------------------------------------------------------------------
+# Workspace level
+#
+# `defaults`, `hooks` and `carry` exist at all THREE levels: here, per group, and per repo.
+# Scalars resolve nearest-wins (repo beats group beats workspace); lists append (workspace,
+# then group, then repo). What belongs at which level is your modelling choice — grouping by
+# language puts the toolchain hook on the group, grouping by domain puts it on each repo.
+# ---------------------------------------------------------------------------
 
 defaults:
   # Base branch for new worktrees when --from is not passed.
-  # Resolution chain: --from → defaults.base_branch → repo default_branch → origin/HEAD
+  # Resolution: --from → defaults.base_branch → repo default_branch → origin/HEAD
   # Leaving this empty is the normal case.
   base_branch: ""
+
+carry:
+  # Files a worktree needs that git ignores. The `from:` form reads a workspace path, so it
+  # works on a fresh clone where no previous worktree exists to copy from.
+  - from: .shared/dev-ca.pem
+    to: certs/ca.pem
 
 hooks:
   post_clone:
     - run: echo "cloned $HYDRA_REPO into $HYDRA_WORKTREE_PATH"
   post_add:
-    - run: npm install
+    - run: direnv allow            # true for every repo, so it lives at the workspace level
   pre_remove:
     - run: ./scripts/pre-remove-check.sh
   post_remove:
     - run: echo "removed $HYDRA_BRANCH"
-      optional: true
+      optional: true               # a failure warns instead of aborting the command
   post_sync:
     - run: make deps
+      timeout: 5m                  # hooks are bounded; `timeout: 0` opts out
+
+  # Four events fire ONCE per topic operation rather than once per worktree, so notifying a
+  # channel when work opens does not fire N times for N repositories.
+  post_topic_start:
+    - run: ./scripts/announce.sh "$HYDRA_TOPIC"
+
+# ---------------------------------------------------------------------------
+# Groups
+#
+# A group partitions the workspace. Schema 3 nests repositories under `repos:` so the group
+# itself can carry a path, defaults, hooks and carried files.
+# ---------------------------------------------------------------------------
+
+groups:
+  backend:
+    # Where this group's worktrees live, relative to the workspace root. Optional; defaults to
+    # the group name. This is why group names stay one path segment and `/` is rejected in them.
+    path: services
+
+    defaults:
+      base_branch: develop         # this team cuts features from develop
+
+    repos:
+      api:
+        remote: git@github.com:org/my-project-api.git
+        default_branch: main
+        # The DECLARED shape: `repo restore` creates a worktree for each of these, so this
+        # manifest alone rebuilds the workspace. Only `repo add --branches` and `repo set`
+        # write it — `add` and `start` never do, which keeps work in progress out of a
+        # committed file.
+        branches: [main, stage, prod]
+        carry:
+          - .env                   # copied from the source worktree of this repo
+        hooks:
+          post_add:
+            - run: go mod download # this repo is Go; its sibling below is not
+
+      worker:
+        remote: git@github.com:org/my-project-worker.git
+        default_branch: main
+        branches: [main]
+        hooks:
+          post_add:
+            - run: cargo fetch
+
+  frontend:
+    repos:
+      web:
+        remote: git@github.com:org/my-project-web.git
+        default_branch: main
+        branches: [main, stage]
+        carry:
+          - path: .env.local
+            mode: link             # copy (default) | link
+      admin:
+        remote: git@github.com:org/my-project-admin.git
+
+  infra:
+    repos:
+      terraform:
+        remote: git@github.com:org/infrastructure-as-code.git

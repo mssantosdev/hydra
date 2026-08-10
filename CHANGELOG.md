@@ -14,6 +14,28 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Fixed
 
+- **`hydra.config.yaml.example` was a seventh schema-2 manifest** — and the least excusable, being
+  the template `configuration.md` tells you to copy into your project root. It now shows schema 3
+  and doubles as the worked example of the three-level model: a group with its own `path` and
+  `base_branch`, per-repo `branches:` and toolchain hooks, a workspace-level `carry` entry, and a
+  once-per-topic hook.
+
+  The manifest check did not look at it, and when it was added to the list it still skipped it: the
+  filter required a block to *start* with `version:`, and the template opens with a comment. So the
+  one manifest a user runs verbatim was the one the guard ignored. The filter now decides on the
+  parsed document. Verified by un-nesting one group in the real file: it names the group and reports
+  `declares 4 repo(s), hydra sees 5` — the silent loss the check exists to catch.
+
+- **The published guide was linked from `README.md` only.** `docs/README.md` — the page someone
+  lands on when they open `docs/` — and `configuration.md`'s See Also now link it too.
+  `docs/README.md` also carried `version: "0.1.0"` in its frontmatter, read as hydra's version, and
+  0.1.0 is the one version string this repository can never publish. Nothing consumes the
+  frontmatter, so the line is gone rather than given a value to maintain.
+
+  `skills/hydra/SKILL.md` deliberately does NOT link it. The skill is the machine contract; every
+  fact in the guide is already there in denser form, and at 119 of a 120-line cap that line is worth
+  more as headroom for a future error code than as a pointer an agent cannot use.
+
 - **Six documented manifests still showed the schema-2 shape**, in the release whose headline is
   schema 3 — including the guide plate, which declared `version: "3"` above a comment reading
   `# must be exactly "2"` above a schema-2 body. A group left in the old nesting parses as a group

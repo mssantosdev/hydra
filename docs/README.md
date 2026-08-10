@@ -1,13 +1,15 @@
 ---
 title: "Hydra Documentation"
 description: "Complete guide for managing Git worktrees with Hydra"
-version: "0.1.0"
 ai_context: "Entry point for Hydra documentation: overview, quick start, and navigation"
 ---
 
 # Hydra Documentation 🐍
 
 > Manage git worktrees across many repositories — from your terminal or through AI agents.
+
+**New here?** Read the [visual guide](https://mssantosdev.github.io/hydra/) first — one page,
+every terminal panel copied from a real run, in English or Portuguese.
 
 ## What is Hydra?
 
