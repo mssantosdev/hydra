@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/huh"
+	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/config/global"
 	"github.com/mssantosdev/hydra/internal/log"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -158,6 +161,11 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 // emitGlobalConfig is the one funnel for both show and set, so a written value is
 // reported in exactly the shape a reader would have seen.
+//
+// It reports the MANIFEST too when one is loaded. "config show" promised the configuration
+// and returned three global settings, while `.hydra/config.yaml` — the file everyone calls
+// the config, holding the repos, defaults and hooks — was absent from every command. Two
+// files are both named config.yaml, so each row names the one it came from.
 func emitGlobalConfig(cmd *cobra.Command, cfg *global.GlobalConfig, changed bool) error {
 	payload := configPayload{
 		Theme:      cfg.Theme.Name,
@@ -165,23 +173,75 @@ func emitGlobalConfig(cmd *cobra.Command, cfg *global.GlobalConfig, changed bool
 		ConfigPath: global.GetConfigPath(),
 		Changed:    changed,
 	}
+	// Outside a workspace there is no manifest to read, which is why this is absent rather
+	// than empty and needs no flag to ask for it.
+	var warnings []string
+	path, projectConfig, manifestErr := nearestManifest()
+	switch {
+	case projectConfig != nil:
+		payload.Manifest = &manifestPayload{
+			Path:     path,
+			Settings: config.ExplainDefaults(projectConfig),
+		}
+	case manifestErr != nil:
+		// Staying silent here would be the worst place to do it: a manifest that cannot be
+		// parsed is exactly what someone runs `config show` to find out about.
+		warnings = append(warnings, manifestErr.Error())
+	}
 	summary := "global configuration"
 	if changed {
 		summary = "global configuration updated"
 	}
-	return emit(cmd, summary, payload, nil, func() {
+	return emit(cmd, summary, payload, warnings, func() {
 		out := cmd.OutOrStdout()
 		_, _ = fmt.Fprintf(out, "Theme:  %s %s\n", cfg.Theme.Name, themes.Get(cfg.Theme.Name).Preview())
 		_, _ = fmt.Fprintf(out, "Editor: %s\n", cfg.Defaults.Editor)
 		_, _ = fmt.Fprintf(out, "Config: %s\n", global.GetConfigPath())
+		if payload.Manifest == nil {
+			return
+		}
+		_, _ = fmt.Fprintf(out, "\nManifest: %s\n", payload.Manifest.Path)
+		for _, s := range payload.Manifest.Settings {
+			_, _ = fmt.Fprintf(out, "  %-28s %-22s %s\n", s.Key, s.Value, s.From)
+		}
 	})
 }
 
+// nearestManifest finds the manifest for the current directory, or returns nil outside a
+// workspace.
+//
+// It reads the file directly rather than using the resolved globals, because `config` is in
+// commandsWithoutProject — it must work outside a workspace, so nothing has resolved a project
+// by the time this runs. Reading here also avoids mutating the globals for a command that has
+// no business owning them.
+func nearestManifest() (string, *config.Config, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", nil, nil
+	}
+	path, loaded, err := config.FindConfig(wd)
+	if err != nil {
+		// No manifest at all is the normal case outside a workspace and not worth a warning.
+		// A manifest that exists and cannot be read is worth one, and the caller decides.
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil, nil
+		}
+		return "", nil, err
+	}
+	return path, loaded, nil
+}
+
 type configPayload struct {
-	Theme      string `json:"theme"`
-	Editor     string `json:"editor"`
-	ConfigPath string `json:"config_path"`
-	Changed    bool   `json:"changed,omitempty"`
+	Theme      string           `json:"theme"`
+	Editor     string           `json:"editor"`
+	ConfigPath string           `json:"config_path"`
+	Manifest   *manifestPayload `json:"manifest,omitempty"`
+	Changed    bool             `json:"changed,omitempty"`
+}
+
+type manifestPayload struct {
+	Path     string                   `json:"path"`
+	Settings []config.ResolvedSetting `json:"settings"`
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {

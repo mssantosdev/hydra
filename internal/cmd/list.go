@@ -110,7 +110,20 @@ func runList(cmd *cobra.Command, args []string) error {
 		data = listProjectPayload{Worktrees: []worktreeJSON{}, Total: 0}
 	}
 
-	return emit(cmd, fmt.Sprintf("%d worktree(s)", total), data, warnings, func() {
+	// Advertise the inverse. `apply` consumes exactly what this command emits, but nothing
+	// about the name "list" says so — it was discoverable only from `apply --help` or from
+	// `repo restore`'s own hint, both of which you only reach if you already knew. Naming it
+	// here means the round trip is visible from the end you are standing at.
+	next := []output.Next{{
+		Argv: []string{"hydra", "apply", "-"},
+		Why:  "replay this exact set of worktrees in another workspace",
+	}}
+	return emitResult(cmd, output.Result{
+		Summary:  fmt.Sprintf("%d worktree(s)", total),
+		Data:     data,
+		Warnings: warnings,
+		Next:     next,
+	}, func() {
 		renderListText(cmd, listAll, projects)
 	})
 }

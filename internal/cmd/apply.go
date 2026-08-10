@@ -109,23 +109,34 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
 		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
 	}
-	// The "-" argument is accepted and required by convention rather than parsed: it
-	// makes "reads stdin" visible in the command line, the way `kubectl apply -f -`
-	// does, instead of a bare `hydra apply` that blocks with no explanation.
+	// "-" means stdin, and stays required by convention rather than parsed: it makes "reads
+	// stdin" visible in the command line, the way `kubectl apply -f -` does, instead of a
+	// bare `hydra apply` that blocks with no explanation.
+	//
+	// A PATH is accepted too, because an agent that execs without a shell cannot redirect:
+	// `< work.json` is shell composition, so stdin-only forced every non-shell caller to
+	// plumb a pipe to pass a file it already had on disk. Same document, one more source.
+	source := cmd.InOrStdin()
+	from := "stdin"
 	if len(args) == 1 && args[0] != "-" {
-		return output.Errorf(output.CodeInternal,
-			"apply reads JSON on stdin; pass - as the only argument").
-			WithDetail("argument", args[0])
+		f, err := os.Open(args[0])
+		if err != nil {
+			return output.Wrap(output.CodeInternal, err,
+				"apply could not read %q; pass a readable file or - for stdin", args[0]).
+				WithDetail("argument", args[0])
+		}
+		defer func() { _ = f.Close() }()
+		source, from = f, args[0]
 	}
 
-	items, warnings, err := readApplyItems(cmd.InOrStdin())
+	items, warnings, err := readApplyItems(source)
 	if err != nil {
 		return err
 	}
 	if len(items) == 0 {
 		return output.Errorf(output.CodeNeedsInput,
-			"stdin described no worktrees").
-			WithDetail("missing", []string{"stdin"}).
+			"%s described no worktrees", from).
+			WithDetail("missing", []string{from}).
 			WithDetail("reason", "expected the shape \"hydra list --output json\" emits")
 	}
 

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -218,4 +219,101 @@ func repoDefaults(r Repo) Defaults {
 		BranchPattern:  r.BranchPattern,
 		BranchProvider: r.BranchProvider,
 	}
+}
+
+// ResolvedSetting is one effective manifest value and the level that supplied it.
+type ResolvedSetting struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	From  string `json:"from"`
+}
+
+// ExplainDefaults reports the effective manifest defaults and where each value came from.
+//
+// It exists because a three-level chain cannot be read off the file. With workspace, group and
+// repo all able to set base_branch, "why is my base develop" has no answer you can get by
+// looking — you have to run the resolution in your head across three places. This runs it and
+// names the winner.
+//
+// Rows are returned for the project level and for every repo that overrides something, so the
+// output is as long as the overrides actually are rather than repo count times key count.
+func ExplainDefaults(c *Config) []ResolvedSetting {
+	if c == nil {
+		return nil
+	}
+	var out []ResolvedSetting
+	for _, s := range settingsOf(c.Defaults) {
+		s.From = "project"
+		out = append(out, s)
+	}
+
+	aliases := make([]string, 0, len(c.Groups))
+	for group, g := range c.Groups {
+		for alias := range g.Repos {
+			_ = group
+			aliases = append(aliases, alias)
+		}
+	}
+	sort.Strings(aliases)
+
+	for _, alias := range aliases {
+		ref, ok := c.FindRepo(alias)
+		if !ok {
+			continue
+		}
+		// Only report a repo row where the resolved value differs from the project level, so a
+		// workspace whose repos all inherit shows one block instead of a wall.
+		effective := ResolveDefaults(c, alias)
+		for _, s := range settingsOf(effective) {
+			if base := valueOf(c.Defaults, s.Key); base == s.Value {
+				continue
+			}
+			s.From = originOf(c, ref, s.Key)
+			s.Key = alias + "." + s.Key
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// originOf names the nearest level that sets key for a repo. The chain is project → group →
+// repo, nearest wins, so it is walked from the far end and the last setter is the answer.
+func originOf(c *Config, ref RepoRef, key string) string {
+	from := "project"
+	if valueOf(c.Groups[ref.Group].Defaults, key) != "" {
+		from = "group " + ref.Group
+	}
+	if valueOf(repoDefaults(ref.Repo), key) != "" {
+		from = "repo " + ref.Alias
+	}
+	return from
+}
+
+func settingsOf(d Defaults) []ResolvedSetting {
+	var out []ResolvedSetting
+	for _, key := range []string{"base_branch", "branch_pattern", "branch_provider"} {
+		if v := valueOf(d, key); v != "" {
+			out = append(out, ResolvedSetting{Key: key, Value: v})
+		}
+	}
+	if d.BranchPatternStrict {
+		out = append(out, ResolvedSetting{Key: "branch_pattern_strict", Value: "true"})
+	}
+	return out
+}
+
+func valueOf(d Defaults, key string) string {
+	switch key {
+	case "base_branch":
+		return d.BaseBranch
+	case "branch_pattern":
+		return d.BranchPattern
+	case "branch_provider":
+		return d.BranchProvider
+	case "branch_pattern_strict":
+		if d.BranchPatternStrict {
+			return "true"
+		}
+	}
+	return ""
 }
