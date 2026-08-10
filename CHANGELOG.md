@@ -10,6 +10,27 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
+## [0.5.1] - 2026-08-10
+
+### Fixed
+
+- **Six documented manifests still showed the schema-2 shape**, in the release whose headline is
+  schema 3 — including the guide plate, which declared `version: "3"` above a comment reading
+  `# must be exactly "2"` above a schema-2 body. A group left in the old nesting parses as a group
+  with ZERO repositories, so it drops one silently and looks fine to a reader who does not run it.
+  All six now show schema 3.
+
+- **The guard for that drift was inert on its first attempt.** `scripts/check_doc_manifests.py`
+  loads every documented manifest and requires `hydra repo list` to see exactly as many
+  repositories as the example declares. It was appended below check-docs-claims.sh's exit gate, so
+  a broken example printed the drift report, printed "all agree with the build", and exited 0. Now
+  above the gate, verified by exit code rather than by grepping for the message.
+
+- **`carry` was used in the guide's §10 and defined nowhere.** Now defined where it is used, in
+  both languages.
+
+0.5.0 is unchanged and still installs; these are documentation fixes only.
+
 ## [0.5.0] - 2026-08-10
 
 The manifest becomes enough on its own.
