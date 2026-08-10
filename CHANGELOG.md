@@ -199,6 +199,18 @@ and is upgraded on the next write, comments and unmodelled keys intact.
 
 ### Fixed
 
+- **Two documents claimed every command was convergent, and one command disproved it.** SKILL.md
+  invariant 3 said "every command is convergent: doing it twice is a no-op that exits 0", and
+  README repeated it. `hydra remove <name>` twice returns `worktree_unknown` at exit 1 — correctly,
+  because removing something already gone is a "no such thing", not a silent success, and hiding a
+  typo behind exit 0 is worse than reporting it.
+
+  The invariant now states what holds: creation is convergent (`add`, `start`, `apply`, `repo add`,
+  `repo restore`), and removing what is already gone is `worktree_unknown`/`topic_unknown`. The
+  asymmetry is more useful to a caller than the blanket claim was, and it is checkable. Making
+  `add` comply earlier this release fixed the one command that broke the rule for creation; it did
+  not make the rule true for removal, and the documents were never corrected to match.
+
 - **The project manifest no longer loses comments and unmodelled keys when hydra writes it.**
   `.hydra/config.yaml` is documented as the shareable, committable half of the state directory, and
   `Save` marshalled a closed struct over the whole file — so a manifest carrying

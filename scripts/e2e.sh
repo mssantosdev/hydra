@@ -113,7 +113,7 @@ check "every success envelope carries outcome and summary" \
 # example and now carries a genuine hint, so the rule is checked against a command that really has
 # nothing to suggest.
 check "next is omitted rather than null when empty" \
-  '"$HYDRA" where --output json | jq -e "has(\"next\")|not" >/dev/null'
+  '"$HYDRA" where --output json | jq -e ".outcome==\"success\" and (has(\"next\")|not)" >/dev/null'
 check "list names its inverse in next" \
   '"$HYDRA" list --output json | jq -e ".next[0].argv==[\"hydra\",\"apply\",\"-\"]" >/dev/null'
 check "error envelopes carry outcome failure" \

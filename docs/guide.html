@@ -973,11 +973,15 @@ cloned 2, 0 already present; 5 declared worktree(s)
         declared, and it never contains work in progress — nothing but <code>repo add --branches</code> and
         <code>repo set</code> writes it. A captured <code>list --output json</code> is what one machine
         <em>currently has</em>, topics included; <code>apply</code> replays that. Structure, not
-        secrets: files git ignores need <code>carry</code>.</span><span lang="pt-BR">É essa a diferença entre os dois artefatos. O <b>manifesto</b> é a forma que você
+        secrets: a restored workspace has every tracked file and none of the ignored ones, so
+        <code>carry:</code> in the manifest names the ones a worktree needs anyway &mdash; a <code>.env</code>,
+        a dev certificate &mdash; and hydra places them on creation.</span><span lang="pt-BR">É essa a diferença entre os dois artefatos. O <b>manifesto</b> é a forma que você
         declarou, e nunca contém trabalho em andamento — nada além de <code>repo add --branches</code> e
         <code>repo set</code> escreve nele. Um <code>list --output json</code> capturado é o que uma máquina
         <em>tem agora</em>, tópicos incluídos; <code>apply</code> reproduz isso. Estrutura, não
-        segredos: arquivos que o git ignora precisam de <code>carry</code>.</span></p>
+        segredos: um workspace restaurado tem todos os arquivos versionados e nenhum dos ignorados, então
+        <code>carry:</code> no manifesto nomeia os que um worktree precisa de todo jeito &mdash; um <code>.env</code>,
+        um certificado de dev &mdash; e o hydra os coloca na criação.</span></p>
     </section>
 
     <!-- ================================================== 11 ============ -->

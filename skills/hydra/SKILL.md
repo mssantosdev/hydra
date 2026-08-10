@@ -11,7 +11,7 @@ These hold for every command. Rely on them instead of probing.
 
 1. `--output json` (default when stdout is not a terminal) emits one envelope. Never scrape text.
 2. Branch on `error.code`, never on message wording. Codes are stable; messages are not.
-3. Every command is **convergent**: doing it twice is a no-op that exits 0, reported as `skipped`.
+3. **Creation is convergent**: `add`, `start`, `apply`, `repo add`, `repo restore` twice is a no-op at exit 0, reported as `skipped`. Removing what is already gone is `worktree_unknown`/`topic_unknown`, never a silent success.
 4. Nothing is inferred from a branch name. Topic membership is recorded, never guessed.
 5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`details.one_of` — hydra
    never blocks on a prompt when output is machine-readable.

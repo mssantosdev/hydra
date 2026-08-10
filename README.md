@@ -22,7 +22,7 @@ resolves a conflict, and never talks to a forge.
 - 🪝 **Hooks at every level**: Nine events, resolved workspace → group → repo, with four that fire once per topic operation instead of once per worktree
 - 🎨 **Themes**: Inherits your terminal's own colours by default; `hydra`, Tokyo Night, Catppuccin, Dracula, Nord and One Dark are all selectable
 - 🔧 **Shell integration**: Automatic directory switching with `hydra switch`
-- 🤖 **Machine-readable output**: JSON envelopes with stable `error.code` values, and every command convergent — running it twice is a no-op that exits 0
+- 🤖 **Machine-readable output**: JSON envelopes with stable `error.code` values, and creation is convergent — `add`, `start` and `apply` re-run as no-ops that exit 0. Removing something already gone is an error, not a silent success
 
 ## Installation
 
