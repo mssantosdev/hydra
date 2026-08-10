@@ -89,17 +89,18 @@ if [ -x ./hydra ] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-# --- the guide URL the binary publishes must be the guide that exists ---
-# An agent has the binary and the skill, not a repository checkout, so `commands --output json`
-# is the only place it can learn where the docs are. A URL published there and wrong is worse
-# than none, so it is checked against README's link and the guide's own canonical URL.
-if [ -x ./hydra ] && command -v jq >/dev/null 2>&1; then
-  published=$(./hydra commands --output json 2>/dev/null | jq -r '.data.docs // empty')
-  if [ -z "$published" ]; then
-    note "hydra commands publishes no docs URL, so a caller with only the binary cannot find the guide"
+# --- the guide URL the binary prints must be the guide that exists ---
+# `hydra --help` names the guide, and the agent skill carries it, so a caller with only the binary
+# can find it. A URL advertised and wrong is worse than none, so what --help prints is checked
+# against README's link, the guide's own canonical URL, and the skill.
+if [ -x ./hydra ]; then
+  printed=$(./hydra --help 2>&1 | grep -oE 'https://[a-z0-9./-]*github\.io[a-z0-9./-]*' | head -1)
+  if [ -z "$printed" ]; then
+    note "hydra --help names no guide URL, so a caller with only the binary cannot find it"
   else
-    grep -q "$published" README.md || note "README does not link the guide URL the binary publishes ($published)"
-    grep -q "$published" docs/guide.html || note "the guide does not name the URL the binary publishes ($published)"
+    grep -q "$printed" README.md || note "README does not link the guide URL --help prints ($printed)"
+    grep -q "$printed" docs/guide.html || note "the guide does not name the URL --help prints ($printed)"
+    grep -q "$printed" skills/hydra/SKILL.md || note "the agent skill does not carry the guide URL ($printed)"
   fi
 fi
 

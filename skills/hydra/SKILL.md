@@ -16,7 +16,7 @@ These hold for every command. Rely on them instead of probing.
 5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`details.one_of` — hydra
    never blocks on a prompt when output is machine-readable.
 6. A handle matching several worktrees is an error, never a silent first match.
-7. `hydra commands --output json` publishes the whole surface and the code→exit table.
+7. `hydra commands --output json` publishes the whole surface and the code→exit table. Human guide: https://mssantosdev.github.io/hydra/
 
 ## Envelope
 

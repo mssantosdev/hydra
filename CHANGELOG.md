@@ -16,17 +16,18 @@ is permanently bound to different content in the Go checksum database, so it can
 
 - **A caller with only the binary could not find the guide.** The URL lived in `README.md` and
   nowhere reachable: an agent installs hydra with `go install` plus `hydra skill --install`, so it
-  has the binary and the skill and no repository checkout. `hydra commands --output json` — already
-  the surface it reads to discover what exists — now publishes it as `docs`, and `hydra --help`
-  names it for the human. `check-docs-claims.sh` asserts the published URL against README's link
-  and the guide's own canonical URL, so a binary cannot advertise a page that is not there.
+  has the binary and the skill and no repository checkout, and all four of the places the URL sat
+  were files it cannot open.
 
-  Adding the field did not bump `surface_schema`. That rule is now written next to the constant: a
-  consumer that wants to know whether `docs` is present tests for the key, and bumping would have
-  churned every pinned reader — including this repo's own e2e check — to tell them something they
-  can see directly. A bump is for a change that makes an old reading wrong.
+  `hydra --help` now prints it, and the agent skill carries it on the invariant that already names
+  `hydra commands`. `check-docs-claims.sh` asserts what `--help` prints against README's link, the
+  guide's own canonical URL, and the skill, so the four copies cannot drift apart.
 
-  `SKILL.md` still does not carry the URL, and now does not need to.
+  It was first added to `hydra commands --output json` as a `docs` field, which was wrong: that
+  command describes COMMANDS, and a URL is not one. Fitting it there meant a new field, a schema
+  bump, a gate check and an e2e assertion — four pieces of machinery to avoid one line in a file
+  with a line free. The difficulty was the signal that the change did not belong, and it has been
+  reverted: `surface_schema` stays at 1 and the surface describes commands only.
 
 - **`hydra.config.yaml.example` was a seventh schema-2 manifest** — and the least excusable, being
   the template `configuration.md` tells you to copy into your project root. It now shows schema 3

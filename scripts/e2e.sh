@@ -627,11 +627,6 @@ echo "== 12. commands surface, and apply round-trips list =="
 check "commands publishes the surface outside a workspace" \
   '(cd "$T" && "$HYDRA" commands --output json |
     jq -e ".data.surface_schema==1 and (.data.commands|length)>20" >/dev/null)'
-# An agent installs hydra with `go install` plus `hydra skill --install`: it has the binary and the
-# skill and no repository checkout, so this is the only place it can learn where the guide is.
-check "the surface publishes the guide URL for a caller with only the binary" \
-  '(cd "$T" && "$HYDRA" commands --output json |
-    jq -e ".data.docs|test(\"^https://\")" >/dev/null)'
 check "every documented error code carries an exit status" \
   '"$HYDRA" commands --output json |
    jq -e "(.data.error_codes|length)>15 and
