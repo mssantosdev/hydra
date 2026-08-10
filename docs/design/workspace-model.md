@@ -78,15 +78,16 @@ Empty collections serialize as `null` in `data` (`created: null`) while `error.d
 ```yaml
 groups:
   svc:
-    api:
-      remote: git@github.com:org/api.git
-      default_branch: master
-      branches: [master, stage, prod]     # the declared shape
+    repos:
+      api:
+        remote: git@github.com:org/api.git
+        default_branch: master
+        branches: [master, stage, prod]   # the declared shape
 ```
 
-`branches:` is an additive optional field on `Repo`. **No schema bump**, and no dependency on the
-group-as-object work. Repo level only in this increment: a group-level list assumes repos share
-branch names (`master` vs `main`) and needs the group to be an object first.
+`branches:` is an additive optional field on `Repo`, needing no schema bump of its own. It shipped
+alongside the group-as-object work, so the example above shows the schema-3 nesting. Repo level
+only: a group-level list would assume repos share branch names (`master` vs `main`).
 
 | operation | command |
 |---|---|

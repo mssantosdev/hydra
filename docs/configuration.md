@@ -127,11 +127,12 @@ Example:
 ```yaml
 groups:
   backend:
-    api:
-      remote: git@github.com:org/my-api.git
-      default_branch: main
-    worker:
-      remote: git@github.com:org/my-worker.git
+    repos:
+      api:
+        remote: git@github.com:org/my-api.git
+        default_branch: main
+      worker:
+        remote: git@github.com:org/my-worker.git
 ```
 
 On disk:
@@ -178,10 +179,11 @@ carry:
 
 groups:
   backend:
-    api:
-      remote: git@github.com:org/my-api.git
-      carry:
-        - .env                   # from the SOURCE WORKTREE of this repo
+    repos:
+      api:
+        remote: git@github.com:org/my-api.git
+        carry:
+          - .env                 # from the SOURCE WORKTREE of this repo
 ```
 
 | Field | Type | Description |

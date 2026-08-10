@@ -89,5 +89,19 @@ if [ -x ./hydra ] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
+# --- documented manifests must actually load ---
+# Every schema-2 example was renested for schema 3 by hand, and two were missed: one group in
+# README kept the old nesting, which parses as a group with ZERO repos and silently drops the
+# repository. Eyeballing caught four and missed two, so the examples are loaded instead of read.
+#
+# This block MUST stay above the exit gate below. Appended after it, `note` set fail=1 after the
+# last thing that read it: the drift printed, the success line printed too, and the script exited 0.
+if command -v python3 >/dev/null 2>&1 && [ -x ./hydra ] && python3 -c 'import yaml' 2>/dev/null; then
+  manifest_report=$(python3 scripts/check_doc_manifests.py 2>&1) || {
+    echo "$manifest_report" >&2
+    note "a documented manifest does not load, or loses a repository"
+  }
+fi
+
 [ "$fail" -eq 0 ] || { echo "check-docs-claims: docs contradict the build" >&2; exit 1; }
-echo "check-docs-claims: version, theme, card, command count and hook env all agree with the build"
+echo "check-docs-claims: version, theme, card, command count, hook env and documented manifests agree with the build"

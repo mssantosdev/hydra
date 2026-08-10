@@ -162,10 +162,10 @@ For AI agents and automation, use the embedded skill contract:
 
 ## Example Configuration
 
-`.hydra/config.yaml` (schema v2):
+`.hydra/config.yaml` (schema v3):
 
 ```yaml
-version: "2"
+version: "3"
 project: my-project
 
 paths:
@@ -173,14 +173,17 @@ paths:
 
 groups:
   backend:
-    api:
-      remote: git@github.com:org/my-api.git
-      default_branch: main
-    worker:
-      remote: git@github.com:org/my-worker.git
+    repos:
+      api:
+        remote: git@github.com:org/my-api.git
+        default_branch: main
+        branches: [main, stage]
+      worker:
+        remote: git@github.com:org/my-worker.git
   frontend:
-    web:
-      remote: git@github.com:org/my-web.git
+    repos:
+      web:
+        remote: git@github.com:org/my-web.git
 
 defaults:
   base_branch: ""   # usually leave empty; see configuration.md

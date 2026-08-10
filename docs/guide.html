@@ -1057,17 +1057,23 @@ cloned 2, 0 already present; 5 declared worktree(s)
       <p><span lang="en"><strong><code>projects.yaml</code></strong> sits beside it: the global registry mapping project names to workspace roots. Machine state, not hand-edited.</span><span lang="pt-BR"><strong><code>projects.yaml</code></strong> fica ao lado: o registro global que mapeia nomes de projeto às raízes do workspace. Estado da máquina, não editado manualmente.</span></p>
 
       <figure>
-        <div class="plate">version: <span class="hi">"3"</span>                    <span class="dim"># must be exactly "2"</span>
+        <div class="plate">version: <span class="hi">"3"</span>                    <span class="dim"># must be exactly "3"</span>
 project: shop
 paths:
   bare_dir: <span class="hi">".bare"</span>           <span class="dim"># git data only — never work here</span>
 groups:
   backend:
-    api:
-      remote: git@github.com:org/my-api.git
-      default_branch: main    <span class="dim"># unsuffixed worktree dir is this branch</span>
-    worker:
-      remote: git@github.com:org/my-worker.git
+    path: services            <span class="dim"># optional; defaults to the group name</span>
+    defaults:
+      base_branch: develop    <span class="dim"># this family branches off develop</span>
+    repos:                    <span class="dim"># schema 3 nests repos under this key</span>
+      api:
+        remote: git@github.com:org/my-api.git
+        default_branch: main  <span class="dim"># unsuffixed worktree dir is this branch</span>
+        branches: [main, stage]  <span class="dim"># the declared shape repo restore creates</span>
+        carry: [.env]         <span class="dim"># ignored files a worktree needs anyway</span>
+      worker:
+        remote: git@github.com:org/my-worker.git
 defaults:
   base_branch: ""             <span class="dim"># fallback when creating a branch without --from</span>
 hooks:
