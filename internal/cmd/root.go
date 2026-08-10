@@ -63,7 +63,11 @@ It organizes work as project -> group -> repo -> worktree: a bare repository hol
 git data only, and every worktree is a real sibling directory under its group.
 
 Every command emits a machine-readable JSON envelope with --output json (and by
-default whenever stdout is not a terminal), so scripts and agents never scrape text.`,
+default whenever stdout is not a terminal), so scripts and agents never scrape text.
+
+Guide: https://mssantosdev.github.io/hydra/
+"hydra commands" describes the whole surface, and publishes that link as "docs" so a
+caller with only the binary can find it.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
