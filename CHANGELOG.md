@@ -10,7 +10,24 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
-## [Unreleased]
+## [0.5.0] - 2026-08-10
+
+The manifest becomes enough on its own.
+
+Before this release a manifest recorded which repositories a workspace had, and nothing about the
+shape of it — so reproducing a setup meant sending someone a captured `hydra list --output json`,
+which carried that machine's work-in-progress and topic membership along with it. `branches:` fixes
+that: a manifest now declares what each repo keeps checked out, `repo restore` creates exactly that,
+and work in progress cannot leak in because only `repo add --branches` and `repo set` ever write it.
+
+Schema 3 makes a group an object, so the level that means "these repos belong together" finally has
+somewhere to put a path, defaults, hooks and carried files. `defaults`, `hooks` and `carry` now exist
+at all three levels, resolving workspace to group to repo — scalars nearest-wins, lists appending.
+What belongs at which level is your modelling choice, not hydra's.
+
+**Breaking**: `groups.<group>` is now an object with a `repos:` key. A schema-2 manifest still loads
+and is upgraded on the next write, comments and unmodelled keys intact.
+
 
 ### Added
 
@@ -150,6 +167,35 @@ is permanently bound to different content in the Go checksum database, so it can
   what a hook receives instead of reading it off a page — and `make gate` asserts the guide and the
   field reference against that list. The published page advertised eight variables for one commit
   after two more existed, which is exactly the drift a self-describing surface prevents.
+
+- **`hydra config show` reports the manifest, with the level each value came from.** It promised the
+  configuration and returned three global settings; `.hydra/config.yaml` — the file everyone calls
+  the config, holding the repos, defaults and hooks — was absent from every command, and two files
+  are both named `config.yaml`. Each row now names its source:
+
+  ```
+  base_branch        master           project
+  a.base_branch      develop          group g
+  a.branch_pattern   feat/{slug}      repo a
+  ```
+
+  The `from` column is the point. With workspace, group and repo all able to set `base_branch`,
+  "why is my base develop" had no answer you could read off the file — you had to run the
+  resolution across three places yourself. Rows appear for the project level and for repos that
+  actually override something, so a workspace whose repos all inherit shows one block rather than
+  repo count times key count. A manifest that exists and cannot be parsed is now a warning:
+  staying silent is worst in the command someone runs to find that out.
+
+- **`hydra list` names its inverse.** `apply` consumes exactly what `list` emits, but nothing about
+  the name said so — it was discoverable only from `apply --help` or `repo restore`'s hint, both of
+  which you reach only if you already knew. `list` now emits
+  `next: [{argv: ["hydra","apply","-"]}]`, so the round trip is visible from the end you are
+  standing at.
+
+- **`hydra apply` accepts a file path as well as `-`.** `< work.json` is shell composition, so
+  stdin-only forced every caller that execs without a shell to plumb a pipe for a file it already
+  had on disk. Same document, one more source; a missing file names itself rather than failing as
+  an empty document.
 
 ### Fixed
 

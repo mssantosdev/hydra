@@ -189,7 +189,7 @@ func runRepoList(cmd *cobra.Command, args []string) error {
 	}
 	payload.Total = len(payload.Repos)
 
-	return emit(cmd, fmt.Sprintf("%d registered repositor(y|ies)", payload.Total), payload, nil, func() {
+	return emit(cmd, fmt.Sprintf("%d registered repo(s)", payload.Total), payload, nil, func() {
 		if payload.Total == 0 {
 			fmt.Println("No repositories registered. \"hydra repo add <url|path>\" adds one.")
 			return

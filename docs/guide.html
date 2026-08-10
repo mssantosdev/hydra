@@ -934,9 +934,50 @@ feat/split-tender
         </table>
       </div>
 
-      <p><span lang="en"><code>apply</code> pairs with <code>list</code>: pipe one's output into the other to
-        reproduce a workspace on another machine.</span><span lang="pt-BR"><code>apply</code> faz par com <code>list</code>: encaixe a saída de um na entrada do
-        outro para reproduzir um workspace em outra máquina.</span></p>
+      <p><span lang="en">A manifest can also declare the branches each repo keeps checked out, which is what makes
+        it enough on its own. <code>repo add --branches</code> records them, <code>repo set</code> changes
+        them later, and <code>repo restore</code> creates them.</span><span lang="pt-BR">Um manifesto também pode declarar as branches que cada repo mantém, o que é o que
+        o torna suficiente por si só. <code>repo add --branches</code> registra, <code>repo set</code>
+        altera depois, e <code>repo restore</code> cria.</span></p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>cat .hydra/config.yaml</b>
+<span class="dim">…</span>
+          repos:
+              checkout-api:
+                  remote: git@github.com:acme/checkout-api.git
+                  branches:
+                      - main
+                      - stage
+                      - prod
+              storefront-web:
+                  remote: git@github.com:acme/storefront-web.git
+                  branches:
+                      - main
+                      - stage
+</div>
+        <figcaption><span><span lang="en">plate 21 &middot; <span class="v">copied</span> &middot; the declared shape, schema 3</span><span lang="pt-BR">placa 21 &middot; <span class="v">copiado</span> &middot; a forma declarada, schema 3</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra repo restore --output text</b>
+<span class="dim">…</span>
+cloned 2, 0 already present; 5 declared worktree(s)
+  cloned     services/checkout-api
+  cloned     services/storefront-web
+</div>
+        <figcaption><span><span lang="en">plate 22 &middot; <span class="v">copied</span> &middot; a fresh machine, manifest only &mdash; no snapshot, no topics</span><span lang="pt-BR">placa 22 &middot; <span class="v">copiado</span> &middot; máquina nova, só o manifesto &mdash; sem snapshot, sem tópicos</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
+      </figure>
+
+      <p><span lang="en">That is the difference between the two artifacts. The <b>manifest</b> is the shape you
+        declared, and it never contains work in progress — nothing but <code>repo add --branches</code> and
+        <code>repo set</code> writes it. A captured <code>list --output json</code> is what one machine
+        <em>currently has</em>, topics included; <code>apply</code> replays that. Structure, not
+        secrets: files git ignores need <code>carry</code>.</span><span lang="pt-BR">É essa a diferença entre os dois artefatos. O <b>manifesto</b> é a forma que você
+        declarou, e nunca contém trabalho em andamento — nada além de <code>repo add --branches</code> e
+        <code>repo set</code> escreve nele. Um <code>list --output json</code> capturado é o que uma máquina
+        <em>tem agora</em>, tópicos incluídos; <code>apply</code> reproduz isso. Estrutura, não
+        segredos: arquivos que o git ignora precisam de <code>carry</code>.</span></p>
     </section>
 
     <!-- ================================================== 11 ============ -->
@@ -967,9 +1008,9 @@ feat/split-tender
           <thead><tr><th><span lang="en">group</span><span lang="pt-BR">grupo</span></th><th><span lang="en">commands</span><span lang="pt-BR">comandos</span></th></tr></thead>
           <tbody>
             <tr><td class="br"><span lang="en">workspace</span><span lang="pt-BR">workspace</span></td><td class="wrap"><code>init</code> <code>where</code> <code>project add|ls|rm</code> <code>config show|set</code></td></tr>
-            <tr><td class="br"><span lang="en">repositories</span><span lang="pt-BR">repositórios</span></td><td class="wrap"><code>repo add</code> <code>repo list</code> <code>repo branches</code> <code>repo remove</code> <code>repo restore</code></td></tr>
+            <tr><td class="br"><span lang="en">repositories</span><span lang="pt-BR">repositórios</span></td><td class="wrap"><code>repo add</code> <code>repo list</code> <code>repo set</code> <code>repo branches</code> <code>repo remove</code> <code>repo restore</code></td></tr>
             <tr><td class="br"><span lang="en">worktrees</span><span lang="pt-BR">worktrees</span></td><td class="wrap"><code>add</code> <code>new</code> <code>list</code> <code>status</code> <code>switch</code> <code>path</code> <code>remove</code> <code>prune</code></td></tr>
-            <tr><td class="br"><span lang="en">units of work</span><span lang="pt-BR">unidades de trabalho</span></td><td class="wrap"><code>start</code> <code>topic list|show|attach|detach|remove</code></td></tr>
+            <tr><td class="br"><span lang="en">units of work</span><span lang="pt-BR">unidades de trabalho</span></td><td class="wrap"><code>start</code> <code>topic list|show|attach|detach|close|remove</code></td></tr>
             <tr><td class="br"><span lang="en">execution</span><span lang="pt-BR">execução</span></td><td class="wrap"><code>run</code> <code>sync</code> <code>apply</code></td></tr>
             <tr><td class="br"><span lang="en">integration</span><span lang="pt-BR">integração</span></td><td class="wrap"><code>skill</code> <code>commands</code> <code>hooks ls|run</code> <code>completion</code> <code>init-shell</code></td></tr>
             <tr><td class="br"><span lang="en">health</span><span lang="pt-BR">saúde</span></td><td class="wrap"><code>doctor</code></td></tr>
@@ -978,13 +1019,19 @@ feat/split-tender
       </div>
 
       <p><span lang="en">Global flags apply everywhere: <code>--output</code>, <code>--project</code>,
-        <code>--config</code>, <code>--no-hooks</code>, <code>--verbose</code>. Hooks fire on
+        <code>--config</code>, <code>--no-hooks</code>, <code>--verbose</code>. Nine hook events fire:
         <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>,
-        <code>post_remove</code> and <code>post_sync</code>; a failing hook never deletes a
-        correctly created worktree.</span><span lang="pt-BR">Flags globais aplicam em tudo: <code>--output</code>, <code>--project</code>,
-        <code>--config</code>, <code>--no-hooks</code>, <code>--verbose</code>. Hooks disparam em
-        <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>,
-        <code>post_remove</code> e <code>post_sync</code>; um hook com falha nunca remove um
+        <code>post_remove</code>, <code>post_sync</code> per worktree, and
+        <code>post_topic_start</code>, <code>pre_topic_close</code>, <code>post_topic_close</code>,
+        <code>pre_topic_remove</code> <b>once per topic operation</b> — so notifying a channel when work
+        opens fires once, not once per repo. A failing hook never deletes a correctly created
+        worktree.</span><span lang="pt-BR">Flags globais aplicam em tudo: <code>--output</code>, <code>--project</code>,
+        <code>--config</code>, <code>--no-hooks</code>, <code>--verbose</code>. Nove eventos de hook
+        disparam: <code>post_clone</code>, <code>post_add</code>, <code>pre_remove</code>,
+        <code>post_remove</code>, <code>post_sync</code> por worktree, e
+        <code>post_topic_start</code>, <code>pre_topic_close</code>, <code>post_topic_close</code>,
+        <code>pre_topic_remove</code> <b>uma vez por operação de tópico</b> — então notificar um canal
+        quando o trabalho abre dispara uma vez, não uma por repo. Um hook com falha nunca remove um
         worktree criado corretamente.</span></p>
     </section>
 

@@ -178,7 +178,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		var idleErr *output.Error
 		if output.HasFault(collectWarnings) {
 			idleErr = output.Errorf(output.CodePartialFailure,
-				"%d repositor(y|ies) could not be fetched", countFaults(collectWarnings)).
+				"%d repo(s) could not be fetched", countFaults(collectWarnings)).
 				WithDetail("warnings", collectWarnings)
 		}
 		if emitErr := emitResult(cmd, output.Result{
@@ -257,7 +257,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// contradiction inverted: a caller gating on the exit status saw nothing wrong.
 	if syncErr == nil && output.HasFault(allWarnings) {
 		syncErr = output.Errorf(output.CodePartialFailure,
-			"%d repositor(y|ies) could not be fetched", countFaults(allWarnings)).
+			"%d repo(s) could not be fetched", countFaults(allWarnings)).
 			WithDetail("warnings", allWarnings)
 	}
 

@@ -11,28 +11,48 @@ Hydra uses a `.hydra/config.yaml` file in your project root (schema version `"2"
 ## Schema overview
 
 ```yaml
-version: "2"
+version: "3"
 project: my-project
 
 paths:
   bare_dir: ".bare"
 
-groups:
-  <group>:
-    <alias>:
-      remote: <git-url>
-      default_branch: main   # optional
-
+# Workspace level. Every level below carries the same three keys.
 defaults:
-  base_branch: ""           # optional
-
+  base_branch: ""            # optional
+  branch_pattern: ""         # optional
 hooks:
   post_clone: []
   post_add: []
   pre_remove: []
   post_remove: []
   post_sync: []
+carry: []                    # optional
+
+groups:
+  <group>:
+    path: <dir>              # optional; defaults to the group name
+    defaults: {}             # optional
+    hooks: {}                # optional
+    carry: []                # optional
+    repos:                   # NOTE: schema 3 nests repos under `repos:`
+      <alias>:
+        remote: <git-url>
+        default_branch: main # optional
+        branches: []         # optional; the declared shape restored by `repo restore`
+        defaults: {}         # optional
+        hooks: {}            # optional
+        carry: []            # optional
 ```
+
+Schema 3 moved repositories under a `repos:` key so a group can carry properties of its own. A
+schema-2 manifest — where `groups.<group>.<alias>` was the repo directly — still loads and is
+upgraded on the next write.
+
+`defaults`, `hooks` and `carry` exist at all three levels. **Scalars resolve nearest-wins**
+(repo beats group beats workspace); **lists append** (workspace, then group, then repo). What
+belongs at which level is your modelling choice: grouping by language puts the toolchain hook on
+the group, grouping by domain puts it on each repo. Both are correct.
 
 ## Fields
 
@@ -318,41 +338,68 @@ Manage entries with `hydra project ls`, `hydra project add`, and `hydra project 
 ### Minimal
 
 ```yaml
-version: "2"
+version: "3"
 project: my-app
 groups:
   default:
-    app:
-      remote: git@github.com:org/my-app.git
+    repos:
+      app:
+        remote: git@github.com:org/my-app.git
 ```
 
 ### Multi-service
 
+Two teams with different release flows, mixed toolchains, and a shared local certificate. Note
+where each thing sits: the branching convention is a group property because the team shares it;
+the toolchain is a repo property because `api` is Go and `worker` is Rust.
+
 ```yaml
-version: "2"
+version: "3"
 project: platform
 
 paths:
   bare_dir: ".bare"
 
+carry:
+  - from: .shared/dev-ca.pem     # every worktree in every repo needs the internal CA
+    to: certs/ca.pem
+
 groups:
   backend:
-    api:
-      remote: git@github.com:org/my-api.git
-      default_branch: main
-    worker:
-      remote: git@github.com:org/my-worker.git
-  frontend:
-    web:
-      remote: git@github.com:org/my-web.git
+    path: services               # worktrees land under services/, not backend/
+    defaults:
+      base_branch: develop       # this team cuts features from develop
+    repos:
+      api:
+        remote: git@github.com:org/my-api.git
+        default_branch: main
+        branches: [main, stage, prod]
+        carry: [.env]
+        hooks:
+          post_add:
+            - run: go mod download
+      worker:
+        remote: git@github.com:org/my-worker.git
+        branches: [main]
+        hooks:
+          post_add:
+            - run: cargo fetch
 
-defaults:
-  base_branch: ""
+  frontend:
+    repos:
+      web:
+        remote: git@github.com:org/my-web.git
+        branches: [main, stage]
+        carry: [.env.local]
 
 hooks:
   post_add:
-    - run: make setup
+    - run: direnv allow          # true for every repo, so it lives at the workspace
 ```
+
+`hydra repo restore` on a fresh machine rebuilds every repo above and the branches each declares.
+Bare-form `carry` entries have no source on a fresh clone and warn instead of failing; the
+`from:`-form entry above works, because the file lives in the workspace rather than in a worktree.
 
 ## Validation
 

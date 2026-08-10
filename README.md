@@ -11,17 +11,18 @@ resolves a conflict, and never talks to a forge.
 
 ## Features
 
-- 🌿 **Worktree Management**: Create, switch, and remove Git worktrees easily
-- 🏗️ **Group Organization**: Group related repositories (backend, frontend, infra)
-- 📌 **Topics**: A unit of work spanning repositories — record which worktrees belong together
+- 🌿 **Worktree management**: Create, switch, and remove git worktrees across many repos
+- 🏗️ **Groups**: Partition a workspace by whatever you like — domain, team, or language — with their own layout, defaults and hooks
+- 📐 **Declared shape**: `branches:` in the manifest records which branches each repo keeps, so `hydra repo restore` rebuilds a workspace from that file alone
+- 📌 **Topics**: A unit of work spanning repositories, with optional parent/child nesting and a `topic close` gate that checks children are merged first
 - 🚀 **Multi-repo start**: `hydra start` creates one branch across several repos in one command
+- 📦 **carry**: Bring the files git ignores — `.env`, dev certs — into every new worktree
 - ▶️ **Fan-out execution**: `hydra run` runs one command per worktree with no implicit shell
-- 📋 **Workspace replay**: `hydra apply -` reproduces a workspace from captured JSON
+- 📋 **Workspace replay**: `hydra apply` takes a file or stdin and reproduces a captured workspace
+- 🪝 **Hooks at every level**: Nine events, resolved workspace → group → repo, with four that fire once per topic operation instead of once per worktree
 - 🎨 **Themes**: Inherits your terminal's own colours by default; `hydra`, Tokyo Night, Catppuccin, Dracula, Nord and One Dark are all selectable
-- ⚡ **Fast**: Compiled Go binary for instant startup
-- 🔧 **Shell Integration**: Automatic directory switching with `hydra switch`
-- 🔖 **Version Visibility**: `hydra`, `hydra --help`, and `hydra --version` show version info
-- 🤖 **Machine-readable output**: JSON envelopes with stable `error.code` values for scripting and agents
+- 🔧 **Shell integration**: Automatic directory switching with `hydra switch`
+- 🤖 **Machine-readable output**: JSON envelopes with stable `error.code` values, and every command convergent — running it twice is a no-op that exits 0
 
 ## Installation
 

@@ -579,7 +579,7 @@ func emitStartPreview(cmd *cobra.Command, payload startJSON, targets []fanout.Ta
 			Disposition: "would_create",
 		})
 	}
-	summary := fmt.Sprintf("dry run: branch %s across %d repositor(y|ies)", payload.Branch, len(targets))
+	summary := fmt.Sprintf("dry run: branch %s across %d repo(s)", payload.Branch, len(targets))
 
 	return emit(cmd, summary, payload, nil, func() {
 		fmt.Println()
