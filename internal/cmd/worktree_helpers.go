@@ -439,10 +439,8 @@ func collectWorktrees(cfg *config.Config, projectRoot string) ([]worktreeContext
 		}
 		worktrees, err := listRepoWorktrees(repo)
 		if err != nil {
-			// Prefix the hydra code. Raw git text reached callers verbatim and in the
-			// system locale — `fatal: cannot change to '…': Arquivo ou diretório
-			// inexistente` — which nothing downstream can match on. The git message is
-			// kept because it names the real cause; it just no longer arrives uncoded.
+			// Prefix the hydra code so callers can match on output.CodeGitFailed. The git
+			// message is kept because it names the real cause, localised text and all.
 			warnings = append(warnings, fmt.Sprintf("%s: %s/%s: %v",
 				output.CodeGitFailed, repo.Group, repo.Alias, err))
 			continue

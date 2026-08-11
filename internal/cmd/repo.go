@@ -98,13 +98,9 @@ func init() {
 
 // runRepoAdd dispatches on WHAT the argument is, not on which flags were passed.
 //
-// It CLONES by default and adopts only under --adopt.
-//
-// Dispatching on "is the argument a git repository" was tried and reverted: `git clone
-// /local/path` is completely normal, so a local checkout is a perfectly ordinary clone
-// SOURCE. Inferring intent from the argument silently turned "clone from this path"
-// into "track this path in place" — a different operation on a different directory.
-// The two intents are genuinely distinct, so the caller states which one.
+// It CLONES by default and adopts only under --adopt. A local path is a normal clone
+// source (`git clone /local/path` is valid), not an adopt signal — the two intents
+// target different directories, so the caller states which one with --adopt.
 func runRepoAdd(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
 		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")

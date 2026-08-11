@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -245,6 +246,7 @@ func (c *Config) Save(path string) error {
 
 	// A missing or unreadable prior file is not an error: Save is also how a manifest
 	// is created. Only a file we can parse can donate comments.
+	merged := false
 	if prior, err := os.ReadFile(path); err == nil { //nolint:gosec // G304: path comes from the workspace root, not caller input
 		var old yaml.Node
 		if yaml.Unmarshal(prior, &old) == nil && len(old.Content) == 1 {
@@ -252,12 +254,27 @@ func (c *Config) Save(path string) error {
 			carry := sameSchema(doc, c.Version)
 			normalizeLegacyGroups(doc)
 			mergePreserving(doc, &out, reflect.TypeOf(c), carry)
+			out.HeadComment = joinComments(old.HeadComment, out.HeadComment)
+			out.FootComment = joinComments(out.FootComment, old.FootComment)
+			merged = true
 		}
 	}
 
 	data, err := yaml.Marshal(&out)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// The merge grafts nodes from the old file onto the new document, so a pathological input
+	// could in principle produce bytes that no longer parse or no longer describe this Config.
+	// Preserving annotations is worth a lot; it is not worth any chance of leaving a workspace
+	// that hydra itself cannot load, where every later command — `doctor` included — can only
+	// report not_in_project. A plain marshal always round-trips, so fall back to it and lose
+	// the comments instead.
+	if merged {
+		if plain, ok := verifyRoundTrip(data, c); !ok {
+			data = plain
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -269,6 +286,42 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
+}
+
+// verifyRoundTrip checks that the merged bytes still parse and still describe the same manifest.
+// It returns a plain marshal of c and false when they do not, so the caller can write something
+// loadable rather than something annotated.
+//
+// Equality is by re-marshalling both through the struct, which compares MEANING rather than
+// layout: the merged file legitimately differs in comments, key order and anchors.
+func verifyRoundTrip(data []byte, c *Config) ([]byte, bool) {
+	plain, err := yaml.Marshal(c)
+	if err != nil {
+		// c itself cannot be marshalled, so there is no safe alternative to offer.
+		return nil, true
+	}
+	var probe Config
+	if err := yaml.Unmarshal(data, &probe); err != nil {
+		return plain, false
+	}
+	again, err := yaml.Marshal(&probe)
+	if err != nil {
+		return plain, false
+	}
+	return plain, bytes.Equal(again, plain)
+}
+
+// joinComments concatenates two comment blocks, dropping empties, so a document-level block and
+// a generated one can coexist without a blank comment line between them.
+func joinComments(first, second string) string {
+	switch {
+	case first == "":
+		return second
+	case second == "":
+		return first
+	default:
+		return first + "\n" + second
+	}
 }
 
 // sameSchema reports whether the file on disk declares the version we are writing.
@@ -341,7 +394,7 @@ func mergePreserving(old, new *yaml.Node, t reflect.Type, carryUnknown bool) {
 		return
 	}
 	t = deref(t)
-	closedFields := t != nil && t.Kind() == reflect.Struct
+	closed := t != nil && t.Kind() == reflect.Struct
 	seen := map[string]bool{}
 	for i := 0; i+1 < len(new.Content); i += 2 {
 		key, val := new.Content[i], new.Content[i+1]
@@ -365,25 +418,157 @@ func mergePreserving(old, new *yaml.Node, t reflect.Type, carryUnknown bool) {
 		if val.LineComment == "" {
 			val.LineComment = oldVal.LineComment
 		}
+		// The anchor has to survive with the value. Re-encoding a modelled key from the struct
+		// drops any `&name` it carried, and an unmodelled key carried verbatim below may hold
+		// the matching `*name` — which would then reference an anchor no longer in the file,
+		// making the manifest unparseable rather than merely lossy.
+		if val.Anchor == "" {
+			val.Anchor = oldVal.Anchor
+		}
 		mergePreserving(oldVal, val, childType(t, key.Value), carryUnknown)
+		copySequenceComments(oldVal, val)
 	}
-	if !carryUnknown || !closedFields {
+	if !carryUnknown && !closed {
 		return
 	}
 	for i := 0; i+1 < len(old.Content); i += 2 {
-		key := old.Content[i].Value
-		if seen[key] {
+		oldKey, oldVal := old.Content[i], old.Content[i+1]
+		if seen[oldKey.Value] {
 			continue
 		}
-		// UNKNOWN means the struct has no field for it. A key the struct DOES model but left
-		// out of the new document was cleared on purpose — `omitempty` makes an empty field
-		// and an absent one look identical here — and carrying it back would resurrect
-		// deliberately cleared fields.
-		if childType(t, key) != nil {
+		modelled := childType(t, oldKey.Value) != nil
+		switch {
+		case !modelled:
+			// UNKNOWN means the struct has no field for it, so nothing in this binary asked for
+			// it to go away. Only inside a closed field set: a MAP's keys are data, and `groups`
+			// and each repo map are exactly what `repo remove` deletes from, so a key missing
+			// there means DELETED.
+			if !carryUnknown || !closed {
+				continue
+			}
+		case closed && isEmptyNode(oldVal) && hasComment(oldKey, oldVal):
+			// A STRUCT field the new document omitted, whose old value was already empty and
+			// carried annotation. `omitempty` makes empty and absent identical on the way out,
+			// so re-emitting the empty value resurrects no data, and it is the only way an
+			// annotated `base_branch: ""` keeps the comment that explains it.
+			//
+			// `closed` is what keeps this off map levels: childType answers Elem() for ANY key
+			// of a map, so without it a commented empty group would come back after `repo
+			// remove` deleted it.
+		default:
+			// Modelled, and either non-empty or unannotated: absent means cleared on purpose.
 			continue
 		}
-		new.Content = append(new.Content, old.Content[i], old.Content[i+1])
+		new.Content = append(new.Content, oldKey, oldVal)
 	}
+}
+
+// copySequenceComments carries comments into a list, but ONLY when the list is byte-for-byte the
+// same data it was.
+//
+// A list entry has no key to match on, so the merge cannot reattach a comment the way it does for
+// a mapping. Matching by position is exact when nothing about the list changed, and wrong the
+// moment an entry is added, removed or reordered — a comment would migrate to a neighbour and
+// state something false about it. Requiring identical shape first buys the common case (a
+// hand-annotated `hooks:` or `carry:` block that no command touched) without ever guessing:
+// `repo add --branches` rewrites `branches`, and there the comments are dropped as before.
+func copySequenceComments(old, new *yaml.Node) {
+	if old == nil || new == nil || old.Kind != yaml.SequenceNode || new.Kind != yaml.SequenceNode {
+		return
+	}
+	if !sameShape(old, new) {
+		return
+	}
+	copyCommentsInPlace(old, new)
+}
+
+// sameShape reports whether two nodes hold identical data, ignoring comments, anchors and style.
+func sameShape(a, b *yaml.Node) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.Kind != b.Kind || a.Tag != b.Tag || a.Value != b.Value || len(a.Content) != len(b.Content) {
+		return false
+	}
+	for i := range a.Content {
+		if !sameShape(a.Content[i], b.Content[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// copyCommentsInPlace walks two structurally identical trees and fills empty comments on the
+// second from the first.
+func copyCommentsInPlace(old, new *yaml.Node) {
+	if old == nil || new == nil {
+		return
+	}
+	if new.HeadComment == "" {
+		new.HeadComment = old.HeadComment
+	}
+	if new.LineComment == "" {
+		new.LineComment = old.LineComment
+	}
+	if new.FootComment == "" {
+		new.FootComment = old.FootComment
+	}
+	for i := range new.Content {
+		if i < len(old.Content) {
+			copyCommentsInPlace(old.Content[i], new.Content[i])
+		}
+	}
+}
+
+// isEmptyNode reports whether a node carries no data: an empty scalar, or a collection whose
+// every value is itself empty. Such a node is indistinguishable from an absent key once the
+// manifest is decoded, which is what makes re-emitting it safe.
+func isEmptyNode(n *yaml.Node) bool {
+	if n == nil {
+		return true
+	}
+	switch n.Kind {
+	case yaml.ScalarNode:
+		return n.Value == "" || n.Tag == "!!null"
+	case yaml.MappingNode:
+		for i := 1; i < len(n.Content); i += 2 {
+			if !isEmptyNode(n.Content[i]) {
+				return false
+			}
+		}
+		return true
+	case yaml.SequenceNode:
+		return len(n.Content) == 0
+	default:
+		// An alias resolves to data this function cannot see, so it is never empty.
+		return false
+	}
+}
+
+// hasComment reports whether a key/value pair carries annotation worth keeping, anywhere in the
+// pair's subtree.
+//
+// It has to look inside: the annotation on an empty block usually sits on the inner keys, as in
+//
+//	defaults:
+//	  # Base branch for new worktrees when --from is not passed.
+//	  base_branch: ""
+//
+// where `defaults` itself is bare. Checking only the outer pair would drop exactly the comments
+// that explain the empty value.
+func hasComment(nodes ...*yaml.Node) bool {
+	for _, n := range nodes {
+		if n == nil {
+			continue
+		}
+		if n.HeadComment != "" || n.LineComment != "" || n.FootComment != "" {
+			return true
+		}
+		if hasComment(n.Content...) {
+			return true
+		}
+	}
+	return false
 }
 
 // childType resolves the Go type behind one key of a mapping: a struct field looked up

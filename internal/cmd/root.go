@@ -436,7 +436,7 @@ func runHookEventForProject(c *config.Config, root, event string, hctx hooks.Con
 		return hooks.Result{}, nil
 	}
 	// The repo in the context selects the chain: a hook set on that repo, or on its group, runs
-	// after the workspace's. Reading c.Hooks alone silently ignored both.
+	// after the workspace's. ResolveHooks walks the level chain; c.Hooks alone would skip both.
 	chain, known := config.ResolveHooks(c, hctx.Repo, event)
 	if !known {
 		return hooks.Result{}, output.Errorf(output.CodeInternal, "unknown hook event %q", event)

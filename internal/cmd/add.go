@@ -121,11 +121,9 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	target := worktreePath(projectRoot, repo.Group, dirName)
 
-	// Invariant 3 promises every command is convergent: twice is a no-op that exits 0 and
-	// reports `skipped`. start, apply and clone already translate worktree_exists into a
-	// skip here — startOne does it on this exact call — and add was the one command that
-	// let it escape as exit 1, so a provisioning script re-running its own steps died on
-	// the second `add`.
+	// Invariant 3: convergent commands exit 0 as a no-op on repeat. start, apply and
+	// clone translate worktree_exists into skipped; add must match so idempotent provisioning
+	// scripts do not fail on the second add.
 	//
 	// The desired state is THIS branch at THIS path. A directory held by a different branch is
 	// worktree_name_conflict; the branch checked out under a different directory is not
@@ -174,10 +172,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		hookResult, hookErr = runHookEvent("post_add", hooksContextFor(repo, branch, wt.Path), wt.Path)
 		warnings = append(warnings, hookResult.Warnings...)
 
-		// The hook failure has to ride the envelope. It used to be returned only as the
-		// process error, so `add` exited 1 while stdout said `outcome: success` with an empty
-		// warnings array — the worktree was created correctly and the failure was invisible to
-		// anything reading the envelope.
+		// The hook failure rides the envelope as Err so outcome and exit agree; stdout
+		// still reports success with warnings when the worktree landed but post_add failed.
 		if hookErr != nil {
 			addErr = output.Classify(hookErr)
 		}
@@ -199,8 +195,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		if created {
 			fmt.Println(styles.Success.Render("✓ Worktree created"))
 		} else {
-			// Printing "created" over a worktree that was already there is the text half of
-			// the same lie the exit code used to tell.
+			// Print "already present" when converged so human output matches skipped
+			// disposition and exit 0.
 			fmt.Println(styles.Success.Render("✓ Worktree already present"))
 		}
 		fmt.Printf("  Repo:   %s/%s\n", repo.Group, repo.Alias)

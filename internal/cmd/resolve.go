@@ -399,12 +399,9 @@ func matchWorktrees(items []worktreeContext, query string) []worktreeContext {
 	return byBranch
 }
 
-// resolveOneWorktree requires a handle to name exactly one worktree.
-//
-// Returning the first of several matches was a real bug: every repo has a main
-// branch, so "hydra path main" picked whichever repo happened to sort first and
-// reported no problem. Silently acting on the wrong worktree is worse than
-// refusing, so ambiguity is an error listing the candidates.
+// resolveOneWorktree requires a handle to name exactly one worktree. A bare branch name
+// is shared across repos, so returning the first match would act on an arbitrary repo;
+// ambiguity is an error listing the candidates.
 func resolveOneWorktree(items []worktreeContext, query string) (worktreeContext, error) {
 	matches := matchWorktrees(items, query)
 	switch len(matches) {

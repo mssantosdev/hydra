@@ -124,9 +124,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	result := initResult{Project: created.Project, Root: root, ConfigPath: configPath}
 
-	// Say where the registration landed. init writes to a GLOBAL registry, and nothing
-	// reported which one — so a throwaway workspace silently accumulated an entry in the
-	// real config, and the caller had no hint that HYDRA_CONFIG_DIR is how to avoid it.
+	// Say where the registration landed. init writes to a global registry; name the path
+	// so callers know which file was updated and that HYDRA_CONFIG_DIR selects another.
 	warnings := []string{"registered in " + registry.Path()}
 
 	return emit(cmd, fmt.Sprintf("workspace %q initialised", result.Project), result, warnings, func() {
