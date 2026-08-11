@@ -44,7 +44,6 @@ var (
 		"init":       true,
 		"new":        true,
 		"help":       true,
-		"config":     true,
 		"init-shell": true,
 		"completion": true,
 		"skill":      true,
@@ -80,11 +79,15 @@ Guide: https://mssantosdev.github.io/hydra/`,
 			if skipsProject(cmd) {
 				return nil
 			}
-			// `where` reports project resolution, so it has to ATTEMPT the load and
-			// tolerate absence. Listing it as project-less would skip loading
-			// entirely and make it answer "no workspace" while standing in one.
-			if cmd.Name() == "where" {
-				_ = loadProject()
+			// `where` and `config` REPORT project resolution, so they attempt the load and
+			// tolerate absence. Listing them as project-less would skip loading entirely and
+			// make them answer "no workspace" while standing in one — and would discard
+			// --project and --config, the flags whose whole purpose is choosing the manifest
+			// these two commands then describe.
+			if reportsProjectResolution(cmd) {
+				// The error is kept, not dropped: a manifest that exists and cannot be parsed is
+				// exactly what someone runs these commands to find out about.
+				projectLoadErr = loadProject()
 				return nil
 			}
 			return loadProject()
@@ -100,6 +103,26 @@ Guide: https://mssantosdev.github.io/hydra/`,
 // commands may run without a workspace under --all; sniffing --all generically
 // would wrongly exempt `sync --all`, which means every repo in THIS project.
 const annotationRegistryFanout = "hydra/registry-fanout"
+
+// projectLoadErr holds why the active project failed to resolve, for the commands that REPORT
+// resolution rather than requiring it.
+var projectLoadErr error
+
+// reportsProjectResolution names the commands that DESCRIBE the active project rather than
+// requiring one: they attempt the load, tolerate absence, and must still honour --project and
+// --config, which choose the very manifest they report.
+//
+// The parent chain is walked because a subcommand carries its own name — `config show` is "show" —
+// so matching the leaf alone would send it down the requires-a-project path and make global
+// configuration unreadable outside a workspace.
+func reportsProjectResolution(cmd *cobra.Command) bool {
+	for c := cmd; c != nil && c.Parent() != nil; c = c.Parent() {
+		if c.Name() == "where" || c.Name() == "config" {
+			return true
+		}
+	}
+	return false
+}
 
 func skipsProject(cmd *cobra.Command) bool {
 	if cmd.Parent() == nil {

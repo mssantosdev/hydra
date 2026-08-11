@@ -96,6 +96,14 @@ Hydra does not support a configurable worktree root path. Worktrees always live 
 its group's, which beats the workspace's. An empty value means *inherit*, not *clear*. Lists —
 `hooks` and `carry` — **append**, so a workspace-wide certificate and a repo's own `.env` both apply.
 
+`branch_pattern_strict` is the exception, because a boolean has no *unset*: any level that sets it
+turns strictness **on**, and no lower level can turn it back off. Escaping an inherited strict
+pattern is therefore a deliberate edit at the level that set it, not something a child can do by
+having no opinion. `hydra config show` prints the row only when it is on.
+
+Run `hydra config show` to see the resolved value of every key and the level that supplied it,
+rather than working the chain out by reading three places.
+
 hydra does not decide what a group means. `go-projects`/`java-projects` and `backend`/`web` are
 equally valid partitions: every level carries the same keys, the chain is the only rule, and what
 belongs where is your modelling choice.

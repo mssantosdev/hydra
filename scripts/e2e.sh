@@ -610,6 +610,16 @@ rm -f backend/api/dirty-file.txt
 # config was read-only without a TTY: an agent could see settings but never write them.
 check "config show reports without changing" \
   '"$HYDRA" config show --output json | jq -e "(.data.theme|length)>0 and (has(\"changed\")|not or .data.changed!=true)" >/dev/null'
+
+# `config` and `config show` manage GLOBAL settings, so they must work with no workspace at all.
+# `config show` is named "show", so a leaf-name check for "config" misses it entirely.
+check "config works outside any workspace" \
+  '(d=$(mktemp -d) && cd "$d" && "$HYDRA" config show --output json | jq -e ".outcome==\"success\"" >/dev/null &&
+    "$HYDRA" config --output json | jq -e ".outcome==\"success\"" >/dev/null)'
+# --config and --project choose the manifest that `config show` reports; it read the cwd's instead.
+check "config show honours --config" \
+  '(cd "$T" && "$HYDRA" --config "$T/ws/.hydra/config.yaml" config show --output json |
+    jq -e ".data.manifest.path==\"$T/ws/.hydra/config.yaml\"" >/dev/null)'
 check "config set editor persists" \
   '"$HYDRA" config set editor "e2e-editor" --output json | jq -e ".data.changed==true" >/dev/null &&
    "$HYDRA" config show --output json | jq -e ".data.editor==\"e2e-editor\"" >/dev/null'

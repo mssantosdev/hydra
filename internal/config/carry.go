@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"path"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -242,8 +241,14 @@ type ResolvedSetting struct {
 // looking — you have to run the resolution in your head across three places. This runs it and
 // names the winner.
 //
-// Rows are returned for the project level and for every repo that overrides something, so the
-// output is as long as the overrides actually are rather than repo count times key count.
+// The origin is recorded BY the resolution, not re-derived after it: the level that writes a value
+// last is the level it came from, so nearest-wins and provenance are one fact. A second walk with
+// its own copy of the precedence rule could disagree with the first, and a new rule added to the
+// resolver would silently not reach it.
+//
+// Rows are returned for the project level and for every repo whose value comes from somewhere
+// else, so the output is as long as the overrides actually are rather than repo count times key
+// count.
 func ExplainDefaults(c *Config) []ResolvedSetting {
 	if c == nil {
 		return nil
@@ -254,73 +259,78 @@ func ExplainDefaults(c *Config) []ResolvedSetting {
 		out = append(out, s)
 	}
 
-	aliases := make([]string, 0, len(c.Groups))
-	for group, g := range c.Groups {
-		for alias := range g.Repos {
-			_ = group
-			aliases = append(aliases, alias)
-		}
+	// An alias may appear in two groups: nothing rejects it, because a manifest is hand-editable
+	// and the uniqueness check lives in `clone`. Qualify only the ambiguous ones, so the common
+	// output stays `api.base_branch` and the ambiguous one cannot print two rows under one key.
+	seen := map[string]int{}
+	for _, ref := range c.Repos() {
+		seen[ref.Alias]++
 	}
-	sort.Strings(aliases)
-
-	for _, alias := range aliases {
-		ref, ok := c.FindRepo(alias)
-		if !ok {
-			continue
+	for _, ref := range c.Repos() {
+		name := ref.Alias
+		if seen[ref.Alias] > 1 {
+			name = ref.Group + "/" + ref.Alias
 		}
-		// Only report a repo row where the resolved value differs from the project level, so a
-		// workspace whose repos all inherit shows one block instead of a wall.
-		effective := ResolveDefaults(c, alias)
-		for _, s := range settingsOf(effective) {
-			if base := valueOf(c.Defaults, s.Key); base == s.Value {
+		for _, s := range resolveWithOrigin(c, ref) {
+			// A row earns its place by having an origin below the project, not by holding a
+			// different VALUE. A group that deliberately pins the workspace's value — so the
+			// family stops following it — is invisible under a value comparison, and the row that
+			// does show then credits the project for a value the group owns.
+			if s.From == "project" {
 				continue
 			}
-			s.From = originOf(c, ref, s.Key)
-			s.Key = alias + "." + s.Key
+			s.Key = name + "." + s.Key
 			out = append(out, s)
 		}
 	}
 	return out
 }
 
-// originOf names the nearest level that sets key for a repo. The chain is project → group →
-// repo, nearest wins, so it is walked from the far end and the last setter is the answer.
-func originOf(c *Config, ref RepoRef, key string) string {
-	from := "project"
-	if valueOf(c.Groups[ref.Group].Defaults, key) != "" {
-		from = "group " + ref.Group
-	}
-	if valueOf(repoDefaults(ref.Repo), key) != "" {
-		from = "repo " + ref.Alias
-	}
-	return from
-}
+// resolveWithOrigin runs the level chain for one repository and returns each effective setting
+// tagged with the level that supplied it.
+func resolveWithOrigin(c *Config, ref RepoRef) []ResolvedSetting {
+	winner := map[string]string{}
+	value := map[string]string{}
+	order := []string{}
 
-func settingsOf(d Defaults) []ResolvedSetting {
-	var out []ResolvedSetting
-	for _, key := range []string{"base_branch", "branch_pattern", "branch_provider"} {
-		if v := valueOf(d, key); v != "" {
-			out = append(out, ResolvedSetting{Key: key, Value: v})
+	for _, level := range []struct {
+		from string
+		d    Defaults
+	}{
+		{"project", c.Defaults},
+		{"group " + ref.Group, c.Groups[ref.Group].Defaults},
+		{"repo " + ref.Alias, repoDefaults(ref.Repo)},
+	} {
+		for _, s := range settingsOf(level.d) {
+			if _, seen := value[s.Key]; !seen {
+				order = append(order, s.Key)
+			}
+			value[s.Key], winner[s.Key] = s.Value, level.from
 		}
 	}
-	if d.BranchPatternStrict {
-		out = append(out, ResolvedSetting{Key: "branch_pattern_strict", Value: "true"})
+
+	out := make([]ResolvedSetting, 0, len(order))
+	for _, key := range order {
+		out = append(out, ResolvedSetting{Key: key, Value: value[key], From: winner[key]})
 	}
 	return out
 }
 
-func valueOf(d Defaults, key string) string {
-	switch key {
-	case "base_branch":
-		return d.BaseBranch
-	case "branch_pattern":
-		return d.BranchPattern
-	case "branch_provider":
-		return d.BranchProvider
-	case "branch_pattern_strict":
-		if d.BranchPatternStrict {
-			return "true"
+// settingsOf lists one level's non-empty settings. It is the single place a key name is written,
+// so adding a default is one line here and nothing can read a key the constructor does not name.
+func settingsOf(d Defaults) []ResolvedSetting {
+	var out []ResolvedSetting
+	add := func(key, value string) {
+		if value != "" {
+			out = append(out, ResolvedSetting{Key: key, Value: value})
 		}
 	}
-	return ""
+	add("base_branch", d.BaseBranch)
+	add("branch_pattern", d.BranchPattern)
+	add("branch_provider", d.BranchProvider)
+	// A bool is not a string with an empty case, so it does not pretend to be one.
+	if d.BranchPatternStrict {
+		add("branch_pattern_strict", "true")
+	}
+	return out
 }

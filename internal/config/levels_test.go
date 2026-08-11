@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -136,5 +137,90 @@ groups:
 	}
 	if len(r.Hooks.PostAdd) != 1 || r.Hooks.PostAdd[0].Run != "go mod download" {
 		t.Errorf("repo hooks.post_add was dropped: %+v", r.Hooks)
+	}
+}
+
+// A row earns its place by having an origin below the project, not by holding a different VALUE.
+// A group that pins the workspace's own value — so the family stops following it — is a deliberate
+// act, and a value comparison makes it invisible while crediting the project for it.
+func TestExplainDefaultsReportsAGroupThatPinsTheProjectValue(t *testing.T) {
+	c := &Config{
+		Version:  SchemaVersion,
+		Defaults: Defaults{BaseBranch: "master"},
+		Groups: map[string]Group{
+			"backend": {
+				Defaults: Defaults{BaseBranch: "master"},
+				Repos:    map[string]Repo{"api": {Remote: "r"}},
+			},
+		},
+	}
+	rows := ExplainDefaults(c)
+	var found *ResolvedSetting
+	for i := range rows {
+		if rows[i].Key == "api.base_branch" {
+			found = &rows[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("the group's ownership of base_branch is not reported: %+v", rows)
+	}
+	if found.From != "group backend" {
+		t.Errorf("from = %q, want %q", found.From, "group backend")
+	}
+}
+
+// An alias may appear in two groups: a manifest is hand-editable and the uniqueness check lives in
+// clone. Each pair must get its own row, qualified so two rows cannot share one key.
+func TestExplainDefaultsQualifiesAnAliasUsedInTwoGroups(t *testing.T) {
+	c := &Config{
+		Version: SchemaVersion,
+		Groups: map[string]Group{
+			"backend": {Defaults: Defaults{BaseBranch: "develop"}, Repos: map[string]Repo{"api": {Remote: "r1"}}},
+			"web":     {Defaults: Defaults{BaseBranch: "staging"}, Repos: map[string]Repo{"api": {Remote: "r2"}}},
+		},
+	}
+	got := map[string]string{}
+	for _, r := range ExplainDefaults(c) {
+		if _, clash := got[r.Key]; clash {
+			t.Fatalf("two rows share the key %q", r.Key)
+		}
+		got[r.Key] = r.Value
+	}
+	for key, want := range map[string]string{
+		"backend/api.base_branch": "develop",
+		"web/api.base_branch":     "staging",
+	} {
+		if got[key] != want {
+			t.Errorf("%s = %q, want %q (rows: %+v)", key, got[key], want, got)
+		}
+	}
+}
+
+// The origin is recorded by the resolution, so the reporter cannot disagree with the resolver.
+func TestExplainDefaultsAgreesWithResolveDefaults(t *testing.T) {
+	c := &Config{
+		Version:  SchemaVersion,
+		Defaults: Defaults{BaseBranch: "master", BranchPattern: "p/{slug}"},
+		Groups: map[string]Group{
+			"backend": {
+				Defaults: Defaults{BaseBranch: "develop"},
+				Repos:    map[string]Repo{"api": {Remote: "r", BranchProvider: "cmd"}},
+			},
+		},
+	}
+	want := ResolveDefaults(c, "api")
+	got := map[string]string{}
+	for _, r := range ExplainDefaults(c) {
+		if k, ok := strings.CutPrefix(r.Key, "api."); ok {
+			got[k] = r.Value
+		}
+	}
+	for key, value := range map[string]string{
+		"base_branch":     want.BaseBranch,
+		"branch_provider": want.BranchProvider,
+	} {
+		if value != "" && got[key] != value {
+			t.Errorf("%s: reporter says %q, resolver says %q", key, got[key], value)
+		}
 	}
 }

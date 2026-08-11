@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
 	"github.com/charmbracelet/huh"
 	"github.com/mssantosdev/hydra/internal/config"
@@ -34,9 +32,20 @@ CONFIG LOCATION
   macOS:   ~/Library/Application Support/hydra/config.yaml
   Windows: %APPDATA%/hydra/config.yaml
 
+MANIFEST
+  "hydra config show" also reports the workspace manifest (.hydra/config.yaml) and the
+  resolved value of every "defaults" key with the level that supplied it - workspace,
+  group or repo. --project and --config choose which manifest is read.
+
+  "hydra config" and "hydra config set" report the global settings only: a global theme
+  has nothing to do with a workspace.
+
 EXAMPLES
   # Open interactive config (TTY)
   $ hydra config
+
+  # Global settings plus the manifest and where each default comes from
+  $ hydra config show --output json
 
   # Emit current settings as JSON
   $ hydra config --output json
@@ -46,14 +55,15 @@ EXIT CODES
   1  General error (load/save failed, form cancelled)
 
 SEE ALSO
-  • hydra init - Project-level configuration (.hydra/config.yaml)`,
+  • hydra config show - global settings AND the manifest's resolved defaults
+  • hydra init        - create a workspace manifest (.hydra/config.yaml)`,
 	RunE: runConfig,
 }
 
 var configShowCmd = &cobra.Command{
 	Use:     "show",
 	Aliases: []string{"view"},
-	Short:   "Print the global configuration",
+	Short:   "Print the global settings, and the workspace manifest when there is one",
 	Args:    cobra.NoArgs,
 	RunE:    runConfigShow,
 }
@@ -111,7 +121,7 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return output.Wrap(output.CodeInternal, err, "failed to load global config")
 	}
-	return emitGlobalConfig(cmd, cfg, false)
+	return emitGlobalConfig(cmd, cfg, false, true)
 }
 
 func runConfigSet(cmd *cobra.Command, args []string) error {
@@ -155,37 +165,43 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 			WithDetail("valid", []string{"theme", "editor"})
 	}
 
-	return emitGlobalConfig(cmd, cfg, true)
+	return emitGlobalConfig(cmd, cfg, true, false)
 }
 
 // emitGlobalConfig is the one funnel for both show and set, so a written value is
 // reported in exactly the shape a reader would have seen.
 //
-// It reports the MANIFEST too when one is loaded. "config show" promised the configuration
-// and returned three global settings, while `.hydra/config.yaml` — the file everyone calls
-// the config, holding the repos, defaults and hooks — was absent from every command. Two
-// files are both named config.yaml, so each row names the one it came from.
-func emitGlobalConfig(cmd *cobra.Command, cfg *global.GlobalConfig, changed bool) error {
+// withManifest adds the MANIFEST, because "config show" promised the configuration and returned
+// three global settings while `.hydra/config.yaml` — the file everyone calls the config, holding
+// the repos, defaults and hooks — was absent from every command. Two files are both named
+// config.yaml, so each row names the one it came from.
+//
+// Only `show` asks for it. Writing a global theme has nothing to do with the workspace manifest,
+// and reading one there let an unrelated project file attach a warning to a successful global
+// write.
+func emitGlobalConfig(cmd *cobra.Command, gcfg *global.GlobalConfig, changed, withManifest bool) error {
 	payload := configPayload{
-		Theme:      cfg.Theme.Name,
-		Editor:     cfg.Defaults.Editor,
+		Theme:      gcfg.Theme.Name,
+		Editor:     gcfg.Defaults.Editor,
 		ConfigPath: global.GetConfigPath(),
 		Changed:    changed,
 	}
 	// Outside a workspace there is no manifest to read, which is why this is absent rather
-	// than empty and needs no flag to ask for it.
+	// than empty and needs no flag to ask for it. The resolved globals are used rather than a
+	// second lookup, so --project and --config choose the manifest this command describes.
 	var warnings []string
-	path, projectConfig, manifestErr := nearestManifest()
-	switch {
-	case projectConfig != nil:
-		payload.Manifest = &manifestPayload{
-			Path:     path,
-			Settings: config.ExplainDefaults(projectConfig),
+	if withManifest {
+		switch {
+		case cfg != nil:
+			payload.Manifest = &manifestPayload{
+				Path:     projectConfigPath,
+				Settings: config.ExplainDefaults(cfg),
+			}
+		case projectLoadErr != nil:
+			// Staying silent here would be the worst place to do it: a manifest that cannot be
+			// parsed is exactly what someone runs `config show` to find out about.
+			warnings = append(warnings, projectLoadErr.Error())
 		}
-	case manifestErr != nil:
-		// Staying silent here would be the worst place to do it: a manifest that cannot be
-		// parsed is exactly what someone runs `config show` to find out about.
-		warnings = append(warnings, manifestErr.Error())
 	}
 	summary := "global configuration"
 	if changed {
@@ -193,8 +209,8 @@ func emitGlobalConfig(cmd *cobra.Command, cfg *global.GlobalConfig, changed bool
 	}
 	return emit(cmd, summary, payload, warnings, func() {
 		out := cmd.OutOrStdout()
-		_, _ = fmt.Fprintf(out, "Theme:  %s %s\n", cfg.Theme.Name, themes.Get(cfg.Theme.Name).Preview())
-		_, _ = fmt.Fprintf(out, "Editor: %s\n", cfg.Defaults.Editor)
+		_, _ = fmt.Fprintf(out, "Theme:  %s %s\n", gcfg.Theme.Name, themes.Get(gcfg.Theme.Name).Preview())
+		_, _ = fmt.Fprintf(out, "Editor: %s\n", gcfg.Defaults.Editor)
 		_, _ = fmt.Fprintf(out, "Config: %s\n", global.GetConfigPath())
 		if payload.Manifest == nil {
 			return
@@ -204,30 +220,6 @@ func emitGlobalConfig(cmd *cobra.Command, cfg *global.GlobalConfig, changed bool
 			_, _ = fmt.Fprintf(out, "  %-28s %-22s %s\n", s.Key, s.Value, s.From)
 		}
 	})
-}
-
-// nearestManifest finds the manifest for the current directory, or returns nil outside a
-// workspace.
-//
-// It reads the file directly rather than using the resolved globals, because `config` is in
-// commandsWithoutProject — it must work outside a workspace, so nothing has resolved a project
-// by the time this runs. Reading here also avoids mutating the globals for a command that has
-// no business owning them.
-func nearestManifest() (string, *config.Config, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", nil, nil
-	}
-	path, loaded, err := config.FindConfig(wd)
-	if err != nil {
-		// No manifest at all is the normal case outside a workspace and not worth a warning.
-		// A manifest that exists and cannot be read is worth one, and the caller decides.
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil, nil
-		}
-		return "", nil, err
-	}
-	return path, loaded, nil
 }
 
 type configPayload struct {
