@@ -95,7 +95,14 @@ func init() {
 
 type hooksEventEntry struct {
 	Event string `json:"event"`
-	Count int    `json:"count"`
+	// Count is every hook configured for the event, at any level. Counting only the workspace
+	// under-reported each group and repo chain, so the number contradicted what ran.
+	Count int `json:"count"`
+	// The breakdown, because a total cannot say which chain a given repository gets. What runs
+	// for one repo is workspace + its group + itself; use `hooks run --worktree` to exercise it.
+	Workspace int `json:"workspace"`
+	Groups    int `json:"groups"`
+	Repos     int `json:"repos"`
 }
 
 type hooksLsPayload struct {
@@ -112,8 +119,10 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 	events := config.HookEvents()
 	entries := make([]hooksEventEntry, 0, len(events))
 	for _, event := range events {
-		hs, _ := cfg.HooksFor(event)
-		entries = append(entries, hooksEventEntry{Event: event, Count: len(hs)})
+		ws, gs, rs := config.HookCounts(cfg, event)
+		entries = append(entries, hooksEventEntry{
+			Event: event, Count: ws + gs + rs, Workspace: ws, Groups: gs, Repos: rs,
+		})
 	}
 
 	return emit(cmd, fmt.Sprintf("%d hook event(s) configured", len(entries)), hooksLsPayload{Events: entries, Env: hooks.EnvKeys()}, nil, func() {
@@ -121,7 +130,12 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 			styles.Label.Render("EVENT"),
 			styles.Label.Render("HOOKS"))
 		for _, entry := range entries {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %d\n", entry.Event, entry.Count)
+			where := ""
+			if entry.Groups > 0 || entry.Repos > 0 {
+				where = fmt.Sprintf("  (workspace %d, group %d, repo %d)",
+					entry.Workspace, entry.Groups, entry.Repos)
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %d%s\n", entry.Event, entry.Count, where)
 		}
 	})
 }

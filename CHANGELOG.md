@@ -48,6 +48,14 @@ is permanently bound to different content in the Go checksum database, so it can
   is untrusted input, and a rejected name fails that item rather than the run.
 - **`hydra hooks --help` advertised eight environment variables while ten were injected.** The
   ENVIRONMENT block is generated from the same list `hooks ls --output json` publishes.
+- **`hooks ls` under-reported every group and repo chain.** It counted `cfg.Hooks` only, so it
+  answered `1` for an event that ran three hooks — the same drift as the level model above, in the
+  command whose help text this release also fixed. It now counts all three levels and publishes the
+  breakdown, so the number cannot disagree with what runs.
+- **`apply` returned a different exit code for the same end state.** A topic the document could not
+  record was a warning when this run created the worktree and an error when it found one already
+  there, so a convergent document exited 0 then 1. The disposition now describes the worktree and
+  the error describes whether the request was met, on both paths.
 - **The docs gate reported success for checks that never ran.** Five of six sat behind a
   capability guard and the success line printed regardless, so hiding PyYAML or deleting `./hydra`
   produced exit 0 and the claim that all six agreed with the build. A missing prerequisite is now

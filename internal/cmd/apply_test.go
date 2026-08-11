@@ -375,3 +375,39 @@ func TestApply_RefusesAWorktreeNameThatEscapesTheWorkspace(t *testing.T) {
 		t.Error("the valid item was abandoned; one bad name must not stop the run")
 	}
 }
+
+// Convergence is about the exit code as much as the tree: one end state must report one way. A
+// topic the document cannot have is an unmet request whether this run created the worktree or
+// found it already there, so the second run must not disagree with the first.
+func TestApply_ExitCodeDoesNotDependOnWhichRunItIs(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"start", "stage", "--repos", "api", "--topic", "A"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("claim the worktree for topic A: %v", err)
+	}
+
+	doc := filepath.Join(env.RootDir, "doc.json")
+	if err := os.WriteFile(doc, []byte(
+		`[{"repo":"api","branch":"stage","name":"api-stage","topic":"B"}]`), 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+
+	codes := make([]string, 2)
+	for i := range codes {
+		resetCommandState(t)
+		rootCmd.SetArgs([]string{"apply", doc})
+		err := rootCmd.Execute()
+		if err == nil {
+			t.Fatalf("run %d: apply reported success for a topic the worktree cannot have", i+1)
+		}
+		codes[i] = string(output.Classify(err).Code)
+	}
+	if codes[0] != codes[1] {
+		t.Errorf("run 1 reported %q and run 2 reported %q for one end state", codes[0], codes[1])
+	}
+}

@@ -195,15 +195,17 @@ func runApply(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		disposition, warning, applyErr := applyOne(repo, item)
+		disposition, applyErr := applyOne(repo, item)
 		result.Disposition = disposition
-		if warning != "" {
-			warnings = append(warnings, warning)
-		}
-		if disposition != "created" && disposition != "skipped" {
+		if applyErr != nil {
+			// The item did not reach its desired state, whatever became of the worktree. Counting
+			// by disposition alone would let a created worktree with an unrecorded topic exit 0
+			// and the same state on a later run exit 1.
 			result.Error = output.Classify(applyErr).Message
+			payload.Failed++
+		} else {
+			tallyApplyDisposition(&payload, disposition)
 		}
-		tallyApplyDisposition(&payload, disposition)
 		payload.Results = append(payload.Results, result)
 	}
 
@@ -323,35 +325,34 @@ func validateApplyItems(items []applyItem) ([]applyItem, []string, error) {
 }
 
 // applyOne converges one item, reusing the same helpers start does.
-func applyOne(repo repoContext, item applyItem) (disposition, warning string, err error) {
+//
+// The disposition describes what happened to the WORKTREE; the error describes whether the item's
+// desired state was reached. They are separate because a worktree can land while the topic the
+// document asked for cannot be recorded — reporting that as `failed` would deny the git work, and
+// reporting it as success would deny the unmet request.
+//
+// Both paths must answer alike. A topic failure on the created path and the same failure on the
+// converged path describe one end state, so treating one as a warning and the other as an error
+// made the exit code depend on whether this was the first run.
+func applyOne(repo repoContext, item applyItem) (disposition string, err error) {
 	dirName, err := item.dirNameFor(repo)
 	if err != nil {
-		return "failed", "", err
+		return "failed", err
 	}
 	target := worktreePath(projectRoot, repo.Group, dirName)
 
-	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, item.Branch); err != nil {
-		if worktreeAlreadyAtTarget(err, target) {
-			// Already correct. Membership is still reconciled below, because a document
-			// may assign an existing worktree to a topic.
-			if topicErr := applyTopic(item, repo); topicErr != nil {
-				return "failed", "", topicErr
-			}
-			return "skipped", "", nil
+	if conflict := checkWorktreeNameConflict(repo, projectRoot, dirName, item.Branch); conflict != nil {
+		if !worktreeAlreadyAtTarget(conflict, target) {
+			return "failed", conflict
 		}
-		return "failed", "", err
+		// Already correct. Membership is still reconciled, because a document may assign an
+		// existing worktree to a topic.
+		return "skipped", applyTopic(item, repo)
 	}
 	if _, err := createWorktreeForBranch(cfg, repo, target, item.Branch, ""); err != nil {
-		return "failed", "", err
+		return "failed", err
 	}
-	if topicErr := applyTopic(item, repo); topicErr != nil {
-		// The worktree is correct; only the record failed, so calling this a creation failure
-		// would claim the git work did not happen. It still rides the envelope as a warning:
-		// the document asked for a topic assignment that is not in place.
-		return "created", fmt.Sprintf("%s: worktree created but topic not recorded: %s",
-			dirName, output.Classify(topicErr).Message), nil
-	}
-	return "created", "", nil
+	return "created", applyTopic(item, repo)
 }
 
 // applyTopic records membership when the document asks for it.

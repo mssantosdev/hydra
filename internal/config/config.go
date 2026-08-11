@@ -829,6 +829,31 @@ func ResolveHooks(c *Config, alias, event string) ([]Hook, bool) {
 	return out, true
 }
 
+// HookCounts reports how many hooks one event has at each level of the manifest.
+//
+// A single number cannot describe a three-level chain: what runs depends on the repository, so a
+// count taken from the workspace alone under-reports every group and repo hook. Callers that list
+// events want all three; callers about to RUN hooks want ResolveHooks for a specific repo.
+func HookCounts(c *Config, event string) (workspace, groups, repos int) {
+	if c == nil {
+		return 0, 0, 0
+	}
+	if hs, known := hooksOf(c.Hooks, event); known {
+		workspace = len(hs)
+	} else {
+		return 0, 0, 0
+	}
+	for _, group := range c.Groups {
+		hs, _ := hooksOf(group.Hooks, event)
+		groups += len(hs)
+		for _, repo := range group.Repos {
+			rs, _ := hooksOf(repo.Hooks, event)
+			repos += len(rs)
+		}
+	}
+	return workspace, groups, repos
+}
+
 // hooksOf binds an event name to one level's chain — the single place names map to fields, so a
 // new event is added in one switch.
 func hooksOf(h Hooks, event string) ([]Hook, bool) {
