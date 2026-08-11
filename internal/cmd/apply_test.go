@@ -411,3 +411,90 @@ func TestApply_ExitCodeDoesNotDependOnWhichRunItIs(t *testing.T) {
 		t.Errorf("run 1 reported %q and run 2 reported %q for one end state", codes[0], codes[1])
 	}
 }
+
+// `list --all` nests its listing at data.projects[]. Reading `projects` as a sibling of `data`
+// matched nothing hydra emits, so the pipeline `list` itself advertises applied zero worktrees.
+func TestApply_ReadsTheProjectsShapeListAllEmits(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	doc := filepath.Join(env.RootDir, "all.json")
+	body := `{"schema":3,"command":"list","outcome":"success","data":{"total":1,"projects":[` +
+		`{"project":"p","root":"/x","worktrees":[{"repo":"api","branch":"stage"}]}]}}`
+	if err := os.WriteFile(doc, []byte(body), 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"apply", doc})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("apply must read data.projects[].worktrees, got %v (code %q)",
+			err, output.Classify(err).Code)
+	}
+	if _, statErr := os.Stat(filepath.Join(env.RootDir, "backend", "api-stage")); statErr != nil {
+		t.Error("no worktree was created from the --all shape")
+	}
+}
+
+// A named file must be named in every message and in details.missing, which callers machine-read.
+func TestApply_NamesTheFileItReadRatherThanStdin(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
+	env.Chdir()
+
+	empty := filepath.Join(env.RootDir, "empty.json")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"apply", empty})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("an empty document was accepted")
+	}
+	e := output.Classify(err)
+	if strings.Contains(e.Message, "stdin") {
+		t.Errorf("message names stdin for a file argument: %q", e.Message)
+	}
+	missing, _ := e.Details["missing"].([]string)
+	if len(missing) != 1 || missing[0] != empty {
+		t.Errorf("details.missing = %#v, want the file that was read", e.Details["missing"])
+	}
+}
+
+// An unreadable path is a caller naming a bad file, not a hydra bug. The command's own EXIT CODES
+// block documents needs_input for it, and the empty-input half already returned that.
+func TestApply_UnreadablePathIsNeedsInput(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"apply", filepath.Join(env.RootDir, "does-not-exist.json")})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("a missing file was accepted")
+	}
+	if got := output.Classify(err).Code; got != output.CodeNeedsInput {
+		t.Errorf("code: got %q, want %q", got, output.CodeNeedsInput)
+	}
+}
+
+// The source argument is required, so a bare `hydra apply` fails fast instead of blocking on a
+// terminal with nothing said.
+func TestApply_RequiresASourceArgument(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"apply"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("a bare apply was accepted; it would block on a terminal")
+	}
+}

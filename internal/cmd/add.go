@@ -63,7 +63,7 @@ FLAGS
 HOOKS
   Runs the post_add chain with cwd set to the new worktree. A failing hook does NOT
   remove the worktree: it was created correctly. Fix the hook and run
-  "hydra hooks run post_add".
+  "hydra hooks run post_add --worktree <name>".
 
 EXIT CODES
   0  Success

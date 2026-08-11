@@ -13,8 +13,8 @@ These hold for every command. Rely on them instead of probing.
 2. Branch on `error.code`, never on message wording. Codes are stable; messages are not.
 3. **Creation is convergent**: `add`, `start`, `apply`, `repo add`, `repo restore` twice is a no-op at exit 0, reported as `skipped`. Removing what is already gone is `worktree_unknown`/`topic_unknown`, never a silent success.
 4. Nothing is inferred from a branch name. Topic membership is recorded, never guessed.
-5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`details.one_of` — hydra
-   never blocks on a prompt when output is machine-readable.
+5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`one_of`; a WRONG one is
+   `internal` with the legal set in `details.valid`. Never blocks on a prompt when machine-readable.
 6. A handle matching several worktrees is an error, never a silent first match.
 7. `hydra commands --output json` publishes the whole surface and the code→exit table. Human guide: https://mssantosdev.github.io/hydra/
 

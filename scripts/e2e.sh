@@ -116,6 +116,17 @@ check "next is omitted rather than null when empty" \
   '"$HYDRA" where --output json | jq -e ".outcome==\"success\" and (has(\"next\")|not)" >/dev/null'
 check "list names its inverse in next" \
   '"$HYDRA" list --output json | jq -e ".next[0].argv==[\"hydra\",\"apply\",\"-\"]" >/dev/null'
+# A hint is a promise about the next command, so it may only appear when its sentence is true.
+# --all spans several workspaces, and an empty listing has no set to replay.
+check "list omits the replay hint when there is nothing to replay" \
+  '"$HYDRA" list --all --output json | jq -e "has(\"next\")|not" >/dev/null'
+# The pipeline list advertises. `apply` read `projects` as a sibling of `data`, so this document
+# parsed clean and applied ZERO of the worktrees it carried.
+check "list --all pipes into apply without losing worktrees" \
+  '(cd "$T/ws" && n=$("$HYDRA" list --all --output json | jq "[.data.projects[].worktrees[]]|length") &&
+    [ "$n" -gt 0 ] &&
+    "$HYDRA" list --all --output json | "$HYDRA" apply - --dry-run --output json |
+      jq -e ".data.total==$n" >/dev/null)'
 check "error envelopes carry outcome failure" \
   '{ "$HYDRA" list --topic nope --output json 2>/dev/null || true; } | jq -e ".outcome==\"failure\"" >/dev/null'
 check "a terminal error is retryable:false, never absent" \

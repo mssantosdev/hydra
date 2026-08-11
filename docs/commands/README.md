@@ -217,7 +217,6 @@ Inspect or manually run hook chains from `.hydra/config.yaml`.
 
 ```bash
 hydra hooks ls
-hydra hooks run post_add
 hydra hooks run post_add --worktree api-feature-x
 ```
 

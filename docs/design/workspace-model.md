@@ -39,39 +39,20 @@ Consequence: WIP needs no heuristic. It is `observed − declared`. An earlier d
 
 ## Known defects
 
-**The manifest writer destroys comments and unknown keys.** `(*Config).Save`
-(`config/config.go:109`) marshals a closed struct over the whole file. Reproduced this session: a
-manifest carrying two header comments, an inline comment and a `worktrees:` key lost all four to a
-single `hydra repo add`, exit 0, no warning. Already recorded under `### Known` in CHANGELOG 0.4.0
-with all four call sites and the fix rule — *preserve within the same schema version, and let an
-explicit migration remove them*. It is now a **blocker**, because every feature below writes the
-manifest, and one of them is the command whose purpose is editing configuration.
+None outstanding in this model. Every defect this document recorded is closed, and each is pinned
+by a test rather than by this list:
 
-**`add` is not convergent.** SKILL.md invariant 3 promises *"doing it twice is a no-op that exits 0,
-reported as `skipped`"*, and agents are told to rely on invariants instead of probing. A re-run
-returns `worktree_exists` at exit 1. `start` implements the correct shape already
-(`created: null`, `skipped: [{disposition, reason}]`, exit 0). This breaks retry-safe provisioning:
-a cloud-init script re-running user-data dies on the second `add`.
+| was | closed by | pinned by |
+|---|---|---|
+| the manifest writer destroyed comments and unknown keys | 0.5.0, hardened in 0.5.2 | `internal/config/writer_test.go` |
+| `add` was not convergent | 0.5.0 | `TestAdd_IsConvergent`, `TestAdd_ConvergenceRequiresTheRequestedDirectory` |
+| manifest defaults had no read path | 0.5.0 | `internal/config/explain_test.go` |
+| `defaults` and `hooks` were read only at the workspace level | 0.5.2 | `internal/config/levels_test.go` |
+| hooks had no timeout | 0.4.0 | `internal/hooks` |
+| `HYDRA_TOPIC` was absent from the hook environment | 0.4.0 | `hooks.EnvKeys`, asserted in `scripts/e2e.sh` |
 
-**Manifest defaults have no read path.** `hydra config show` returns `theme`, `editor` and
-`config_path` — global settings only. `base_branch`, `branch_pattern`, `branch_provider` are
-unreadable by any command. The name promises the configuration and delivers three global values,
-while the file everyone calls the config (`.hydra/config.yaml`) is absent. Two files are both named
-`config.yaml` and `config show` shows the one that is not the workspace's.
-
-**No hook timeout.** `internal/hooks/hooks.go` has none. Every other wait in hydra is bounded (5s
-state lock, `run --timeout`). A hook that hangs hangs hydra, and on an instance bootstrap that hangs
-the boot.
-
-**`HYDRA_TOPIC` is absent from the hook environment.** A `post_add` fired by `start --topic X`
-cannot name X, so "do something for this unit of work" is impossible in a hook. The environment
-carries `HYDRA_BARE_PATH`, `BRANCH`, `EVENT`, `GROUP`, `PROJECT`, `PROJECT_ROOT`, `REPO`,
-`WORKTREE_PATH`, and nothing identifying the originating worktree.
-
-**Minor.** `config set <unknown-key>` returns `internal` with `details.one_of: null`, while omitting
-the key returns `needs_input` with `one_of: ["theme","editor"]` — so a caller that guesses wrong gets
-no correction. SKILL.md's `repo` row lists `--group` for the family but `repo restore` rejects it.
-Empty collections serialize as `null` in `data` (`created: null`) while `error.details` drops empties.
+A defect belongs here only while no test covers it. Once one does, the test is the record — a list
+in a document drifts out of date silently, which is the failure this whole release was about.
 
 ## The declared shape of a workspace
 

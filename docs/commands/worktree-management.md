@@ -88,9 +88,14 @@ hydra add api feature/long-name --as short-name
 
 Slugs preserve case; `/` becomes `-`. Use `hydra path <worktree>` or JSON `data[].path` for the authoritative path.
 
-### When worktree already exists
+### When the worktree already exists
 
-Returns `worktree_exists` (exit 1) or reports the existing worktree in JSON output.
+Re-running the same `add` is a no-op: exit 0, `disposition: "skipped"`, and the existing worktree
+in `data`. Creation is convergent, so a provisioning script may re-run its own steps.
+
+`worktree_exists` (exit 1) means the request cannot be satisfied — the branch is checked out at a
+DIFFERENT directory from the one `--as <name>` asks for. Git cannot check one branch out twice, so
+the requested directory is unreachable.
 
 ### Error codes
 
@@ -99,7 +104,7 @@ Returns `worktree_exists` (exit 1) or reports the existing worktree in JSON outp
 | `repo_unknown` | 1 | alias not in config |
 | `bare_missing` | 1 | `.bare/<alias>.git` missing |
 | `branch_unknown` | 1 | `--from` or base branch invalid |
-| `worktree_exists` | 1 | branch already has a worktree |
+| `worktree_exists` | 1 | branch is checked out at another directory; a re-run of the same `add` exits 0 |
 | `worktree_name_conflict` | 1 | directory name taken by another branch |
 | `hook_failed` | 1 | required `post_add` hook failed |
 | `git_failed` | 1 | underlying git error |
@@ -258,7 +263,7 @@ hydra also refuses to delete the repo's default branch outright.
 | Switch (interactive) | `hydra switch <worktree>` |
 | Worktree status / board | `hydra status` (`ui`/`tui` alias) |
 | List worktrees | `hydra list` / `hydra ls` |
-| Retry failed hook | `hydra hooks run post_add` |
+| Retry failed hook | `hydra hooks run post_add --worktree <name>` |
 
 ---
 

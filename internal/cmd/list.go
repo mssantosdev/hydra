@@ -114,10 +114,17 @@ func runList(cmd *cobra.Command, args []string) error {
 	// about the name "list" says so — it was discoverable only from `apply --help` or from
 	// `repo restore`'s own hint, both of which you only reach if you already knew. Naming it
 	// here means the round trip is visible from the end you are standing at.
-	next := []output.Next{{
-		Argv: []string{"hydra", "apply", "-"},
-		Why:  "replay this exact set of worktrees in another workspace",
-	}}
+	//
+	// Only when the sentence is true: an empty listing has no set to replay, and `--all` spans
+	// several workspaces, so "this exact set ... in another workspace" would describe a union
+	// rather than a set. A hint is a promise about the next command.
+	var next []output.Next
+	if total > 0 && !listAll {
+		next = []output.Next{{
+			Argv: []string{"hydra", "apply", "-"},
+			Why:  "replay this exact set of worktrees in another workspace",
+		}}
+	}
 	return emitResult(cmd, output.Result{
 		Summary:  fmt.Sprintf("%d worktree(s)", total),
 		Data:     data,

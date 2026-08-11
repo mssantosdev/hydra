@@ -17,9 +17,9 @@ import (
 var applyDryRun bool
 
 var applyCmd = &cobra.Command{
-	Use:   "apply -",
-	Short: "Create the worktrees described by JSON on stdin",
-	Long: `Apply a desired set of worktrees, read as JSON on stdin.
+	Use:   "apply [- | <file>]",
+	Short: "Create the worktrees described by JSON on stdin or in a file",
+	Long: `Apply a desired set of worktrees, read as JSON from stdin or a file.
 
 DESCRIPTION
   The batch counterpart to the flags. "hydra start" is the fluent way to ask for one
@@ -50,6 +50,9 @@ EXAMPLES
   $ hydra list --output json > work.json
   $ hydra apply - < work.json
 
+  # the same document by path, for a caller that execs without a shell to redirect with
+  $ hydra apply work.json
+
   # move a topic's worktrees into a fresh clone of the workspace
   $ hydra list --topic 2072958 --output json | hydra apply -
 
@@ -66,7 +69,7 @@ EXIT CODES
 SEE ALSO
   • hydra start - the fluent path, for one branch across repositories
   • hydra list  - produces the document apply consumes`,
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.ExactArgs(1),
 	RunE: runApply,
 }
 
@@ -131,9 +134,9 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
 		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
 	}
-	// "-" means stdin, and stays required by convention rather than parsed: it makes "reads
-	// stdin" visible in the command line, the way `kubectl apply -f -` does, instead of a
-	// bare `hydra apply` that blocks with no explanation.
+	// "-" names stdin and a path names a file; ONE of them is required, enforced by ExactArgs
+	// rather than asserted in prose. A bare `hydra apply` would block on a terminal with nothing
+	// said, which is what naming the source in the command line exists to prevent.
 	//
 	// A PATH is accepted too, because an agent that execs without a shell cannot redirect:
 	// `< work.json` is shell composition, so stdin-only forced every non-shell caller to
@@ -143,15 +146,19 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 && args[0] != "-" {
 		f, err := os.Open(args[0])
 		if err != nil {
-			return output.Wrap(output.CodeInternal, err,
+			// needs_input, not internal: internal is hydra's bucket for its own bugs, and the
+			// command's documented EXIT CODES already promise needs_input for an unreadable
+			// input — the empty-file half of this same failure mode already returned it.
+			return output.Wrap(output.CodeNeedsInput, err,
 				"apply could not read %q; pass a readable file or - for stdin", args[0]).
-				WithDetail("argument", args[0])
+				WithDetail("argument", args[0]).
+				WithDetail("missing", []string{args[0]})
 		}
 		defer func() { _ = f.Close() }()
 		source, from = f, args[0]
 	}
 
-	items, warnings, err := readApplyItems(source)
+	items, warnings, err := readApplyItems(source, from)
 	if err != nil {
 		return err
 	}
@@ -249,47 +256,54 @@ func runApply(cmd *cobra.Command, args []string) error {
 // Supporting both is not laxity: `hydra list -o json` produces the envelope and
 // `jq '.data.worktrees'` produces the array, and demanding one would force a caller to
 // reshape a document hydra itself just emitted.
-func readApplyItems(stdin io.Reader) ([]applyItem, []string, error) {
-	data, err := io.ReadAll(stdin)
+// from names the source in every message and in details.missing, which a caller machine-reads.
+// Hardcoding "stdin" made a named file report a source the caller never used.
+func readApplyItems(source io.Reader, from string) ([]applyItem, []string, error) {
+	data, err := io.ReadAll(source)
 	if err != nil {
-		return nil, nil, output.Wrap(output.CodeInternal, err, "failed to read stdin")
+		return nil, nil, output.Wrap(output.CodeNeedsInput, err, "failed to read %s", from)
 	}
 	trimmed := strings.TrimSpace(string(data))
 	if trimmed == "" {
-		return nil, nil, output.Errorf(output.CodeNeedsInput, "stdin was empty").
-			WithDetail("missing", []string{"stdin"})
+		return nil, nil, output.Errorf(output.CodeNeedsInput, "%s was empty", from).
+			WithDetail("missing", []string{from})
 	}
 
 	if strings.HasPrefix(trimmed, "[") {
 		var items []applyItem
 		if err := json.Unmarshal([]byte(trimmed), &items); err != nil {
-			return nil, nil, invalidApplyInput(err)
+			return nil, nil, invalidApplyInput(err, from)
 		}
 		return validateApplyItems(items)
 	}
 
+	// `list --all` nests its per-project listing at data.projects[], so that is where this reads
+	// it. Declared as a sibling of data, the field matched nothing hydra emits: the documented
+	// `list --all | apply -` pipeline parsed clean and applied zero of the worktrees it was given.
 	var envelope struct {
 		Data struct {
 			Worktrees []applyItem `json:"worktrees"`
+			Projects  []struct {
+				Worktrees []applyItem `json:"worktrees"`
+			} `json:"projects"`
 		} `json:"data"`
-		// A caller may also hand back a project-scoped listing from --all.
-		Projects []struct {
-			Worktrees []applyItem `json:"worktrees"`
-		} `json:"projects"`
 	}
 	if err := json.Unmarshal([]byte(trimmed), &envelope); err != nil {
-		return nil, nil, invalidApplyInput(err)
+		return nil, nil, invalidApplyInput(err, from)
 	}
 	items := envelope.Data.Worktrees
-	for _, project := range envelope.Projects {
+	for _, project := range envelope.Data.Projects {
 		items = append(items, project.Worktrees...)
 	}
 	return validateApplyItems(items)
 }
 
-func invalidApplyInput(err error) error {
+// A malformed document is a WRONG value, not an absent one, so it stays `internal` — the same
+// split the error table draws between `details.valid` and `details.missing`. Only empty and
+// unreadable input are `needs_input`, which is what apply's EXIT CODES block promises.
+func invalidApplyInput(err error, from string) error {
 	return output.Wrap(output.CodeInternal, err,
-		"stdin is not valid JSON in the shape \"hydra list --output json\" emits")
+		"%s is not valid JSON in the shape \"hydra list --output json\" emits", from)
 }
 
 // validateApplyItems rejects an item that cannot describe a worktree, naming the index
