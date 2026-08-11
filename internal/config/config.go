@@ -82,32 +82,83 @@ func (g Group) Dir(name string) string {
 
 // UnmarshalYAML accepts both shapes so a version-2 manifest keeps working.
 //
-// The two are told apart structurally rather than by consulting the version: a v3 group is a
-// mapping with a `repos` key, a v2 group is a mapping of aliases straight to repositories. Reading
-// the version would mean decoding the document twice, and a manifest whose `version` disagrees with
-// its own shape is exactly the half-migrated state doctor has to be able to report.
+// The two are told apart structurally rather than by consulting the version: reading the version
+// would mean decoding the document twice, and a manifest whose `version` disagrees with its own
+// shape is exactly the half-migrated state doctor has to be able to report.
+//
+// The test is the whole KEY SET, not the presence of `repos`. A v3 group is one whose every key is
+// a group field, which accepts the documented `path:`-only group that has no repositories yet;
+// keying on `repos` alone read that as a v2 group and failed with an error naming an internal type.
+// The mirror case is real too: a v2 group may legitimately hold a repository aliased `repos`.
+// isGroupShape reports whether a mapping should be read as a version-3 group rather than a
+// version-2 mapping of aliases straight to repositories.
+//
+// A `repos:` key settles it on its own, because no other reading of that key makes a group. Failing
+// that, a mapping whose every key is a Group field is a group — which is what accepts the documented
+// `path:`-only group that has no repositories yet.
+//
+// The `repos:` clause is load-bearing beyond tidiness: without it, a group carrying `repos:` AND a
+// typo'd key would fail this test and be read as version 2, where yaml silently ignores unknown
+// fields, so every real repository would vanish at exit 0.
+//
+// An EMPTY mapping is a group: it has no repositories to be the v2 reading of, and `groups: {infra:
+// {}}` is what `repo remove` leaves behind.
+func isGroupShape(value *yaml.Node) bool {
+	fields := map[string]bool{"path": true, "defaults": true, "hooks": true, "carry": true, "repos": true}
+	known := true
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		switch key := value.Content[i].Value; {
+		case key == "repos":
+			return true
+		case !fields[key]:
+			known = false
+		}
+	}
+	return known
+}
+
+// isRepoSet reports whether a legacy decode produced something that can really be a v2 alias →
+// repository mapping. Every repository carries a remote, so a set where none does is a group whose
+// keys yaml quietly ignored, not a repository set — accepting it would drop every real entry.
+func isRepoSet(repos map[string]Repo) bool {
+	for _, repo := range repos {
+		if strings.TrimSpace(repo.Remote) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Group) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("group must be a mapping, got %v", value.Kind)
 	}
-	for i := 0; i+1 < len(value.Content); i += 2 {
-		if value.Content[i].Value == "repos" {
-			type raw Group
-			var r raw
-			if err := value.Decode(&r); err != nil {
-				return err
-			}
-			*g = Group(r)
+	// The key set decides which shape to TRY first; the decode decides whether it was right. Both
+	// readings are attempted because one shape is ambiguous on keys alone — a v2 group holding a
+	// repository aliased `repos` looks exactly like a v3 group — and guessing wrong produced an
+	// error naming an internal Go type instead of the manifest.
+	type raw Group
+	var (
+		modern raw
+		legacy map[string]Repo
+	)
+	modernErr, legacyErr := error(nil), error(nil)
+	if isGroupShape(value) {
+		if modernErr = value.Decode(&modern); modernErr == nil {
+			*g = Group(modern)
 			return nil
 		}
 	}
-	// Legacy: the whole mapping is the repo set.
-	var repos map[string]Repo
-	if err := value.Decode(&repos); err != nil {
-		return err
+	if legacyErr = value.Decode(&legacy); legacyErr == nil && isRepoSet(legacy) {
+		*g = Group{Repos: legacy}
+		return nil
 	}
-	*g = Group{Repos: repos}
-	return nil
+	if modernErr != nil {
+		return fmt.Errorf("group is neither a set of repositories nor a group with a "+
+			"`repos:` key (as %q it reports: %w)", "group", modernErr)
+	}
+	return fmt.Errorf("group must map repository aliases to repositories, or carry a `repos:` "+
+		"key: %w", legacyErr)
 }
 
 // Repo describes a repository registered under a group. The map key that points
@@ -251,9 +302,10 @@ func (c *Config) Save(path string) error {
 		var old yaml.Node
 		if yaml.Unmarshal(prior, &old) == nil && len(old.Content) == 1 {
 			doc := old.Content[0]
-			carry := sameSchema(doc, c.Version)
+			carry := sameSchema(doc)
 			normalizeLegacyGroups(doc)
 			mergePreserving(doc, &out, reflect.TypeOf(c), carry)
+			orderLikeOld(doc, &out)
 			out.HeadComment = joinComments(old.HeadComment, out.HeadComment)
 			out.FootComment = joinComments(out.FootComment, old.FootComment)
 			merged = true
@@ -324,24 +376,30 @@ func joinComments(first, second string) string {
 	}
 }
 
-// sameSchema reports whether the file on disk declares the version we are writing.
-// Unknown keys are carried over only within one schema version: a migration that
-// means to DROP a field would otherwise resurrect it on the next write, which is
-// the one case where preserving unknowns is wrong.
-func sameSchema(doc *yaml.Node, writing string) bool {
+// versionReadable reports whether this binary can read a manifest declaring v.
+//
+// It is the single authority for the accept set. Load gates on it and the writer's carry decision
+// asks it, because both encode one fact — which versions are compatible — and a schema 4 that
+// updated only one of two copies would either resurrect keys a migration meant to drop or drop keys
+// it meant to keep, silently either way.
+func versionReadable(v string) bool {
+	return v == SchemaVersion || v == LegacySchemaVersion
+}
+
+// sameSchema reports whether the file on disk declares a version this binary can read.
+// Unknown keys are carried over only from a version this binary can read: a migration that means to
+// DROP a field would otherwise resurrect it on the next write, which is the one case where
+// preserving unknowns is wrong.
+//
+// The 2 → 3 change RENESTS groups and removes no field, so a key this binary does not model is just
+// as unknown afterwards, and dropping it on the upgrade would be the same silent data loss the merge
+// exists to prevent. A future migration that genuinely means to drop a field narrows versionReadable
+// or excludes itself here, deliberately.
+func sameSchema(doc *yaml.Node) bool {
 	for i := 0; i+1 < len(doc.Content); i += 2 {
-		if doc.Content[i].Value != "version" {
-			continue
+		if doc.Content[i].Value == "version" {
+			return versionReadable(doc.Content[i+1].Value)
 		}
-		found := doc.Content[i+1].Value
-		if found == writing {
-			return true
-		}
-		// The 2 → 3 change RENESTS groups and removes no field, so a key this binary does not
-		// model is just as unknown afterwards and dropping it on the upgrade would be the same
-		// silent data loss this merge exists to prevent. A future migration that genuinely means
-		// to drop a field must exclude itself here, deliberately.
-		return found == LegacySchemaVersion && writing == SchemaVersion
 	}
 	return false
 }
@@ -520,6 +578,54 @@ func copyCommentsInPlace(old, new *yaml.Node) {
 	}
 }
 
+// orderLikeOld reorders the document about to be written to follow the key order of the file it
+// replaces, at every level.
+//
+// Comments are attached to keys, so preserving a comment while moving its key produces a file that
+// LIES: a `# --- layout ---` banner ends up above one of the two sections it introduced, and the
+// rest appears somewhere else entirely. Struct field order and appended carried keys are both
+// invisible to the merge, so without this a single `repo remove` rewrites the shape of a file
+// nobody asked to reshape — inside a diff a reviewer is meant to read.
+//
+// Keys the old document did not have keep their relative order and follow the ones it did.
+func orderLikeOld(old, new *yaml.Node) {
+	if old == nil || new == nil || old.Kind != yaml.MappingNode || new.Kind != yaml.MappingNode {
+		return
+	}
+	rank := map[string]int{}
+	for i := 0; i+1 < len(old.Content); i += 2 {
+		rank[old.Content[i].Value] = i
+	}
+
+	type pair struct {
+		key, val   *yaml.Node
+		rank, seen int
+	}
+	pairs := make([]pair, 0, len(new.Content)/2)
+	for i := 0; i+1 < len(new.Content); i += 2 {
+		key := new.Content[i]
+		r, ok := rank[key.Value]
+		if !ok {
+			// A key the old file lacked sorts after every key it had, in the order it was encoded.
+			r = len(old.Content) + i
+		}
+		pairs = append(pairs, pair{key, new.Content[i+1], r, i})
+	}
+	sort.SliceStable(pairs, func(a, b int) bool { return pairs[a].rank < pairs[b].rank })
+
+	ordered := make([]*yaml.Node, 0, len(new.Content))
+	for _, pr := range pairs {
+		ordered = append(ordered, pr.key, pr.val)
+	}
+	new.Content = ordered
+
+	for i := 0; i+1 < len(new.Content); i += 2 {
+		if _, oldVal := lookup(old, new.Content[i].Value); oldVal != nil {
+			orderLikeOld(oldVal, new.Content[i+1])
+		}
+	}
+}
+
 // isEmptyNode reports whether a node carries no data: an empty scalar, or a collection whose
 // every value is itself empty. Such a node is indistinguishable from an absent key once the
 // manifest is decoded, which is what makes re-emitting it safe.
@@ -650,7 +756,7 @@ func Load(path string) (*Config, error) {
 	//
 	// Anything OLDER or NEWER is still refused: the gate exists so a manifest written by a hydra
 	// that knows more than this one is never silently half-read.
-	if cfg.Version != SchemaVersion && cfg.Version != LegacySchemaVersion {
+	if !versionReadable(cfg.Version) {
 		return nil, &ErrUnsupportedVersion{Path: path, Version: cfg.Version}
 	}
 	cfg.Version = SchemaVersion

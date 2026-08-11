@@ -232,3 +232,108 @@ groups:
 		t.Error("the new branch list did not land")
 	}
 }
+
+// A comment is attached to a key, so moving the key moves the comment's subject. Preserving the
+// text while reordering produces a file that lies — a section banner introducing content that is
+// now somewhere else. The comment-count test cannot see this, because nothing is lost.
+func TestSaveKeepsTheDocumentKeyOrder(t *testing.T) {
+	prior := `version: "3"
+project: p
+
+# --- ownership ---
+owners:
+    - team-platform
+
+# --- layout ---
+paths:
+    bare_dir: .bare
+defaults:
+    base_branch: main
+
+# --- repositories ---
+groups:
+    backend:
+        repos:
+            api:
+                remote: r1
+            worker:
+                remote: r2
+`
+	got, _ := saveInto(t, prior, func(c *Config) {
+		delete(c.Groups["backend"].Repos, "worker")
+	})
+
+	topLevel := func(doc string) []string {
+		var keys []string
+		for _, line := range strings.Split(doc, "\n") {
+			if line == "" || line[0] == ' ' || line[0] == '#' || line[0] == '-' {
+				continue
+			}
+			if key, _, found := strings.Cut(line, ":"); found {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
+	before, after := topLevel(prior), topLevel(got)
+	if strings.Join(before, ",") != strings.Join(after, ",") {
+		t.Errorf("key order changed:\n before %v\n after  %v\n---\n%s", before, after, got)
+	}
+	// The banner must still introduce the section it names.
+	layout := strings.Index(got, "# --- layout ---")
+	repos := strings.Index(got, "# --- repositories ---")
+	defaults := strings.Index(got, "defaults:")
+	if layout < 0 || repos < 0 || layout >= defaults || defaults >= repos {
+		t.Errorf("the layout banner no longer introduces defaults:\n%s", got)
+	}
+}
+
+// A `repos:` key settles the version-3 reading on its own. Without that, a group carrying repos AND
+// a typo'd key was read as version 2, where yaml ignores unknown fields — so every real repository
+// vanished at exit 0.
+func TestGroupWithAnUnknownKeyKeepsItsRepositories(t *testing.T) {
+	var c Config
+	raw := []byte(`version: "3"
+project: p
+groups:
+  backend:
+    repos:
+      api:
+        remote: r1
+    defaluts: {}
+`)
+	if err := yaml.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := len(c.Groups["backend"].Repos); got != 1 {
+		t.Fatalf("repos = %d, want 1 — a typo'd key silently dropped the repository", got)
+	}
+	if c.Groups["backend"].Repos["api"].Remote != "r1" {
+		t.Error("the repository survived by name but lost its remote")
+	}
+}
+
+// The documented `path:`-only group has no repositories yet. Keying the shape on `repos` alone read
+// it as version 2 and failed with an error naming an internal Go type.
+func TestGroupWithOnlyAPathLoads(t *testing.T) {
+	var c Config
+	raw := []byte("version: \"3\"\nproject: p\ngroups:\n  infra:\n    path: platform/infra\n")
+	if err := yaml.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("a documented v3 group failed to load: %v", err)
+	}
+	if got := c.Groups["infra"].Path; got != "platform/infra" {
+		t.Errorf("path = %q, want %q", got, "platform/infra")
+	}
+}
+
+// A version-2 group may legitimately hold a repository aliased `repos`.
+func TestLegacyGroupHoldingARepoAliasedRepos(t *testing.T) {
+	var c Config
+	raw := []byte("version: \"2\"\nproject: p\ngroups:\n  backend:\n    repos:\n      remote: r1\n")
+	if err := yaml.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := c.Groups["backend"].Repos["repos"].Remote; got != "r1" {
+		t.Errorf("repos alias lost its remote: %#v", c.Groups["backend"].Repos)
+	}
+}
