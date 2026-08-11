@@ -10,7 +10,7 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
-## [Unreleased]
+## [0.5.2] - 2026-08-11
 
 ### Fixed
 
