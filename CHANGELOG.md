@@ -66,6 +66,24 @@ is permanently bound to different content in the Go checksum database, so it can
   produced exit 0 and the claim that all six agreed with the build. A missing prerequisite is now
   a failure that names it, and `gate-docs` depends on `build`.
 
+- **The docs gate's verdict is a trap, not a line at the bottom.** A check appended below the exit
+  statement set `fail=1` after the last thing that read it, so drift printed and the script exited
+  0; a command dying under `set -e` also passed silently. Position on the page can no longer change
+  whether a result counts.
+- **The hook-variable greps were unanchored**, so documenting `HYDRA_PROJECT_ROOT` satisfied
+  `HYDRA_PROJECT` — the variable most likely to be confused with another was the one the check could
+  not see. The guide URL was matched as a regex, so `github.io` was satisfied by `githubXio`.
+- **The default-theme check had asserted nothing since the commit that added it**, which deleted the
+  English phrase it greps for. The default is pinned in Go as a value, and the prose check now covers
+  `Defaults to the X theme` as well as `X theme by default`.
+- **`check_doc_manifests.py` is a Go test.** The Python needed PyYAML (absent meant the check
+  vanished), spawned a subprocess per example, leaked five temp directories per `make gate`, read a
+  hand-maintained file list, and anchored HTML extraction on a first line a comment would hide.
+  `TestDocumentedManifestsLoadAndKeepTheirRepositories` keeps both facts over a glob.
+- Two e2e assertions a Go test already owned were dropped: `next` omitempty belongs to
+  `internal/output`, and `ui` in the surface is covered byte-for-byte by the SURFACE.txt snapshot.
+  The surviving hint assertion no longer pins `next[0]`, since order in `next[]` is not a contract.
+
 ### Changed
 
 - Comments across the codebase state the rule the code obeys rather than recounting the defect
