@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -310,5 +312,66 @@ func TestApply_RejectsANonDashArgument(t *testing.T) {
 	rootCmd.SetArgs([]string{"apply", "somefile.json", "--output", "json"})
 	if err := rootCmd.Execute(); err == nil {
 		t.Fatal("apply must reject an argument other than -")
+	}
+}
+
+// A captured worktree carries the directory it lives in, and `apply` exists to reproduce a
+// workspace elsewhere, so a `--as` name has to come back as itself. Deriving the directory from
+// the branch yields a name that does not exist beside a branch already checked out at the real one.
+func TestApply_ReproducesAnExplicitWorktreeName(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	doc := filepath.Join(env.RootDir, "snap.json")
+	if err := os.WriteFile(doc, []byte(
+		`[{"repo":"api","branch":"stage","name":"mystage"}]`), 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"apply", doc})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("apply the captured name: %v (code %q)", err, output.Classify(err).Code)
+	}
+	if _, err := os.Stat(filepath.Join(env.RootDir, "backend", "mystage")); err != nil {
+		t.Error("apply did not create the captured directory name")
+	}
+	if _, err := os.Stat(filepath.Join(env.RootDir, "backend", "api-stage")); err == nil {
+		t.Error("apply created the derived name instead of the captured one")
+	}
+}
+
+// The document is untrusted input, and `name` becomes a path segment under the workspace root.
+// A traversal attempt must fail that ITEM without escaping the workspace and without aborting the
+// rest of the run.
+func TestApply_RefusesAWorktreeNameThatEscapesTheWorkspace(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	outside := filepath.Join(env.RootDir, "escaped")
+	doc := filepath.Join(env.RootDir, "evil.json")
+	body := `[{"repo":"api","branch":"stage","name":"../escaped"},{"repo":"api","branch":"main"}]`
+	if err := os.WriteFile(doc, []byte(body), 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"apply", doc})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("apply accepted a name that leaves the workspace")
+	}
+	if got := output.Classify(err).Code; got != output.CodePartialFailure {
+		t.Errorf("code: got %q, want %q so the valid item is still reported", got, output.CodePartialFailure)
+	}
+	if _, statErr := os.Stat(outside); statErr == nil {
+		t.Error("a worktree was created outside the workspace root")
+	}
+	if _, statErr := os.Stat(filepath.Join(env.RootDir, "backend", "api")); statErr != nil {
+		t.Error("the valid item was abandoned; one bad name must not stop the run")
 	}
 }

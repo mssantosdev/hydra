@@ -18,6 +18,7 @@ func saveInto(t *testing.T, prior string, mutate func(*Config)) (string, *Config
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	if prior != "" {
+		//nolint:gosec // G703: path is filepath.Join under this test's own t.TempDir()
 		if err := os.WriteFile(path, []byte(prior), 0o600); err != nil {
 			t.Fatalf("seed: %v", err)
 		}

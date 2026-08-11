@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/hooks"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
@@ -107,5 +110,28 @@ func TestHooksRunOptionalFailureWarns(t *testing.T) {
 	decodeJSONData(t, &stdout, &payload)
 	if len(payload.Result.Warnings) == 0 {
 		t.Fatalf("expected warnings in payload: %+v", payload)
+	}
+}
+
+// The ENVIRONMENT block of `hydra hooks --help` and the `env` list in `hooks ls --output json`
+// describe one fact. This pins them to the same source so the human-facing copy cannot fall
+// behind a new variable.
+func TestHooksHelpListsEveryInjectedVariable(t *testing.T) {
+	help := hooksLongHelp()
+	for _, key := range hooks.EnvKeys() {
+		if !strings.Contains(help, key) {
+			t.Errorf("hooks --help does not mention %s", key)
+		}
+	}
+	found := regexp.MustCompile(`HYDRA_[A-Z_]+`).FindAllString(help, -1)
+	unique := map[string]bool{}
+	for _, f := range found {
+		unique[f] = true
+	}
+	// HYDRA_* also appears in the prose above the block, so compare the set, not the count.
+	for name := range unique {
+		if !slices.Contains(hooks.EnvKeys(), name) {
+			t.Errorf("hooks --help advertises %s, which the hook runner does not inject", name)
+		}
 	}
 }

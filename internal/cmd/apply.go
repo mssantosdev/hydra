@@ -80,6 +80,28 @@ type applyItem struct {
 	Repo   string  `json:"repo"`
 	Branch string  `json:"branch"`
 	Topic  *string `json:"topic"`
+
+	// Name is the worktree DIRECTORY, carried so a captured workspace reproduces as itself.
+	// Deriving it from the branch instead cannot reproduce a worktree created with `--as`: the
+	// derived directory does not exist, and the branch is already checked out at the real one.
+	// Optional, so a hand-written document may still omit it and take the derived name.
+	Name string `json:"name,omitempty"`
+}
+
+// dirNameFor returns the directory an item asks for, falling back to the name derived from the
+// branch when the document does not say.
+//
+// The document is untrusted — stdin or a caller-named file — and this value becomes a path segment
+// under the workspace root, so a name containing `..` or a separator must be refused rather than
+// allowed to place a worktree outside the workspace. `add` applies the same rule to `--as`.
+func (i applyItem) dirNameFor(repo repoContext) (string, error) {
+	if i.Name == "" {
+		return worktreeDirName(repo, i.Branch), nil
+	}
+	if err := validatePathSegment("name", i.Name); err != nil {
+		return "", output.Wrap(output.CodeInternal, err, "invalid worktree name in document")
+	}
+	return i.Name, nil
 }
 
 type applyResultJSON struct {
@@ -155,7 +177,13 @@ func runApply(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		repo := repoContextFor(cfg, projectRoot, ref)
-		dirName := worktreeDirName(repo, item.Branch)
+		dirName, nameErr := item.dirNameFor(repo)
+		if nameErr != nil {
+			result.Disposition, result.Error = "failed", output.Classify(nameErr).Message
+			payload.Failed++
+			payload.Results = append(payload.Results, result)
+			continue
+		}
 		result.Group = repo.Group
 		result.Name = dirName
 		result.Path = worktreePath(projectRoot, repo.Group, dirName)
@@ -296,7 +324,10 @@ func validateApplyItems(items []applyItem) ([]applyItem, []string, error) {
 
 // applyOne converges one item, reusing the same helpers start does.
 func applyOne(repo repoContext, item applyItem) (disposition, warning string, err error) {
-	dirName := worktreeDirName(repo, item.Branch)
+	dirName, err := item.dirNameFor(repo)
+	if err != nil {
+		return "failed", "", err
+	}
 	target := worktreePath(projectRoot, repo.Group, dirName)
 
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, item.Branch); err != nil {
@@ -360,7 +391,10 @@ func tallyApplyDisposition(p *applyJSON, disposition string) {
 // ways applyOne does: converged, conflicting, absent. Reporting `would_create` for a directory
 // that a real run refuses would make --dry-run useless exactly where it matters most.
 func applyDryRunDisposition(repo repoContext, item applyItem) string {
-	dirName := worktreeDirName(repo, item.Branch)
+	dirName, err := item.dirNameFor(repo)
+	if err != nil {
+		return "failed"
+	}
 	target := worktreePath(projectRoot, repo.Group, dirName)
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, item.Branch); err != nil {
 		if worktreeAlreadyAtTarget(err, target) {

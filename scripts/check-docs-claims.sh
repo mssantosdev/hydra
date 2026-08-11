@@ -13,6 +13,19 @@ cd "$(dirname "$0")/.."
 fail=0
 note() { echo "check-docs-claims: $*" >&2; fail=1; }
 
+# Every check below needs the binary or a tool. Missing ones used to make a check SKIP silently
+# while the success line at the bottom still claimed all six agreed with the build — so hiding
+# PyYAML, or deleting ./hydra, produced a green gate that verified nothing. A prerequisite is now
+# a failure: this script may report success only for work it actually did.
+require_cmd() { command -v "$1" >/dev/null 2>&1 || note "$1 is required and not installed"; }
+require_cmd jq
+require_cmd python3
+[ -x ./hydra ] || note "./hydra is not built; run make build (gate depends on it)"
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c 'import yaml' 2>/dev/null || note "PyYAML is required (pip install pyyaml)"
+fi
+[ "$fail" -eq 0 ] || { echo "check-docs-claims: prerequisites missing, nothing was verified" >&2; exit 1; }
+
 # --- version: every version string in the guide, not just the masthead ---
 tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 if [ -n "$tag" ]; then
@@ -28,7 +41,7 @@ fi
 
 # --- default theme: whatever a fresh install actually resolves to ---
 # v0.4.0 changed this from `hydra` to `terminal`. Ask the binary instead of trusting the prose.
-if [ -x ./hydra ]; then
+if true; then
   d=$(mktemp -d)
   actual=$(HYDRA_CONFIG_DIR="$d" ./hydra config show --output json 2>/dev/null \
     | sed -n 's/.*"theme"[[:space:]]*:[[:space:]]*"\([a-z-]*\)".*/\1/p' | head -1)
@@ -60,7 +73,7 @@ done
 
 # --- the command count the guide advertises ---
 # §11 said "40 commands" for several releases after the surface reached 42. Ask the binary.
-if [ -x ./hydra ] && command -v jq >/dev/null 2>&1; then
+if true; then
   n=$(./hydra commands --output json 2>/dev/null | jq '.data.commands|length' 2>/dev/null)
   claimed=$(grep -oE '>[0-9]+ commands<' docs/guide.html | grep -oE '[0-9]+' | head -1)
   if [ -n "$claimed" ] && [ -n "$n" ] && [ "$n" -gt 0 ] && [ "$claimed" != "$n" ]; then
@@ -72,7 +85,7 @@ fi
 # The published page listed eight variables for a commit after two more were added, so a reader
 # writing a hook was told less than the tool gives. `hooks ls --output json` publishes the list
 # precisely so this can be checked instead of remembered.
-if [ -x ./hydra ] && command -v jq >/dev/null 2>&1; then
+if true; then
   d=$(mktemp -d)
   # `hooks ls` needs a workspace, and this runs from the repo root — so it is invoked inside a
   # throwaway one. The `|| true` matters under `set -euo pipefail`: without it a non-zero exit
@@ -93,7 +106,7 @@ fi
 # `hydra --help` names the guide, and the agent skill carries it, so a caller with only the binary
 # can find it. A URL advertised and wrong is worse than none, so what --help prints is checked
 # against README's link, the guide's own canonical URL, and the skill.
-if [ -x ./hydra ]; then
+if true; then
   printed=$(./hydra --help 2>&1 | grep -oE 'https://[a-z0-9./-]*github\.io[a-z0-9./-]*' | head -1)
   if [ -z "$printed" ]; then
     note "hydra --help names no guide URL, so a caller with only the binary cannot find it"
@@ -111,7 +124,7 @@ fi
 #
 # This block MUST stay above the exit gate below. Appended after it, `note` set fail=1 after the
 # last thing that read it: the drift printed, the success line printed too, and the script exited 0.
-if command -v python3 >/dev/null 2>&1 && [ -x ./hydra ] && python3 -c 'import yaml' 2>/dev/null; then
+if true; then
   manifest_report=$(python3 scripts/check_doc_manifests.py 2>&1) || {
     echo "$manifest_report" >&2
     note "a documented manifest does not load, or loses a repository"

@@ -64,7 +64,7 @@ themes:
 gate-themes:
 	python3 scripts/gen-themes.py --check
 
-gate-docs:
+gate-docs: build ## Docs claims, checked against the binary they describe
 	bash scripts/check-docs-claims.sh
 
 gate-fmt: ## Fail if anything is unformatted

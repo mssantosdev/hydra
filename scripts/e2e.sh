@@ -634,6 +634,20 @@ check "every documented error code carries an exit status" \
 check "the committed SURFACE.txt is not stale" \
   '(cd "$T" && "$HYDRA" commands --output text) |
    diff -q - "$(dirname "$HYDRA")/SURFACE.txt" >/dev/null'
+# The docs gate itself: it may only claim success for checks that ran. Five of its six needed the
+# binary or a tool, and a missing one made the check skip while the success line still asserted all
+# six agreed with the build — so `make clean && make gate` verified nothing and said so cheerfully.
+# Point it at a workspace with no binary and require a non-zero exit.
+# Asserting on the MESSAGE, not just a non-zero exit: in a bare directory the script fails for many
+# unrelated reasons, so an exit-code-only check passes with or without the guard and proves nothing.
+check "the docs gate refuses to pass when it cannot run its checks" \
+  '(d=$(mktemp -d) && cp -r "$(dirname "$HYDRA")/scripts" "$d"/ 2>/dev/null;
+    cd "$d" && { bash scripts/check-docs-claims.sh 2>&1 || true; } | grep -q "nothing was verified")'
+# The ENVIRONMENT block of `hooks --help` and the `env` list in `hooks ls` describe one fact. The
+# help advertised eight variables while the runner injected ten.
+check "the hook environment in --help matches what hooks ls publishes" \
+  'diff -q <("$HYDRA" hooks --help 2>&1 | grep -oE "HYDRA_[A-Z_]+" | sort -u) \
+          <(cd "$T/ws" && "$HYDRA" hooks ls --output json | jq -r ".data.env[]" | sort -u) >/dev/null'
 # The round-trip the design rests on: what list emits, apply consumes, in a SECOND
 # workspace - so this proves portability, not just idempotence in place. The replica has
 # to register the same repos first: apply creates worktrees, never repositories.

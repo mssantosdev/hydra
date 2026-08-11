@@ -17,7 +17,17 @@ var hooksWorktree string
 var hooksCmd = &cobra.Command{
 	Use:   "hooks",
 	Short: "Inspect and run lifecycle hooks",
-	Long: `Inspect and manually run the declarative shell hooks configured in .hydra/config.yaml.
+	Long:  hooksLongHelp(),
+}
+
+// hooksLongHelp builds the help text, taking the ENVIRONMENT block from hooks.EnvKeys().
+//
+// The list is generated rather than typed because this text and the `hooks ls --output json`
+// payload are two descriptions of one fact. A hand-maintained copy states whatever it stated when
+// someone last edited it, which is how the help came to advertise eight variables while the runner
+// injected ten.
+func hooksLongHelp() string {
+	return fmt.Sprintf(`Inspect and manually run the declarative shell hooks configured in .hydra/config.yaml.
 
 DESCRIPTION
   Hooks run via sh -c in a chosen working directory. Each hook receives HYDRA_*
@@ -30,8 +40,7 @@ SUBCOMMANDS
   run <event> Run a hook chain for an event
 
 ENVIRONMENT
-  HYDRA_EVENT, HYDRA_PROJECT, HYDRA_PROJECT_ROOT, HYDRA_GROUP, HYDRA_REPO,
-  HYDRA_BRANCH, HYDRA_WORKTREE_PATH, HYDRA_BARE_PATH
+%s
 
 EXAMPLES
   $ hydra hooks ls
@@ -41,7 +50,28 @@ EXAMPLES
 EXIT CODES
   0  Success
   1  General error, hook_failed, worktree_unknown, or internal (unknown event name)
-  2  not_in_project`,
+  2  not_in_project`, wrapList(hooks.EnvKeys(), "  ", 76))
+}
+
+// wrapList renders names as comma-separated lines no wider than width, each indented.
+func wrapList(names []string, indent string, width int) string {
+	var lines []string
+	line := indent
+	for i, name := range names {
+		piece := name
+		if i < len(names)-1 {
+			piece += ","
+		}
+		if len(line) > len(indent) && len(line)+1+len(piece) > width {
+			lines = append(lines, line)
+			line = indent
+		}
+		if len(line) > len(indent) {
+			line += " "
+		}
+		line += piece
+	}
+	return strings.Join(append(lines, line), "\n")
 }
 
 var hooksLsCmd = &cobra.Command{
