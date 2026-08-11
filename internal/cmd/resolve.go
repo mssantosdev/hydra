@@ -98,7 +98,7 @@ func parseFilters(raw []string) (filters, error) {
 				return filters{}, output.Errorf(output.CodeInternal,
 					"--filter branch: needs a pattern, for example branch:feat/*")
 			}
-			// Reject a malformed pattern now rather than silently matching nothing.
+			// Reject a malformed glob up front; path.Match would return false for every branch.
 			if _, err := path.Match(glob, ""); err != nil {
 				return filters{}, output.Errorf(output.CodeInternal,
 					"invalid --filter branch pattern %q: %v", glob, err)
@@ -148,11 +148,8 @@ type resolvedWorktree struct {
 // resolveTargets returns the matching worktrees, any warnings, and how many
 // REPOSITORIES failed outright.
 //
-// The failure count is returned explicitly because it used to be inferred as
-// `len(repos) - len(warnings)`, which silently treated every advisory warning — an
-// unresolvable --against ref, an empty selector — as a repository failure. That made a
-// healthy listing report `partial_failure` whenever the warning count happened to equal
-// the repository count, and masked real failures whenever it did not.
+// Repository failures are counted explicitly so advisory warnings (empty selector,
+// unresolvable --against ref, and similar) do not inflate the failure count.
 func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree, []string, int, error) {
 	parsed, err := parseFilters(sel.Filter)
 	if err != nil {

@@ -276,12 +276,8 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		return result, nil, output.Wrap(output.CodeInternal, err, "failed to create the bare directory")
 	}
 
-	// Register the repo BEFORE any network work. InitBareWithRemote performs a full
-	// fetch, and an interruption during it used to leave <bare_dir>/<alias>.git on
-	// disk with nothing in .hydra/config.yaml referencing it — an orphan that every command
-	// ignored while the user saw a directory that looked cloned. Registering first
-	// means an interrupted clone always leaves a repo hydra can see, `hydra doctor`
-	// can diagnose, and re-running this command can finish.
+	// Register the repo BEFORE any network work so an interrupted clone still leaves a
+	// manifest entry hydra commands and doctor can see; a later run can finish the fetch.
 	alreadyRegistered := false
 	if existing, ok := c.FindRepo(opts.Alias); ok {
 		alreadyRegistered = true
@@ -293,10 +289,8 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 				WithDetail("requested_remote", opts.URL)
 		}
 	} else {
-		// Locked read-modify-write, not Save: a clone takes seconds, so two concurrent
-		// `repo add` runs both hold a manifest loaded BEFORE either finished, and
-		// whichever saved second silently erased the other's entry while reporting
-		// success. Update re-reads inside the lock so each registration merges.
+		// Locked read-modify-write via Update: concurrent repo add calls merge inside the
+		// lock instead of each saving a manifest snapshot taken before the other finished.
 		if err := config.Update(root, func(live *config.Config) error {
 			live.RegisterRepo(opts.Group, opts.Alias, opts.URL, "")
 			return nil
@@ -417,13 +411,12 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 	}, func(_ context.Context, t fanout.Target) fanout.ItemResult {
 		dirName := worktreeDirName(repo, t.Branch)
 
-		// Convergence: a worktree that already exists for THIS branch at THIS path is
-		// the desired state, not a failure. Without this, re-running clone on a
-		// complete repository reported git_failed "no worktree could be created" —
-		// every branch counted as a failure precisely because it was already correct.
-		// A directory taken by a DIFFERENT branch stays a real conflict.
+		// Convergence: a worktree that already exists for THIS branch at THIS path is the
+		// desired state, so re-running clone on a complete repository is a no-op rather than a
+		// git_failed per branch. A directory taken by a different branch, or this branch taken
+		// under a different directory, stays a real conflict.
 		if err := checkWorktreeNameConflict(repo, root, dirName, t.Branch); err != nil {
-			if output.Classify(err).Code == output.CodeWorktreeExists {
+			if worktreeAlreadyAtTarget(err, t.Path) {
 				return fanout.ItemResult{Disposition: fanout.Skipped, Reason: "already present"}
 			}
 			return fanout.ItemResult{Disposition: fanout.Failed, Reason: err.Error(), Err: err}
@@ -569,14 +562,12 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 	for _, choice := range choices {
 		options = append(options, huh.NewOption(choice.DisplayName, choice.Name))
 	}
-	// Pre-selection must be assigned BEFORE the form is built: huh binds the
-	// pointer, so assigning afterwards silently discards the default.
+	// Pre-selection must be assigned BEFORE the form is built: huh binds the pointer at
+	// construction time.
 	//
-	// Preselect is what `repo set` passes: the repo's CURRENT declaration. Without it the
-	// form opened with only the default branch ticked, so pressing enter on a repo
-	// declaring [master, stage, prod] silently narrowed it to [master] — the form has to
-	// show the state it is about to replace. `repo add` has no prior state and falls back
-	// to the resolved default.
+	// Preselect is what `repo set` passes: the repo's current branch declaration must
+	// appear ticked so confirming without changes does not drop declared branches.
+	// `repo add` has no prior state and falls back to the resolved default branch.
 	switch {
 	case len(opts.Preselect) > 0:
 		selected = append([]string(nil), opts.Preselect...)

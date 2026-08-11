@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/mssantosdev/hydra/internal/branchresolve"
-
+	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/fanout"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -271,10 +271,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 func startOne(repo repoContext, t fanout.Target) fanout.ItemResult {
 	dirName := worktreeDirName(repo, t.Branch)
 
-	// Convergence: an existing worktree for THIS branch is the desired state. Only a
-	// directory held by a DIFFERENT branch is a conflict.
+	// Convergence: an existing worktree for THIS branch at THIS path is the desired state. A
+	// directory held by a different branch, or this branch held under a different directory,
+	// is a conflict.
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, t.Branch); err != nil {
-		if output.Classify(err).Code == output.CodeWorktreeExists {
+		if worktreeAlreadyAtTarget(err, t.Path) {
 			return fanout.ItemResult{Disposition: fanout.Skipped, Reason: "already present"}
 		}
 		return fanout.ItemResult{Disposition: fanout.Failed, Reason: output.Classify(err).Message, Err: err}
@@ -415,24 +416,20 @@ func resolveStartBranch(positional, topicID string, existing topic.Topic, repos 
 	return resolution.Branch, resolution.Source, nil
 }
 
-// branchPolicyFor returns the branch policy, preferring a repo-level override.
+// branchPolicyFor returns the branch policy for a set of worktrees.
+//
+// It resolves through the level chain, so a group's `branch_pattern` applies to every repo in
+// it without each repo restating it.
+//
+// The first repo decides. A policy is a naming convention, so one branch name is being built for
+// all of them; disagreeing repos would need N names, which `start` does not model.
 func branchPolicyFor(repos []repoContext) (pattern, provider string, strict bool) {
-	pattern = cfg.Defaults.BranchPattern
-	provider = cfg.Defaults.BranchProvider
-	strict = cfg.Defaults.BranchPatternStrict
-
-	if len(repos) == 0 {
-		return pattern, provider, strict
+	alias := ""
+	if len(repos) > 0 {
+		alias = repos[0].Alias
 	}
-	if ref, ok := cfg.FindRepo(repos[0].Alias); ok {
-		if ref.Repo.BranchPattern != "" {
-			pattern = ref.Repo.BranchPattern
-		}
-		if ref.Repo.BranchProvider != "" {
-			provider = ref.Repo.BranchProvider
-		}
-	}
-	return pattern, provider, strict
+	d := config.ResolveDefaults(cfg, alias)
+	return d.BranchPattern, d.BranchProvider, d.BranchPatternStrict
 }
 
 // resolveStartUser fills {user} from git, honouring --user first.

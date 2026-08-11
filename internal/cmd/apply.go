@@ -163,25 +163,19 @@ func runApply(cmd *cobra.Command, args []string) error {
 		if applyDryRun {
 			result.Disposition = applyDryRunDisposition(repo, item)
 			payload.Results = append(payload.Results, result)
-			if result.Disposition == "skipped" {
-				payload.Skipped++
-			} else {
-				payload.Created++
-			}
+			tallyApplyDisposition(&payload, result.Disposition)
 			continue
 		}
 
-		disposition, applyErr := applyOne(repo, item)
+		disposition, warning, applyErr := applyOne(repo, item)
 		result.Disposition = disposition
-		switch disposition {
-		case "created":
-			payload.Created++
-		case "skipped":
-			payload.Skipped++
-		default:
-			result.Error = output.Classify(applyErr).Message
-			payload.Failed++
+		if warning != "" {
+			warnings = append(warnings, warning)
 		}
+		if disposition != "created" && disposition != "skipped" {
+			result.Error = output.Classify(applyErr).Message
+		}
+		tallyApplyDisposition(&payload, disposition)
 		payload.Results = append(payload.Results, result)
 	}
 
@@ -301,30 +295,32 @@ func validateApplyItems(items []applyItem) ([]applyItem, []string, error) {
 }
 
 // applyOne converges one item, reusing the same helpers start does.
-func applyOne(repo repoContext, item applyItem) (string, error) {
+func applyOne(repo repoContext, item applyItem) (disposition, warning string, err error) {
 	dirName := worktreeDirName(repo, item.Branch)
 	target := worktreePath(projectRoot, repo.Group, dirName)
 
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, item.Branch); err != nil {
-		if output.Classify(err).Code == output.CodeWorktreeExists {
+		if worktreeAlreadyAtTarget(err, target) {
 			// Already correct. Membership is still reconciled below, because a document
 			// may assign an existing worktree to a topic.
 			if topicErr := applyTopic(item, repo); topicErr != nil {
-				return "failed", topicErr
+				return "failed", "", topicErr
 			}
-			return "skipped", nil
+			return "skipped", "", nil
 		}
-		return "failed", err
+		return "failed", "", err
 	}
 	if _, err := createWorktreeForBranch(cfg, repo, target, item.Branch, ""); err != nil {
-		return "failed", err
+		return "failed", "", err
 	}
-	if err := applyTopic(item, repo); err != nil {
-		// The worktree is correct; only the record failed. Reporting it as a creation
-		// failure would claim the git work did not happen.
-		return "created", nil
+	if topicErr := applyTopic(item, repo); topicErr != nil {
+		// The worktree is correct; only the record failed, so calling this a creation failure
+		// would claim the git work did not happen. It still rides the envelope as a warning:
+		// the document asked for a topic assignment that is not in place.
+		return "created", fmt.Sprintf("%s: worktree created but topic not recorded: %s",
+			dirName, output.Classify(topicErr).Message), nil
 	}
-	return "created", nil
+	return "created", "", nil
 }
 
 // applyTopic records membership when the document asks for it.
@@ -345,12 +341,32 @@ func applyTopic(item applyItem, repo repoContext) error {
 	return classifyTopicErr(err)
 }
 
+// tallyApplyDisposition counts one result. The dry run and the real run share it so a predicted
+// failure is counted as a failure in both; the outcome and exit code then follow from
+// payload.Failed, which is what makes --dry-run a usable preflight rather than a report that
+// always succeeds.
+func tallyApplyDisposition(p *applyJSON, disposition string) {
+	switch disposition {
+	case "created", "would_create":
+		p.Created++
+	case "skipped":
+		p.Skipped++
+	default:
+		p.Failed++
+	}
+}
+
+// applyDryRunDisposition predicts what a real run would report, so it must split the same three
+// ways applyOne does: converged, conflicting, absent. Reporting `would_create` for a directory
+// that a real run refuses would make --dry-run useless exactly where it matters most.
 func applyDryRunDisposition(repo repoContext, item applyItem) string {
 	dirName := worktreeDirName(repo, item.Branch)
+	target := worktreePath(projectRoot, repo.Group, dirName)
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, item.Branch); err != nil {
-		if output.Classify(err).Code == output.CodeWorktreeExists {
+		if worktreeAlreadyAtTarget(err, target) {
 			return "skipped"
 		}
+		return "failed"
 	}
 	return "would_create"
 }

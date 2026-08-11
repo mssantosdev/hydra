@@ -77,9 +77,8 @@ func TestParity_CloneWithoutURLAsksForIt(t *testing.T) {
 	}
 }
 
-// A dirty worktree used to be skipped SILENTLY under --output json: huh's form failed
-// in a non-TTY and the error branch deselected the worktree, so the envelope reported
-// nothing pulled and never said why.
+// TestSyncDirty_WithoutAPolicyAsksForOne: non-interactive sync with a dirty worktree and
+// no --dirty returns needs_input naming --dirty instead of skipping without explanation.
 func TestSyncDirty_WithoutAPolicyAsksForOne(t *testing.T) {
 	resetCommandState(t)
 	env := syncDirtyEnv(t)

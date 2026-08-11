@@ -54,8 +54,8 @@ type Paths struct {
 // equally valid partitions, so every level carries the same keys and the resolution chain is the
 // only rule; what belongs where is the user's modelling choice.
 type Group struct {
-	// Path places this group's worktrees, relative to the workspace root. Empty means the group
-	// name itself, which is what every workspace did before this field existed.
+	// Path places this group's worktrees, relative to the workspace root. Empty defaults to the
+	// group name.
 	//
 	// This is why group names stay one path segment and `/` is still rejected in them: a slash in
 	// the KEY made the selector, completion and rename semantics ambiguous, where a path field is
@@ -123,10 +123,8 @@ type Repo struct {
 	BranchProvider string `yaml:"branch_provider,omitempty"`
 
 	// Branches is the DECLARED shape of this repository: the branches a workspace built
-	// from this manifest should have worktrees for. It is what makes the manifest enough
-	// to reproduce a setup — `repo restore` creates these, where before it could only
-	// create the default branch and had to tell the caller to go find a captured
-	// `hydra list --output json` for the rest.
+	// from this manifest should have worktrees for. `repo restore` creates these from the
+	// manifest alone — without them only the default branch can be reproduced.
 	//
 	// It is DECLARED state, so only commands where the user names the set write it:
 	// `repo add --branches` and `repo set --branches`. `hydra add` and `hydra start` never
@@ -138,6 +136,15 @@ type Repo struct {
 	// Carry is this repository's own ignored-but-required files — the `.env` a Go service
 	// needs, the `.env.local` a Bun app needs. Appended after the workspace's.
 	Carry []CarryEntry `yaml:"carry,omitempty"`
+
+	// Defaults and Hooks are the repo's slots in the level model — the same two keys a group
+	// and the workspace carry.
+	//
+	// BranchPattern and BranchProvider above are the flat spelling of the same policy, kept
+	// because manifests in use reference them by name. repoDefaults merges the two, this block
+	// winning.
+	Defaults Defaults `yaml:"defaults,omitempty"`
+	Hooks    Hooks    `yaml:"hooks,omitempty"`
 }
 
 // Defaults holds project-wide defaults.
@@ -169,8 +176,7 @@ type Hook struct {
 	Optional bool   `yaml:"optional,omitempty"`
 
 	// Timeout bounds this hook, as a Go duration ("30s", "5m"). Empty uses the package
-	// default. "0" disables the bound for a hook that genuinely has no upper limit — an
-	// explicit choice, where an unbounded hook used to be the only behaviour.
+	// default. "0" explicitly disables the bound for a hook with no upper limit.
 	Timeout string `yaml:"timeout,omitempty"`
 }
 
@@ -182,14 +188,13 @@ type Hooks struct {
 	PostRemove []Hook `yaml:"post_remove,omitempty"`
 	PostSync   []Hook `yaml:"post_sync,omitempty"`
 
-	// The topic events fire ONCE PER OPERATION, not once per worktree. Wiring a notification to
-	// post_add posts N times for one piece of work, and the instinct — a run_once: flag — papers
-	// over the modelling error: notification was never a per-worktree event. The level says whose
-	// config a hook is; the event shape says how often it fires.
+	// Topic events fire ONCE PER OPERATION, not once per worktree. Wiring a notification to
+	// post_add posts N times for one piece of work; a run_once flag would paper over assigning
+	// an operation-scoped hook to a per-worktree event. The level says whose config a hook is;
+	// the event shape says how often it fires.
 	//
-	// PreTopicClose is the only place a check can veto finishing a unit of work. post_add fires
-	// before any work exists and pre_remove fires when it is being thrown away, so a quality gate
-	// had no honest home until this existed.
+	// PreTopicClose is the quality-gate hook: it runs while work exists and can veto finishing
+	// a unit of work. post_add fires before any work exists; pre_remove fires during teardown.
 	PostTopicStart []Hook `yaml:"post_topic_start,omitempty"`
 	PreTopicClose  []Hook `yaml:"pre_topic_close,omitempty"`
 	PostTopicClose []Hook `yaml:"post_topic_close,omitempty"`
@@ -221,13 +226,11 @@ func DefaultConfig(project string) *Config {
 // fresh workspace; every caller would otherwise have to MkdirAll first, and one
 // forgetting is a confusing "no such file or directory".
 //
-// It PRESERVES the comments and unrecognised keys of the file it replaces. A plain
-// yaml.Marshal of this struct silently deleted both: a manifest carrying
-// "# reviewed in PR #412", a ci: block and an owners: list lost all three to a
-// single `hydra repo remove`, producing a deletion nobody asked for inside a
-// reviewed diff. .hydra/config.yaml is documented as the shareable, committable
-// half of the directory, so it has to survive being written by the tool that owns
-// it. See mergePreserving for the rules.
+// It PRESERVES the comments and unrecognised keys of the file it replaces. Plain
+// yaml.Marshal drops both without error — annotations and extension keys would vanish on
+// every write. .hydra/config.yaml is documented as the shareable, committable half of
+// the directory, so it has to survive being written by the tool that owns it. See
+// mergePreserving for the rules.
 func (c *Config) Save(path string) error {
 	// Node.Encode yields the MAPPING for c, not a document node — unlike
 	// yaml.Unmarshal, which wraps its result in one. Reaching for out.Content[0] here
@@ -374,10 +377,8 @@ func mergePreserving(old, new *yaml.Node, t reflect.Type, carryUnknown bool) {
 		}
 		// UNKNOWN means the struct has no field for it. A key the struct DOES model but left
 		// out of the new document was cleared on purpose — `omitempty` makes an empty field
-		// and an absent one look identical here — and carrying it back would undo the clearing
-		// silently. That is not hypothetical: it briefly hid three call sites replacing a repo
-		// entry with a fresh struct, so `branches` and `carry` appeared to survive a
-		// re-registration that had in fact dropped them.
+		// and an absent one look identical here — and carrying it back would resurrect
+		// deliberately cleared fields.
 		if childType(t, key) != nil {
 			continue
 		}
@@ -482,10 +483,8 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Layout of hydra's per-project files. These are the single source of truth for
-// the on-disk names; nothing else may hard-code them. Before this existed the
-// manifest filename was duplicated in 22 places across 13 files, which is how it
-// became unmovable.
+// Layout of hydra's per-project files. These are the single source of truth for the
+// on-disk names; nothing else may hard-code them.
 const (
 	// StateDir holds every hydra-owned file for a project.
 	StateDir = ".hydra"
@@ -502,10 +501,10 @@ func ManifestPath(root string) string { return filepath.Join(root, StateDir, Man
 // ProjectRoot resolves the workspace root that owns a manifest.
 //
 // The manifest lives at <root>/.hydra/config.yaml, so the root is the parent of
-// the .hydra directory — NOT the manifest's own parent. Getting this wrong sends
-// every derived path inside .hydra/ (e.g. .hydra/.bare/api.git), which is exactly
-// what happened when the manifest moved. A path passed explicitly via --config
-// need not sit inside .hydra/, so that case falls back to the parent.
+// the .hydra directory — NOT the manifest's own parent. Treating the manifest's parent
+// as the root would nest every derived path inside .hydra/ (e.g. .hydra/.bare/api.git).
+// A path passed explicitly via --config need not sit inside .hydra/, so that case falls
+// back to the parent.
 func ProjectRoot(manifestPath string) string {
 	abs, err := filepath.Abs(manifestPath)
 	if err != nil {
@@ -607,28 +606,66 @@ func (c *Config) BarePath(projectRoot, alias string) string {
 	return filepath.Join(projectRoot, c.Paths.BareDir, alias+".git")
 }
 
-// HooksFor returns the hook chain bound to an event name, and whether the event
-// name is known.
+// HooksFor returns the WORKSPACE chain bound to an event name, and whether the event name is
+// known. Callers that RUN hooks for a repository want ResolveHooks; this form is for validating
+// an event name.
 func (c *Config) HooksFor(event string) ([]Hook, bool) {
+	return hooksOf(c.Hooks, event)
+}
+
+// ResolveHooks returns the chain to run for one event and one repository, appended
+// workspace → group → repo.
+//
+// Lists append rather than override, so a workspace-wide `direnv allow`, a group's shared
+// bring-up and a repo's `go mod download` all run. Overriding would force every child to
+// restate what it inherits.
+func ResolveHooks(c *Config, alias, event string) ([]Hook, bool) {
+	if c == nil {
+		return nil, false
+	}
+	chain, known := hooksOf(c.Hooks, event)
+	if !known {
+		return nil, false
+	}
+	out := make([]Hook, 0, len(chain))
+	out = append(out, chain...)
+
+	ref, ok := c.FindRepo(alias)
+	if !ok {
+		// No repository in scope — a topic event, or a caller that named none. The workspace
+		// chain is the whole answer.
+		return out, true
+	}
+	for _, level := range []Hooks{c.Groups[ref.Group].Hooks, ref.Repo.Hooks} {
+		if hs, _ := hooksOf(level, event); len(hs) > 0 {
+			out = append(out, hs...)
+		}
+	}
+	return out, true
+}
+
+// hooksOf binds an event name to one level's chain — the single place names map to fields, so a
+// new event is added in one switch.
+func hooksOf(h Hooks, event string) ([]Hook, bool) {
 	switch event {
 	case "post_clone":
-		return c.Hooks.PostClone, true
+		return h.PostClone, true
 	case "post_add":
-		return c.Hooks.PostAdd, true
+		return h.PostAdd, true
 	case "pre_remove":
-		return c.Hooks.PreRemove, true
+		return h.PreRemove, true
 	case "post_remove":
-		return c.Hooks.PostRemove, true
+		return h.PostRemove, true
 	case "post_sync":
-		return c.Hooks.PostSync, true
+		return h.PostSync, true
 	case "post_topic_start":
-		return c.Hooks.PostTopicStart, true
+		return h.PostTopicStart, true
 	case "pre_topic_close":
-		return c.Hooks.PreTopicClose, true
+		return h.PreTopicClose, true
 	case "post_topic_close":
-		return c.Hooks.PostTopicClose, true
+		return h.PostTopicClose, true
 	case "pre_topic_remove":
-		return c.Hooks.PreTopicRemove, true
+		return h.PreTopicRemove, true
 	}
 	return nil, false
 }
@@ -644,12 +681,9 @@ func HookEvents() []string {
 // RegisterRepo records a repository's remote and default branch WITHOUT discarding anything
 // else already recorded for it.
 //
-// Three call sites used to do `SetRepo(group, alias, Repo{Remote: …, DefaultBranch: …})`,
-// which replaces the whole entry. On a first registration that is harmless — there is nothing
-// to lose. On a re-registration it silently dropped `branch_pattern` and `branch_provider`,
-// and once declarations existed it would have dropped `branches` and `carry` too: `repo
-// restore` would strip the very declaration it had just consumed, and a convergent
-// `repo add` re-run would strip it on the second call.
+// SetRepo replaces the whole entry. A fresh Repo{Remote, DefaultBranch} discards anything
+// else already recorded — branch_pattern, branch_provider, branches, and carry on
+// re-registration. RegisterRepo merges into the existing entry instead.
 //
 // A field is only overwritten when the new value is non-empty, so re-registering with an
 // unchanged remote cannot blank a default branch that was resolved by an earlier fetch.

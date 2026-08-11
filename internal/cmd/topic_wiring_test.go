@@ -78,9 +78,8 @@ func TestList_ReportsTopicMembership(t *testing.T) {
 	}
 }
 
-// --topic narrows to exact recorded membership. A branch whose NAME contains the
-// id but which was never attached must not appear: identity is what was recorded,
-// never what a name looks like.
+// TestList_TopicFilterUsesMembershipNotNames narrows --topic to recorded membership;
+// a branch whose name contains the topic id but is not attached must be excluded.
 func TestList_TopicFilterUsesMembershipNotNames(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
@@ -141,8 +140,8 @@ func TestList_UnknownTopicIsAnErrorNotAnEmptyList(t *testing.T) {
 	}
 }
 
-// remove must detach the worktree it removed, so a later listing does not report a
-// topic containing something that no longer exists.
+// TestRemove_DetachesMembership ensures remove clears topic membership for the deleted
+// worktree so a later list does not show stale members.
 func TestRemove_DetachesMembership(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
@@ -242,8 +241,8 @@ func TestDoctor_DetectsAndFixesDanglingMember(t *testing.T) {
 	}
 }
 
-// A workspace that has never used topics must list normally. Membership is an
-// addition, not a precondition.
+// TestList_WorksWithNoTopicState lists worktrees when no topic state file exists yet;
+// membership is optional and a read must not create state.
 func TestList_WorksWithNoTopicState(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)

@@ -10,10 +10,8 @@ import (
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
-// A manifest used to record repositories and their default branch only, so a workspace
-// rebuilt from it had one worktree per repo and the caller was pointed at a captured
-// `hydra list --output json` for the rest — which also carried that machine's topic
-// membership. `branches:` makes the manifest enough on its own.
+// Manifest `branches:` records the declared checkout set so `repo restore` can recreate
+// every declared worktree without relying on a captured `hydra list --output json`.
 
 func TestRepoAdd_RecordsDeclaredBranches(t *testing.T) {
 	resetCommandState(t)
@@ -85,9 +83,8 @@ func TestRepoRestore_CreatesDeclaredBranches(t *testing.T) {
 	}
 }
 
-// The summary and next[] both used to claim the manifest could only produce default
-// branches. That is now false when a declaration exists, and still true when it does not —
-// so the message has to depend on the manifest, not be hardcoded either way.
+// TestRestoreSummary_DistinguishesDeclaredFromDefaultOnly checks restore messaging:
+// summaries mention declared branches when present and default-only wording when absent.
 func TestRestoreSummary_DistinguishesDeclaredFromDefaultOnly(t *testing.T) {
 	declared := restoreSummary(restoreJSON{Cloned: 1, Declared: 3})
 	if !strings.Contains(declared, "3 declared worktree(s)") {

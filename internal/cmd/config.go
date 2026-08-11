@@ -135,9 +135,8 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	switch key {
 	case "theme":
-		// Validate HERE rather than relying on SetTheme, which does not: it assigns and
-		// saves, so `config set theme garbage` used to persist an unusable value that
-		// only surfaced as a silent fallback at render time.
+		// Validate before SetTheme, which assigns and saves without checking; reject unknown
+		// themes at the command so the config file never stores an invalid name.
 		if !themes.IsValid(value) {
 			return output.Errorf(output.CodeInternal, "unknown theme %q", value).
 				WithDetail("theme", value).

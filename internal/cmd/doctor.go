@@ -177,11 +177,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	failures := countDoctorFailures(reports)
 
-	// The outcome has to agree with the exit status. doctor used to emit
-	// `outcome: success` with no error object and then exit 4, which is the same
-	// contradiction schema 3 removed from `run`: a caller reading the envelope saw a
-	// clean run while the process reported failure. The checks are real data either
-	// way, so the error rides the same envelope rather than replacing it.
+	// When checks still fail, emit outcome=partial with a partial_failure error on the
+	// same envelope so exit status and JSON agree.
 	var doctorErr *output.Error
 	outcome := output.OutcomeSuccess
 	if failures > 0 {
@@ -329,15 +326,10 @@ func diagnoseBareDir(cfg *config.Config, bareRoot string) []doctorCheck {
 		}
 		alias := strings.TrimSuffix(name, ".git")
 
-		// FAIL, not warn. `.bare/` is hydra's own directory — nothing else puts a bare
-		// repository there — so an unregistered one is real state hydra cannot see, not
-		// a note. It means an interrupted clone, or a lost manifest write. Either way
-		// `list`, `status`, `run` and `sync` all silently omit a repository that exists
-		// on disk, and a warning was too quiet for that.
+		// FAIL, not warn. `.bare/` is hydra's own directory — an unregistered bare repo is
+		// state that list/status/run/sync omit from their listings.
 		//
-		// The remote is read off the bare repo so the recovery names itself: re-running
-		// `repo add` with that URL is convergent and completes the registration in
-		// place, which is what it does after an interrupted clone.
+		// The remote is read off the bare repo so recovery can name a convergent `repo add`.
 		remote := bareOriginURL(filepath.Join(bareRoot, name))
 		recovery := "hydra repo add <url> --as " + alias + " --group <group>"
 		if remote != "" {
@@ -439,11 +431,8 @@ func diagnoseWorktree(repo repoContext, bareRoot string, wt worktreeContext) []d
 		})
 	}
 
-	// Two different states used to share one check id with one Fixable value, so one of
-	// them was always mislabelled. An agent hit the wrong half and dead-ended: --fix
-	// pruned, `add` then failed worktree_name_conflict because the directory was still
-	// there, and `repo add --adopt` refused because it is not a git checkout. The recovery
-	// was a manual mv, which nothing had told it about.
+	// Split orphaned registration (path present) from missing registration (path absent):
+	// the former is not safe to auto-delete; the latter is fixable with --fix prune.
 	//
 	//   path absent   -> prunable registration, --fix can clear it
 	//   path present  -> a directory in the way, NOT safe to delete automatically
@@ -717,9 +706,8 @@ func applyDoctorFixes(report *doctorReport, cfg *config.Config, projectRoot stri
 			}
 			recreate := "stale worktree registration pruned"
 			if check.Repo != "" && check.Branch != "" {
-				// Only name the follow-up when both halves are known. The message used to
-				// interpolate an empty branch, printing `hydra add api ` — a command that
-				// cannot be run, offered as the recovery.
+				// Only append a recreate hint when repo and branch are both known so the
+				// suggested `hydra add` command is runnable.
 				recreate += fmt.Sprintf("; run %q to recreate it",
 					fmt.Sprintf("hydra add %s %s", check.Repo, check.Branch))
 			}

@@ -557,10 +557,31 @@ func checkWorktreeNameConflict(repo repoContext, projectRoot, dirName, branch st
 	return nil
 }
 
+// worktreeAlreadyAtTarget reports whether err is the CONVERGENT case: the requested branch is
+// already checked out at the requested path, so the caller's goal is already met and running
+// twice is a no-op.
+//
+// checkWorktreeNameConflict raises worktree_exists for two situations that read alike: the
+// branch sits at the target directory, and the branch sits somewhere else entirely. Only the
+// first satisfies the request, so only the first may report `skipped`; the second must fail,
+// or `add --as X` claims success for an X that does not exist.
+func worktreeAlreadyAtTarget(err error, target string) bool {
+	e := output.Classify(err)
+	if e.Code != output.CodeWorktreeExists {
+		return false
+	}
+	path, _ := e.Details["path"].(string)
+	return path != "" && samePath(path, target)
+}
+
 // resolveAddBaseBranch picks the base ref for a brand-new branch, in order:
-// --from, defaults.base_branch, the repo's default_branch, origin/HEAD.
+// --from, the resolved defaults.base_branch, the repo's default_branch, origin/HEAD.
+//
+// The base_branch comes from ResolveDefaults rather than cfg.Defaults, so a group or repo that
+// sets it wins over the workspace — the same chain `hydra config show` reports.
 func resolveAddBaseBranch(cfg *config.Config, repo repoContext, from string) (string, error) {
-	for _, candidate := range []string{from, cfg.Defaults.BaseBranch, repo.DefaultBranch} {
+	base := config.ResolveDefaults(cfg, repo.Alias).BaseBranch
+	for _, candidate := range []string{from, base, repo.DefaultBranch} {
 		if candidate == "" {
 			continue
 		}

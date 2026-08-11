@@ -10,14 +10,8 @@ import (
 	"github.com/mssantosdev/hydra/internal/config"
 )
 
-// The bug this defends: Config.Save marshals a caller's IN-MEMORY copy over the whole
-// manifest. Two processes that both loaded before either wrote each saved their own stale
-// view, so the second silently erased the first's entry — while reporting success.
-//
-// Observed for real: four concurrent `hydra repo add` runs against remote repositories
-// registered only TWO of four. Every invocation reported success and every bare repository
-// was cloned, so the loss was invisible except to `doctor`. The clone is slow, which is
-// what makes the read-modify-write window wide enough to lose reliably.
+// Pins that concurrent Update registrations all survive. Unlocked Save would let the last
+// writer overwrite earlier entries from a stale snapshot.
 func TestUpdateMergesConcurrentRegistrations(t *testing.T) {
 	root := t.TempDir()
 	seedManifest(t, root)
@@ -47,7 +41,7 @@ func TestUpdateMergesConcurrentRegistrations(t *testing.T) {
 		}
 	}
 
-	// Every registration must survive. Save alone loses all but one.
+	// Every registration from every writer must appear after reload.
 	reloaded, err := config.Load(config.ManifestPath(root))
 	if err != nil {
 		t.Fatalf("reload: %v", err)

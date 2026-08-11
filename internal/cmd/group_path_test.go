@@ -10,11 +10,8 @@ import (
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
-// A group's `path:` moves where its worktrees live. Four places computed that directory
-// independently as filepath.Join(root, group), and three of them — doctor's orphan scan, prune,
-// and remove's empty-group cleanup — swallow a missing directory. So a group with a `path:` would
-// have silently disabled all three while every command still reported success: nothing fails, the
-// work just stops happening. These pin that they all resolve the same directory.
+// Group `path:` relocates worktrees; doctor orphan scan, prune, and remove empty-group
+// cleanup must all resolve the declared directory — not filepath.Join(root, group name).
 
 func withGroupPath(t *testing.T, group, path string) *testutil.TestEnv {
 	t.Helper()
@@ -78,8 +75,7 @@ func TestGroupPath_DoctorScansTheDeclaredDirectory(t *testing.T) {
 	}
 }
 
-// prune removes EMPTY group directories. Pointed at the wrong one it finds nothing to read and
-// silently prunes nothing, reporting success.
+// prune must see the declared group directory; pointing at the group name finds nothing to prune.
 func TestGroupPath_PruneSeesTheDeclaredDirectory(t *testing.T) {
 	resetCommandState(t)
 	env := withGroupPath(t, "backend", "services")

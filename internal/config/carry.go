@@ -211,14 +211,21 @@ func ResolveDefaults(c *Config, alias string) Defaults {
 	return out
 }
 
-// repoDefaults lifts a repo's own override fields into a Defaults so the chain is one loop over
-// levels rather than three special cases. Repo keeps its fields flat because they predate the group
-// level and are referenced by name in manifests already in use.
+// repoDefaults lifts a repo's overrides into a Defaults so the chain is one loop over levels
+// rather than three special cases.
+//
+// A repo can spell them two ways: the flat `branch_pattern`/`branch_provider` fields, referenced
+// by name in manifests already in use, and the uniform `defaults:` block every level carries.
+// The block wins where it is set, so a manifest using both is not ambiguous.
 func repoDefaults(r Repo) Defaults {
-	return Defaults{
-		BranchPattern:  r.BranchPattern,
-		BranchProvider: r.BranchProvider,
+	out := r.Defaults
+	if out.BranchPattern == "" {
+		out.BranchPattern = r.BranchPattern
 	}
+	if out.BranchProvider == "" {
+		out.BranchProvider = r.BranchProvider
+	}
+	return out
 }
 
 // ResolvedSetting is one effective manifest value and the level that supplied it.

@@ -27,8 +27,8 @@ func twoRepoEnv(t *testing.T) *testutil.TestEnv {
 	return env
 }
 
-// The bug this replaces: "main" exists in every repo, and resolution returned the
-// first match, so hydra acted on an arbitrary repo and reported success.
+// TestResolveOneWorktree_AmbiguousBranchIsRefused pins that a bare branch name shared
+// across repos returns worktree_name_conflict instead of picking an arbitrary match.
 func TestResolveOneWorktree_AmbiguousBranchIsRefused(t *testing.T) {
 	resetCommandState(t)
 	_ = twoRepoEnv(t)
@@ -50,9 +50,8 @@ func TestResolveOneWorktree_AmbiguousBranchIsRefused(t *testing.T) {
 
 }
 
-// A group-qualified handle is unique by construction, so it must still resolve even
-// when the bare branch name is ambiguous. Without this, the ambiguity fix would
-// leave no way to name the worktree at all.
+// TestResolveOneWorktree_QualifiedHandleDisambiguates resolves group/repo when the bare
+// branch name is ambiguous. TestResolveOneWorktree_AmbiguousBranchIsRefused covers refusal only.
 func TestResolveOneWorktree_QualifiedHandleDisambiguates(t *testing.T) {
 	resetCommandState(t)
 	twoRepoEnv(t)
@@ -371,9 +370,8 @@ func TestResolve_NoSelectorProducesNoWarning(t *testing.T) {
 	}
 }
 
-// Repository failures are counted explicitly. They used to be inferred as
-// len(repos) - len(warnings), so any advisory warning was miscounted as a repository
-// failure — which made a healthy listing report partial_failure.
+// TestResolve_AdvisoryWarningsAreNotRepoFailures counts repository failures explicitly:
+// an advisory warning from an empty branch: filter must not set repoFailures.
 func TestResolve_AdvisoryWarningsAreNotRepoFailures(t *testing.T) {
 	resetCommandState(t)
 	twoRepoEnv(t)

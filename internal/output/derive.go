@@ -2,19 +2,16 @@ package output
 
 // Coverage is what a command claims to have done over a set of items.
 //
-// It exists because every aggregate-reporting bug in this tool has had the same shape: the
-// per-item logic was right, and the VERDICT was computed from "my code path reached the
-// end" instead of "every item I claimed to cover actually verified". Shipped instances:
+// Commands must derive aggregate outcomes from these counts, not from whether their own
+// code path reached the end. The verdict must reflect every item the command claimed to
+// cover:
 //
-//   - concurrent `repo add` reported success from all four while the manifest held two
-//   - `doctor` reported `outcome: success` and then exited 4
-//   - a zero-match query described an aggregate of nothing as a populated one
-//   - `status` reported "all clean" with a registered worktree missing from disk
-//   - `add` reported success, exited 1, and left the failing hook out of the envelope
+//   - Claimed is how many items the command set out to evaluate.
+//   - Inspected is how many received a definite verdict; fewer than Claimed is partial.
+//   - Failed is how many produced a definite failure.
 //
-// Each was fixed where it was found, so the class reappeared in whichever command
-// aggregated next. Deriving the outcome from counts — rather than letting each command
-// decide — is the fix applied once.
+// Derive applies these rules once for all commands so aggregation cannot disagree with
+// per-item results.
 type Coverage struct {
 	// Claimed is how many items the command set out to cover.
 	Claimed int

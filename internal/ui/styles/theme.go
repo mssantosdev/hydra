@@ -92,9 +92,9 @@ func loadTheme() {
 
 	theme := themes.Get(cfg.Theme.Name)
 
-	// Publish the resolved theme as well as applying it. themes.Current used to sit at
-	// its package initialiser for the whole process, so any consumer that read it got a
-	// hardcoded palette rather than the user's. That trap cost `hydra ui` its theming.
+	// Publish the resolved theme as well as applying it. themes.Current must reflect the
+	// user's configured choice, not a package-default palette, so every consumer reads the
+	// same resolved theme as interactive views.
 	themes.Set(theme.Name)
 	applyTheme(theme)
 }

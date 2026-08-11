@@ -130,10 +130,8 @@ func TestResolveCarry_EmptyWhenNothingDeclared(t *testing.T) {
 	}
 }
 
-// RegisterRepo exists because three call sites replaced the whole entry with a fresh struct,
-// which silently dropped branch_pattern and branch_provider on any re-registration — and would
-// have dropped branches and carry, so `repo restore` would strip the declaration it had just
-// consumed and a convergent `repo add` re-run would strip it on the second call.
+// RegisterRepo merges remote and default_branch into the existing entry; SetRepo with a fresh
+// struct would discard branch_pattern, branch_provider, branches, and carry on re-registration.
 func TestRegisterRepo_PreservesEverythingElse(t *testing.T) {
 	c := &Config{
 		Version: SchemaVersion,
@@ -243,8 +241,8 @@ owners:
 	}
 }
 
-// A group's `path:` places its worktrees, which is the design that replaced putting a slash in the
-// group NAME — a slash made the selector, completion and rename semantics ambiguous.
+// A group's `path:` places its worktrees. Group names stay one segment; a slash would make the
+// selector, completion and rename semantics ambiguous.
 func TestGroupDir(t *testing.T) {
 	if got := (Group{}).Dir("backend"); got != "backend" {
 		t.Errorf("an empty path means the group name, got %q", got)

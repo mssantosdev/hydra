@@ -53,13 +53,8 @@ func TestClone_LocalRemoteSiblingLayout(t *testing.T) {
 	}
 }
 
-// TestClone_ResumesInterruptedClone is the regression guard for the real-world
-// cause of "repos got disconnected": InitBareWithRemote performs a full network
-// fetch, and an interruption during it used to leave <bare_dir>/<alias>.git on disk
-// with nothing in .hydra/config.yaml referencing it. Every command then ignored the repo
-// while the user saw a directory that looked cloned.
-//
-// This simulates that exact half-built state and asserts a re-run converges.
+// TestClone_ResumesInterruptedClone converges when a bare repo exists on disk but is not
+// registered: re-running repo add completes fetch, refspec, origin/HEAD, and registration.
 func TestClone_ResumesInterruptedClone(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
@@ -114,8 +109,8 @@ func TestClone_ResumesInterruptedClone(t *testing.T) {
 	}
 }
 
-// TestClone_RefusesConflictingRemote proves resume never silently repoints an
-// existing repo at a different remote.
+// TestClone_RefusesConflictingRemote ensures repo add does not repoint a registered alias
+// at a different remote URL.
 func TestClone_RefusesConflictingRemote(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)

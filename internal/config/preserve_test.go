@@ -8,9 +8,8 @@ import (
 
 // The manifest is documented as the shareable, committable half of .hydra/, so a user is
 // expected to annotate it and to put keys in it that a given hydra build may not model.
-// Save used to marshal a closed struct over the whole file, which deleted both silently
-// at exit 0. These tests pin the three rules that replaced that: comments survive, unknown
-// keys survive WITHIN a schema version, and a map deletion is never undone.
+// These tests pin Save's merge rules: comments survive, unknown keys survive within a
+// schema version, and a map deletion is never undone.
 
 func TestSavePreservesComments(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), `# Team manifest — reviewed in PR #412
@@ -167,9 +166,7 @@ groups:
 
 // A key the struct MODELS but that was cleared on purpose must stay cleared. `omitempty` makes
 // an empty field and an absent one identical in the encoded document, so carrying "anything the
-// new document lacks" undoes deliberate clearing — and it briefly hid three call sites that
-// replaced a repo entry with a fresh struct, making `branches` and `carry` look like they
-// survived a re-registration that had dropped them.
+// new document lacks" would resurrect deliberately cleared fields.
 func TestSaveDoesNotResurrectClearedKnownFields(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), `version: "2"
 project: shop

@@ -73,8 +73,7 @@ func TestUnassignedTopicIsNotSearchable(t *testing.T) {
 	}
 }
 
-// The cursor must stay inside the filtered view. Filtering down to fewer rows than the
-// cursor's position used to index past the end of the slice.
+// The cursor must stay inside the filtered view when filtering shrinks the row list.
 func TestCursorSurvivesAFilterThatShrinksTheView(t *testing.T) {
 	rows := make([]Row, 8)
 	for i := range rows {
@@ -281,11 +280,9 @@ func indexOf(h, n string) int {
 
 // The board must render from the RESOLVED theme, not from a package default.
 //
-// The old global theme initialiser was never synced from config; only the interactive
-// `config` form wrote it, inside its own process. Reading it here made this the one view
-// that ignored the user's configured theme, so it drew a different palette than `list` and
-// `status` in the same terminal. Asserting on styles.* is the point: those are what every
-// other view reads.
+// styles.* must reflect the theme resolved from config so this view draws the same palette
+// as list and status. Asserting on styles.* is the point: those are what every other view
+// reads.
 func TestViewRendersFromTheResolvedPalette(t *testing.T) {
 	origGreen, origBlue := styles.Green, styles.Blue
 	t.Cleanup(func() { styles.Green, styles.Blue = origGreen, origBlue })

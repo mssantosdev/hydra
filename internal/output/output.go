@@ -125,11 +125,10 @@ type Next struct {
 
 // envelope is the single shape every command emits, on stdout, success or failure.
 //
-// One envelope, one stream. Errors used to go to stderr, which meant a caller wanting
-// both the data and the reason reached for `2>&1` — and git's fetch progress, also on
-// stderr, then corrupted the JSON. The exit status still carries the code, and
-// `hydra commands` still publishes the code→exit table, so stderr never held anything
-// machine-readable worth keeping there.
+// One envelope, one stream. Errors and data both go to stdout so a caller can parse one
+// JSON object without merging stderr. Git fetch progress also uses stderr; mixing streams
+// corrupts the envelope. The exit status still carries the code, and `hydra commands`
+// still publishes the code→exit table.
 type envelope struct {
 	Schema   int      `json:"schema"`
 	Command  string   `json:"command"`

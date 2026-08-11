@@ -37,12 +37,9 @@ func (e *ErrManifestBusy) Error() string {
 
 // Update applies a mutation to the manifest under a lock, re-reading it from disk first.
 //
-// This exists because Save marshals a caller's IN-MEMORY copy over the whole file. Two
-// processes that both loaded the manifest before either wrote would each save their own
-// stale view, and the second silently erased the first's entry. Four concurrent
-// `repo add` invocations against real remotes reliably lost half the registrations: every
-// one reported success, every bare repository was cloned, and only two appeared in the
-// manifest. The clone is slow, so the read-modify-write window is seconds wide.
+// Save marshals a caller's in-memory copy over the whole file. Concurrent read-modify-write
+// without a lock lets each writer overwrite another's entries from a stale snapshot; slow
+// operations (e.g. cloning) widen that window.
 //
 // The mutation receives the manifest as it is on disk RIGHT NOW, not as the caller last
 // saw it. A caller that needs to reject a conflicting state must therefore check inside

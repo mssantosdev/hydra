@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/git"
@@ -8,8 +10,8 @@ import (
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
-// TestAdd_TracksRemoteBranch proves the original bug is fixed at the command
-// level: adding a branch that exists on origin must produce upstream tracking.
+// TestAdd_TracksRemoteBranch ensures add sets upstream tracking when the branch already
+// exists on origin.
 func TestAdd_TracksRemoteBranch(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
@@ -108,10 +110,9 @@ func TestAdd_NameConflictIsRefused(t *testing.T) {
 	}
 }
 
-// TestAdd_IsConvergent pins invariant 3 for add specifically. start, apply and clone all
-// translated worktree_exists into a skip; add let it escape as exit 1, so a provisioning
-// script that re-ran its own steps — a cloud-init retry, a resumed setup — died on the
-// second add while the worktree it wanted was already there.
+// TestAdd_IsConvergent pins invariant 3 for add: repeating add for an existing worktree
+// exits 0 as a no-op. Sibling start/apply/clone tests cover their commands; add must
+// match that convergent behaviour for idempotent provisioning scripts.
 func TestAdd_IsConvergent(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)
@@ -129,6 +130,38 @@ func TestAdd_IsConvergent(t *testing.T) {
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("second add must be a no-op at exit 0, got %v (code %q)",
 			err, output.Classify(err).Code)
+	}
+}
+
+// TestAdd_ConvergenceRequiresTheRequestedDirectory pins the boundary of invariant 3: `--as`
+// names a directory, so a branch already checked out under a DIFFERENT name does not satisfy
+// the request and must not report `skipped`.
+//
+// The test above cannot cover this, because without `--as` the converged path and the requested
+// path are always the same string.
+func TestAdd_ConvergenceRequiresTheRequestedDirectory(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"add", "api", "stage"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("first add: %v", err)
+	}
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"add", "api", "stage", "--as", "devcopy"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("add --as devcopy reported success for a directory it did not create")
+	}
+	if got := output.Classify(err).Code; got != output.CodeWorktreeExists {
+		t.Fatalf("code: got %q, want %q", got, output.CodeWorktreeExists)
+	}
+	if _, statErr := os.Stat(filepath.Join(env.RootDir, "backend", "devcopy")); statErr == nil {
+		t.Fatal("devcopy exists, so this no longer covers the intended case")
 	}
 }
 
@@ -198,10 +231,9 @@ func TestRemove_DirtyWorktreeIsBlocked(t *testing.T) {
 	}
 }
 
-// TestRemove_DeleteBranchIsAtomic guards the gap dogfooding exposed: `remove
-// --delete-branch` used to remove the worktree and only then discover the branch
-// was unmerged, leaving an orphaned branch with no worktree — and therefore no way
-// to reach it through hydra, since remove resolves its target via the worktree list.
+// TestRemove_DeleteBranchIsAtomic ensures `remove --delete-branch` does not delete the
+// worktree when branch deletion is refused: both halves succeed or neither does.
+// TestRemove_DirtyWorktreeIsBlocked covers a different gate (dirty worktree, no branch delete).
 func TestRemove_DeleteBranchIsAtomic(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)

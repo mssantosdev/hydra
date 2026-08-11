@@ -161,18 +161,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		data := syncJSON{Project: cfg.Project, Root: projectRoot, Worktrees: []syncWorktreeJSON{}, Summary: syncSummaryJSON{}}
 		return emit(cmd, "no worktrees to sync", data, collectWarnings, func() { log.Info("No worktrees found to sync") })
 	}
-	// Fetch failures become warnings and the run continues. The fault-coded warnings force
-	// at least a partial outcome at the envelope, so an unreachable remote is still
-	// reported — it just no longer prevents the reachable ones from being updated.
+	// Fetch failures become warnings and the run continues, so an unreachable remote is
+	// still reported without blocking pulls for repos that can be reached.
 	collectWarnings = append(collectWarnings, fetchSyncRepos(entries)...)
 	entries, enrichWarnings := enrichSyncEntries(entries)
 	collectWarnings = append(collectWarnings, enrichWarnings...)
 	candidates := filterWithUpdates(entries)
 	if len(candidates) == 0 {
-		// "Nothing to pull" still has to report a remote it could not reach. This early
-		// return skipped the outcome logic below, so an unreachable remote vanished
-		// entirely once the reachable ones were already current — the failure was visible
-		// on the first sync and silently gone on the second.
+		// "Nothing to pull" must still surface fetch failures from unreachable remotes.
+		// This path returns early, so fault-coded warnings drive a partial outcome here too.
 		results := buildIdleResults(entries)
 		data, _ := buildSyncOutput(cfg.Project, projectRoot, results)
 		var idleErr *output.Error
@@ -208,10 +205,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	// Resolve the dirty policy BEFORE filtering to selected entries.
 	//
-	// selectedSyncEntries drops anything unselected, and with no policy autoSelectYes
-	// leaves dirty worktrees unselected — so filtering first emptied the list and
-	// returned "no worktrees selected", which is the same silent skip in a new place.
-	// The policy decision has to see the dirty candidates.
+	// selectedSyncEntries drops unselected worktrees, and autoSelectYes leaves dirty
+	// worktrees unselected when no policy is set. Filtering first would return
+	// "no worktrees selected" without naming the dirty worktrees or asking for --dirty.
 	if syncForce {
 		applyForceDirty(selected)
 	} else {
@@ -234,8 +230,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// A partial failure is reported on the SUCCESS envelope as outcome=partial: the
 	// pulls that landed are real data, and a caller reading stdout must be able to
 	// see both what worked and that something did not.
-	// A hook failure no longer aborts the command: it is reported as a warning and the
-	// failure below is derived from the git results alone.
+	// Hook failures are warnings only; syncErr below reflects git pull results.
 	failed := failedWorktreeDetails(results)
 	var syncErr *output.Error
 	outcome := output.OutcomeSuccess
@@ -353,11 +348,8 @@ func gatherSyncEntries(projectCfg *config.Config, root, targetAlias string) ([]s
 // fetchSyncRepos pre-fetches every bare repository and reports the ones that failed,
 // rather than aborting on the first.
 //
-// It used to return that first error, so a single unreachable remote stopped the whole
-// command: the envelope carried no summary and no counts, exit was 1, and repositories that
-// were perfectly pullable stayed stale. One broken remote out of three left two behind and
-// said nothing about them. `run` already attempts every target and reports a partial; sync
-// promising less than that was an inconsistency, not a policy.
+// Matches `run`'s partial-failure model: every repo is attempted and failures accumulate
+// as warnings rather than stopping the command with no summary.
 //
 // A repository that cannot be fetched is still handed to the pull stage: it may be
 // fast-forwardable from refs already on disk, and if it is not, the failure is reported per
@@ -427,9 +419,8 @@ func syncEntryKey(entry syncEntry) string { return entry.group + "/" + entry.nam
 // autoSelectYes selects everything --yes can act on without asking.
 //
 // A dirty worktree is selected only when a POLICY exists for it — --force or
-// --dirty. Without one it stays unselected so handleDirtyWorktrees can report
-// needs_input naming --dirty; selecting it anyway would push the decision into the
-// pull itself, and skipping it silently is the behaviour this step exists to remove.
+// --dirty. Without one it stays unselected so handleDirtyWorktrees can return
+// needs_input naming --dirty instead of skipping the worktree without explanation.
 func autoSelectYes(candidates []syncEntry) []syncEntry {
 	havePolicy := syncForce || syncDirty != ""
 
@@ -510,11 +501,9 @@ var dirtyPolicies = []string{"stash", "reset", "skip"}
 
 // handleDirtyWorktrees decides what to do about uncommitted changes.
 //
-// Three ways in, and the third used to be silent: an explicit --dirty policy, an
-// interactive prompt, or neither. With neither, huh's form simply failed in a non-TTY
-// and the error branch deselected the worktree — so `hydra sync --output json` skipped
-// every dirty worktree with nothing in the envelope saying why. That is exactly the
-// class of silence needs_input exists to remove.
+// With --dirty, apply that policy. In an interactive terminal, prompt per dirty
+// worktree. Otherwise return needs_input listing the dirty worktrees and the valid
+// --dirty values — including under --output json where no prompt can be shown.
 func handleDirtyWorktrees(worktrees []syncEntry) ([]syncEntry, error) {
 	if syncDirty != "" {
 		policy, err := parseDirtyPolicy(syncDirty)
@@ -526,7 +515,7 @@ func handleDirtyWorktrees(worktrees []syncEntry) ([]syncEntry, error) {
 
 	// Look at dirty CANDIDATES, not dirty-and-selected. With no policy autoSelectYes
 	// deliberately leaves them unselected, so keying off `selected` here would find
-	// nothing and reproduce the silent skip this replaces.
+	// nothing and skip them without reporting needs_input.
 	if dirty := dirtyCandidates(worktrees); len(dirty) > 0 && !interactive() {
 		return nil, output.Errorf(output.CodeNeedsInput,
 			"%d worktree(s) have uncommitted changes; choose a policy", len(dirty)).
@@ -620,15 +609,9 @@ func selectedSyncEntries(candidates []syncEntry) []syncEntry {
 
 // executeSync converges the selected worktrees through the shared fan-out engine.
 //
-// It used to hand-roll one goroutine per entry, drain a channel (so result order
-// changed between runs), then run every post_sync hook in a second pass and abort
-// the whole command on the first hook failure. All four are fixed by delegating:
-// order is deterministic, hooks fire per item right after that item succeeds, a
-// hook failure is a warning, and cross-repo concurrency is bounded.
-//
-// SerialPerRepo stays FALSE here. Pulling concurrently across worktrees of one repo
-// was measured safe (4/4); only creation contends on config.lock. Serialising sync
-// would cost roughly 2x for nothing.
+// Delegation gives deterministic result order, per-item post_sync hooks, hook failures
+// as warnings, and bounded cross-repo concurrency. SerialPerRepo stays false: pulls
+// across worktrees of one repo are safe; only creation contends on config.lock.
 func executeSync(selected []syncEntry) ([]syncOpResult, []string) {
 	targets := make([]fanout.Target, 0, len(selected))
 	entryByKey := make(map[string]syncEntry, len(selected))
@@ -676,9 +659,8 @@ func executeSync(selected []syncEntry) ([]syncOpResult, []string) {
 		}
 	}
 
-	// Nothing is returned as a fatal error. runSync derives partial_failure from the
-	// results, and a hook failure is a warning — returning early here is what used to
-	// drop the successful pulls out of the envelope entirely.
+	// Return all pull results and hook warnings; runSync derives partial_failure from
+	// the git outcomes. Hook failures do not truncate the envelope.
 	return ops, hookWarnings
 }
 

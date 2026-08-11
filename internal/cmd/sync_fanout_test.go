@@ -26,12 +26,8 @@ type syncEnvelope struct {
 	Warnings []string `json:"warnings"`
 }
 
-// A failing post_sync hook must NOT abort the command.
-//
-// sync used to run every hook in a second pass after all pulls and return on the
-// first failure, which discarded the successful pulls from the envelope and left
-// later repos unhooked. The pull is what sync promises; a hook is the user's own
-// script, so its failure is a warning against a run that otherwise succeeded.
+// TestSync_HookFailureWarnsAndKeepsPulling: a failing post_sync hook is a warning after
+// a successful pull; remaining worktrees still pull and stay in the envelope.
 func TestSync_HookFailureWarnsAndKeepsPulling(t *testing.T) {
 	resetCommandState(t)
 	env := testutil.NewTestEnv(t)

@@ -26,8 +26,7 @@ func ok(_ context.Context, _ Target) ItemResult {
 }
 
 // Results must come back in a stable order regardless of which goroutine finished
-// first. The old executor drained a channel, so output order changed between runs
-// and could not be diffed by a human or an agent.
+// first. Output order must be deterministic so runs can be diffed by a human or an agent.
 func TestRun_OrdersResultsDeterministically(t *testing.T) {
 	targets := []Target{
 		target("frontend", "web", "main"),
@@ -178,8 +177,8 @@ func TestRun_EmptyBareRepoDoesNotSerialiseUnrelatedTargets(t *testing.T) {
 	}
 }
 
-// Hooks fire per item, right after that item succeeds — not batched after all of
-// them, which is what sync used to do.
+// Hooks fire per item, right after that item succeeds — not batched after all targets
+// complete.
 func TestRun_HookRunsPerSucceedingItem(t *testing.T) {
 	var mu sync.Mutex
 	var hooked []string
@@ -213,8 +212,8 @@ func TestRun_HookRunsPerSucceedingItem(t *testing.T) {
 	}
 }
 
-// A failing hook must not abort the fan-out. sync used to return early, stranding
-// every repo after the offending one.
+// A failing hook must not abort the fan-out. Remaining targets must still run and record
+// hook warnings on the offending item only.
 func TestRun_HookFailureDegradesToWarningAndContinues(t *testing.T) {
 	targets := []Target{
 		target("backend", "api", "main"),
@@ -253,8 +252,7 @@ func TestRun_HookFailureDegradesToWarningAndContinues(t *testing.T) {
 	}
 }
 
-// Skipped is a success. A converged re-run must exit 0 — this is the property whose
-// absence made clone report git_failed on a fully-cloned repository.
+// Skipped is a success. A converged re-run must exit 0 even when every item was skipped.
 func TestSummarize_ConvergedRunExitsZero(t *testing.T) {
 	results := []ItemResult{
 		{Target: target("backend", "api", "main"), Disposition: Skipped, Reason: "already present"},

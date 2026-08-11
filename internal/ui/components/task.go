@@ -1,14 +1,11 @@
 // Package components holds shared UI value types.
 //
-// It used to also hold Bubble Tea models — a Spinner and two Progress bars — which
-// were unreachable for the whole of v1. `git log -S` shows one commit wired a spinner
-// into clone's bare fetch and a later rewrite removed the call sites. Restoring them
-// was considered and rejected on evidence: clone's fetch streams git's OWN output
-// (`Receiving objects: 47% … 3.4 MiB/s`), which is real progress. A tea.Program would
-// either fight git for the terminal or have to suppress that output, and a spinner
-// saying "Cloning bare repository" is strictly less informative than a transfer rate.
+// Bubble Tea models (spinners, progress bars) belong elsewhere. Clone streams git's own
+// progress output (`Receiving objects: 47% … 3.4 MiB/s`); a tea.Program would fight git
+// for the terminal or suppress real transfer rates. Fan-out work reports via plain stderr
+// lines, so types here stay value types usable when output is piped.
 //
-// What survived is the one type something actually uses.
+// What remains is the one type something actually uses.
 package components
 
 import (

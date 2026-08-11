@@ -127,11 +127,12 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	// let it escape as exit 1, so a provisioning script re-running its own steps died on
 	// the second `add`.
 	//
-	// Only THIS branch already having a worktree is the desired state. A directory held by
-	// a DIFFERENT branch is worktree_name_conflict and still fails.
+	// The desired state is THIS branch at THIS path. A directory held by a different branch is
+	// worktree_name_conflict; the branch checked out under a different directory is not
+	// convergence either, because the directory `--as` names still does not exist.
 	created := true
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, branch); err != nil {
-		if output.Classify(err).Code != output.CodeWorktreeExists {
+		if !worktreeAlreadyAtTarget(err, target) {
 			return err
 		}
 		created = false

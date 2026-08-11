@@ -272,9 +272,9 @@ func PullWorktree(worktreePath string) error {
 // StashChanges stashes changes in a worktree.
 func StashChanges(worktreePath string) error {
 	// --include-untracked is REQUIRED for this to match hydra's own definition of
-	// dirty: HasUncommittedChanges counts untracked files, so without -u hydra would
-	// call a worktree dirty, stash nothing, pull, and then fail popping a stash that
-	// was never created — reporting a sync failure for a pull that succeeded.
+	// dirty: HasUncommittedChanges counts untracked files, so without -u a dirty
+	// worktree would stash nothing, pull would succeed, and pop would fail on an empty
+	// stash.
 	return runGit("-C", worktreePath, "stash", "push", "--include-untracked", "-m", "hydra-auto-stash")
 }
 
