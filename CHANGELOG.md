@@ -56,6 +56,11 @@ is permanently bound to different content in the Go checksum database, so it can
   record was a warning when this run created the worktree and an error when it found one already
   there, so a convergent document exited 0 then 1. The disposition now describes the worktree and
   the error describes whether the request was met, on both paths.
+- **A missing fact killed the docs gate before it could name it.** Each `x=$(grep … | head -1)`
+  capture exits 1 when nothing matches, and under `set -e` that ended the script before the
+  empty-value check below it ran — so the diagnostic for a vanished guide URL was unreachable
+  precisely when the URL had vanished, leaving a bare exit 1. The captures are guarded, and the
+  check now reports what is missing.
 - **The docs gate reported success for checks that never ran.** Five of six sat behind a
   capability guard and the success line printed regardless, so hiding PyYAML or deleting `./hydra`
   produced exit 0 and the claim that all six agreed with the build. A missing prerequisite is now

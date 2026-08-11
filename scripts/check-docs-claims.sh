@@ -66,7 +66,10 @@ for f in 'name="description"' 'property="og:description"' 'property="og:title"';
   grep -q "$f" docs/guide.html || note "docs/guide.html is missing $f"
 done
 for f in '<title>' 'og:title" content="'; do
-  line=$(grep -oE "${f}[^<\"]*" docs/guide.html | head -1)
+  # `|| true` on every capture: an unmatched grep exits 1, and under `set -e` that kills the
+  # script before the empty-value check below can report anything — the diagnostic became
+  # unreachable exactly in the case it exists for.
+  line=$(grep -oE "${f}[^<\"]*" docs/guide.html | head -1 || true)
   printf '%s' "$line" | grep -qi 'worktree' \
     || note "the card title does not name worktrees, so a cold reader cannot tell what this is: $line"
 done
@@ -75,7 +78,7 @@ done
 # §11 said "40 commands" for several releases after the surface reached 42. Ask the binary.
 if true; then
   n=$(./hydra commands --output json 2>/dev/null | jq '.data.commands|length' 2>/dev/null)
-  claimed=$(grep -oE '>[0-9]+ commands<' docs/guide.html | grep -oE '[0-9]+' | head -1)
+  claimed=$(grep -oE '>[0-9]+ commands<' docs/guide.html | grep -oE '[0-9]+' | head -1 || true)
   if [ -n "$claimed" ] && [ -n "$n" ] && [ "$n" -gt 0 ] && [ "$claimed" != "$n" ]; then
     note "the guide advertises $claimed commands; the surface publishes $n"
   fi
@@ -107,7 +110,7 @@ fi
 # can find it. A URL advertised and wrong is worse than none, so what --help prints is checked
 # against README's link, the guide's own canonical URL, and the skill.
 if true; then
-  printed=$(./hydra --help 2>&1 | grep -oE 'https://[a-z0-9./-]*github\.io[a-z0-9./-]*' | head -1)
+  printed=$(./hydra --help 2>&1 | grep -oE 'https://[a-z0-9./-]*github\.io[a-z0-9./-]*' | head -1 || true)
   if [ -z "$printed" ]; then
     note "hydra --help names no guide URL, so a caller with only the binary cannot find it"
   else
