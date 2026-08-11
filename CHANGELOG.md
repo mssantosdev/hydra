@@ -10,6 +10,54 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
+## [Unreleased]
+
+### Fixed
+
+- **`defaults` and `hooks` did nothing below the workspace level.** Every document since schema 3
+  said the three keys exist at workspace, group and repo, and `hydra config show` reported a
+  winning level of `group <name>` — while `add` branched from the workspace's `base_branch` and
+  only the workspace hook chain ever ran. At the repo level neither was a struct field, so a
+  manifest carrying `repos.api.hooks.post_add` parsed clean and the hook was dropped in silence;
+  the guide, the manifest reference and the copy-me template all demonstrated exactly that.
+  `defaults` now resolves nearest-wins through the chain and hook chains append workspace → group
+  → repo, so the provenance `config show` prints is the chain a command executes. A repo may spell
+  its policy flat (`branch_pattern:`) or in a `defaults:` block, the block winning.
+- **`add --as` reported success for a worktree it did not create.** A branch already checked out
+  under a different directory satisfied the convergence check, so `add api stage --as devcopy`
+  exited 0 with `disposition: skipped` and `name` set to the other worktree, and the next command
+  — `hydra path devcopy` — exited 1 with `worktree_unknown`. Convergence now requires the branch
+  to be at the requested path. `add`, `start`, `clone` and `apply` shared the check and all four
+  are fixed; `apply --dry-run` gained the third disposition so a predicted conflict is no longer
+  counted as a creation.
+- **`Save` could write a manifest hydra cannot read.** An anchor on a modelled key was lost when
+  that key was re-encoded from the struct, while an unmodelled key holding the matching alias was
+  carried verbatim. `repo remove` exited 0 having written a dangling `*name`, after which every
+  command — `doctor` included — could only answer `not_in_project`. Anchors now travel with their
+  value, and `Save` verifies the merged bytes still parse and still describe the same manifest,
+  falling back to a plain marshal rather than leaving an unloadable workspace.
+- **One write deleted a manifest's own header.** A comment block separated from the first key by a
+  blank line attaches to the document node, which the merge never read, so the example lost the
+  five lines stating the preservation guarantee. Document-level comments are kept, as are comments
+  on a modelled key that `omitempty` omits, and comments inside a list when the list is
+  structurally unchanged — a list a command rewrote still drops them rather than moving a comment
+  onto an entry it does not describe.
+- **`hydra apply` could not reproduce a workspace that used `--as`.** The captured `name` was
+  discarded and the directory re-derived from the branch, which is the one thing the command
+  exists to do. `applyItem` now carries `name`, validated as a path segment because the document
+  is untrusted input, and a rejected name fails that item rather than the run.
+- **`hydra hooks --help` advertised eight environment variables while ten were injected.** The
+  ENVIRONMENT block is generated from the same list `hooks ls --output json` publishes.
+- **The docs gate reported success for checks that never ran.** Five of six sat behind a
+  capability guard and the success line printed regardless, so hiding PyYAML or deleting `./hydra`
+  produced exit 0 and the claim that all six agreed with the build. A missing prerequisite is now
+  a failure that names it, and `gate-docs` depends on `build`.
+
+### Changed
+
+- Comments across the codebase state the rule the code obeys rather than recounting the defect
+  that prompted it. Git history holds the incident.
+
 ## [0.5.1] - 2026-08-10
 
 ### Fixed
