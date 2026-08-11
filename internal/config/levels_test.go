@@ -110,8 +110,8 @@ func TestRepoDefaultsMergesBothSpellingsBlockWinning(t *testing.T) {
 	}
 }
 
-// The repo level must survive a round trip through YAML. `hooks` was absent from the struct, so a
-// manifest carrying it parsed clean and lost it — the failure that made three documents wrong.
+// The repo level must survive a round trip through YAML. A key absent from the struct is dropped
+// by the parser without error, so a manifest can carry it, parse clean, and lose it in silence.
 func TestRepoLevelKeysSurviveUnmarshal(t *testing.T) {
 	var c Config
 	raw := []byte(`version: "3"
