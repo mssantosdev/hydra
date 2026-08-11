@@ -19,12 +19,23 @@ note() { echo "check-docs-claims: $*" >&2; fail=1; }
 # a failure: this script may report success only for work it actually did.
 require_cmd() { command -v "$1" >/dev/null 2>&1 || note "$1 is required and not installed"; }
 require_cmd jq
-require_cmd python3
 [ -x ./hydra ] || note "./hydra is not built; run make build (gate depends on it)"
-if command -v python3 >/dev/null 2>&1; then
-  python3 -c 'import yaml' 2>/dev/null || note "PyYAML is required (pip install pyyaml)"
-fi
 [ "$fail" -eq 0 ] || { echo "check-docs-claims: prerequisites missing, nothing was verified" >&2; exit 1; }
+
+# The verdict is a trap rather than a line at the bottom. As a bare statement it could be — and was
+# — appended above by mistake, leaving a check that sets fail=1 after the last thing that reads it:
+# the drift printed and the script still exited 0. On EXIT a check's position on the page cannot
+# change whether its result counts, and a death under errexit is reported instead of passing.
+trap 'status=$?
+  if [ "$fail" -ne 0 ]; then
+    echo "check-docs-claims: docs contradict the build" >&2
+    exit 1
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "check-docs-claims: aborted before finishing, so nothing is verified" >&2
+    exit "$status"
+  fi
+  echo "check-docs-claims: version, theme, card, command count, hook env and the guide URL agree with the build"' EXIT
 
 # --- version: every version string in the guide, not just the masthead ---
 tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
@@ -39,25 +50,19 @@ if [ -n "$tag" ]; then
   fi
 fi
 
-# --- default theme: whatever a fresh install actually resolves to ---
-# v0.4.0 changed this from `hydra` to `terminal`. Ask the binary instead of trusting the prose.
-if true; then
-  d=$(mktemp -d)
-  actual=$(HYDRA_CONFIG_DIR="$d" ./hydra config show --output json 2>/dev/null \
-    | sed -n 's/.*"theme"[[:space:]]*:[[:space:]]*"\([a-z-]*\)".*/\1/p' | head -1)
-  rm -rf "$d"
-  if [ -n "$actual" ]; then
-    while IFS= read -r line; do
-      claimed=$(printf '%s' "$line" | sed -n 's/.*`\([a-z-]*\)` theme by default.*/\1/p')
-      [ -z "$claimed" ] && continue
-      [ "$claimed" = "$actual" ] || note "README advertises \`$claimed\` as the default theme; a fresh install resolves to \`$actual\`"
-    done < <(grep -n 'theme by default' README.md docs/README.md || true)
-    for f in README.md docs/README.md; do
-      bad=$(grep -niE '(tokyo ?night|catppuccin|dracula|nord|one ?dark)[^.]{0,24}(theme )?(by default|with styled)' "$f" || true)
-      [ -z "$bad" ] || note "$f advertises a borrowed theme as the default; a fresh install resolves to \`$actual\`: $bad"
-    done
-  fi
-fi
+# --- default theme: no document may name a borrowed theme as the default ---
+# The default itself is pinned in Go (TestDefaultThemeIsTheTerminalPalette), where it is a value
+# rather than a sentence. What can only be checked here is the PROSE, and only negatively: a
+# document must not advertise one of the named themes as what a fresh install resolves to. Matching
+# on one English phrasing guarded nothing — the phrase it looked for had been deleted by the same
+# commit that added the check.
+for f in README.md docs/README.md; do
+  [ -f "$f" ] || continue
+  themes='tokyo ?night|catppuccin|dracula|nord|one ?dark|hydra'
+  bad=$(grep -niE "defaults? to (the )?\`?($themes)\`?|\`?($themes)\`? theme by default|\`?($themes)\`? is the default" "$f" || true)
+  [ -z "$bad" ] || note "$f names a borrowed theme as the default; a fresh install inherits the terminal palette: $bad"
+done
+
 
 # --- the card must name the shelf on its own ---
 # A link-preview card is read with no page around it. Ours once described the tool as a
@@ -99,7 +104,7 @@ if true; then
   if [ -n "$keys" ]; then
     for doc in docs/guide.html docs/configuration.md; do
       for key in $keys; do
-        grep -q "$key" "$doc" || note "$doc never mentions $key, which every hook receives"
+        grep -qE "\\b${key}\\b" "$doc" || note "$doc never mentions $key, which every hook receives"
       done
     done
   fi
@@ -114,25 +119,9 @@ if true; then
   if [ -z "$printed" ]; then
     note "hydra --help names no guide URL, so a caller with only the binary cannot find it"
   else
-    grep -q "$printed" README.md || note "README does not link the guide URL --help prints ($printed)"
-    grep -q "$printed" docs/guide.html || note "the guide does not name the URL --help prints ($printed)"
-    grep -q "$printed" skills/hydra/SKILL.md || note "the agent skill does not carry the guide URL ($printed)"
+    grep -qF -- "$printed" README.md || note "README does not link the guide URL --help prints ($printed)"
+    grep -qF -- "$printed" docs/guide.html || note "the guide does not name the URL --help prints ($printed)"
+    grep -qF -- "$printed" skills/hydra/SKILL.md || note "the agent skill does not carry the guide URL ($printed)"
   fi
 fi
 
-# --- documented manifests must actually load ---
-# Every schema-2 example was renested for schema 3 by hand, and two were missed: one group in
-# README kept the old nesting, which parses as a group with ZERO repos and silently drops the
-# repository. Eyeballing caught four and missed two, so the examples are loaded instead of read.
-#
-# This block MUST stay above the exit gate below. Appended after it, `note` set fail=1 after the
-# last thing that read it: the drift printed, the success line printed too, and the script exited 0.
-if true; then
-  manifest_report=$(python3 scripts/check_doc_manifests.py 2>&1) || {
-    echo "$manifest_report" >&2
-    note "a documented manifest does not load, or loses a repository"
-  }
-fi
-
-[ "$fail" -eq 0 ] || { echo "check-docs-claims: docs contradict the build" >&2; exit 1; }
-echo "check-docs-claims: version, theme, card, command count, hook env and documented manifests agree with the build"

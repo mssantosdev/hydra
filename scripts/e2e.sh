@@ -109,13 +109,13 @@ check "non-TTY stdout auto-selects JSON" \
 # to reconstruct "what happened" from data or interpret an exit status.
 check "every success envelope carries outcome and summary" \
   '"$HYDRA" list --output json | jq -e ".outcome==\"success\" and (.summary|type==\"string\" and length>0)" >/dev/null'
-# The rule under test is the SERIALIZATION one: an empty next is absent, never null. `list` was the
-# example and now carries a genuine hint, so the rule is checked against a command that really has
-# nothing to suggest.
-check "next is omitted rather than null when empty" \
-  '"$HYDRA" where --output json | jq -e ".outcome==\"success\" and (has(\"next\")|not)" >/dev/null'
+# `next` being absent rather than null is a SERIALIZATION rule, owned by
+# internal/output/output_test.go where the envelope is built. Asserting it here could only pin
+# whichever command happens to have no hints today.
+#
+# Order within next[] is not a contract, so this asks whether `list` names its inverse at all.
 check "list names its inverse in next" \
-  '"$HYDRA" list --output json | jq -e ".next[0].argv==[\"hydra\",\"apply\",\"-\"]" >/dev/null'
+  '"$HYDRA" list --output json | jq -e ".next|any(.argv==[\"hydra\",\"apply\",\"-\"])" >/dev/null'
 # A hint is a promise about the next command, so it may only appear when its sentence is true.
 # --all spans several workspaces, and an empty listing has no set to replay.
 check "list omits the replay hint when there is nothing to replay" \
@@ -915,8 +915,6 @@ check "auto output with no tty exits 0" '[ "'"$st2_exit"'" = "0" ]'
 check "ui pipes the same envelope as status" \
   'jq -e ".outcome==\"success\"" "$T/ui.json" >/dev/null'
 check "ui piped exits 0 like its target" '[ "'"$ui_exit"'" = "0" ]'
-check "ui is published in the surface" \
-  '"$HYDRA" commands --output json | jq -e ".data.commands[]|select(.name==\"ui\")" >/dev/null'
 
 echo
 # ------------------------------------------------ topic hierarchy

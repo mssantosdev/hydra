@@ -139,3 +139,21 @@ func TestConfigReloadsThemeAfterChange(t *testing.T) {
 
 	_ = os.Getenv("HOME") // keep os import used when build tags vary
 }
+
+// The default theme is a VALUE, so it is pinned here rather than by grepping prose for one English
+// phrasing. A fresh install inherits the terminal's own palette: it needs no OSC query and no config
+// parsing, so it is the only choice that is correct before anything has been resolved.
+func TestDefaultThemeIsTheTerminalPalette(t *testing.T) {
+	resetCommandState(t)
+	dir := t.TempDir()
+	t.Setenv("HYDRA_CONFIG_DIR", dir)
+
+	loaded, err := global.Load()
+	if err != nil {
+		t.Fatalf("load global config: %v", err)
+	}
+	if got := loaded.Theme.Name; got != "terminal" {
+		t.Errorf("default theme = %q, want %q — README and docs/README describe the terminal "+
+			"palette as the default", got, "terminal")
+	}
+}
