@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
@@ -336,8 +337,7 @@ func hasRef(bareRepo, ref string) bool {
 // shell, and every element of args is built inside this package from validated
 // aliases, branch names, and paths. There is no shell metacharacter to exploit.
 func runGit(args ...string) error {
-	//nolint:gosec // G204: constant binary, no shell, internally-built argv
-	cmd := exec.Command("git", args...)
+	cmd := gitCmd(args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -353,20 +353,65 @@ func runGit(args ...string) error {
 // runGitStreaming runs git with stderr attached to the process stderr, for
 // long-running operations whose progress the user should see. stdout is
 // discarded so it can never corrupt a JSON envelope.
+//
+// stderr is ALSO captured, because attaching it to the terminal is not the same
+// as reporting it: a caller reading --output json would otherwise receive only
+// "exit status 128" while the human watching the terminal saw git say why. The
+// machine consumer must never learn less than the human.
 func runGitStreaming(args ...string) error {
-	//nolint:gosec // G204: constant binary, no shell, internally-built argv
-	cmd := exec.Command("git", args...)
+	cmd := gitCmd(args...)
+	tail := &stderrTail{limit: 4096}
 	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, tail)
 	if err := cmd.Run(); err != nil {
+		if msg := tail.diagnosis(); msg != "" {
+			return fmt.Errorf("git %s failed: %s", strings.Join(args, " "), msg)
+		}
 		return fmt.Errorf("git %s failed: %w", strings.Join(args, " "), err)
 	}
 	return nil
 }
 
+// stderrTail keeps only the last limit bytes written to it. A fetch streams
+// progress without bound, and only the tail carries the diagnosis.
+type stderrTail struct {
+	buf   []byte
+	limit int
+}
+
+func (t *stderrTail) Write(p []byte) (int, error) {
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.limit {
+		t.buf = t.buf[len(t.buf)-t.limit:]
+	}
+	return len(p), nil
+}
+
+// diagnosis returns git's own explanation: the last fatal:/error: line if there
+// is one, otherwise the last non-empty line. Progress output is \r-delimited, so
+// both separators are split on.
+func (t *stderrTail) diagnosis() string {
+	var diagnosis, last string
+	for _, line := range strings.FieldsFunc(string(t.buf), func(r rune) bool {
+		return r == '\n' || r == '\r'
+	}) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		last = line
+		if strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "error:") {
+			diagnosis = line
+		}
+	}
+	if diagnosis != "" {
+		return diagnosis
+	}
+	return last
+}
+
 func runGitOutput(args ...string) (string, error) {
-	//nolint:gosec // G204: constant binary, no shell, internally-built argv
-	cmd := exec.Command("git", args...)
+	cmd := gitCmd(args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -378,6 +423,23 @@ func runGitOutput(args ...string) (string, error) {
 		return "", fmt.Errorf("git %s failed: %s", strings.Join(args, " "), msg)
 	}
 	return string(out), nil
+}
+
+// gitCmd builds a git invocation with a deterministic locale.
+//
+// git translates its diagnostics, and hydra reports that text to callers inside a
+// machine-readable envelope. Without this, the same failure produces a different
+// message on a Portuguese machine than on an English one, and `7824af7` already
+// established locale-dependent git text as a defect once. Pinning the locale is
+// git's own guidance when output stability matters.
+//
+// This makes the text stable. It does not make it a contract: callers branch on
+// `error.code`, never on the message.
+func gitCmd(args ...string) *exec.Cmd {
+	//nolint:gosec // G204: constant binary, no shell, internally-built argv
+	cmd := exec.Command("git", args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
+	return cmd
 }
 
 func parseRefList(output string) []string {

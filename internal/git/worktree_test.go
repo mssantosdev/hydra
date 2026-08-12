@@ -290,3 +290,92 @@ func TestDeleteBranchActuallyDeletes(t *testing.T) {
 		t.Fatal("branch stage must be gone after DeleteBranch")
 	}
 }
+
+// A streaming git failure must carry git's own diagnosis. Attaching stderr to the
+// terminal is not reporting it: a caller reading JSON would otherwise get only
+// "exit status 128" while the human watching the terminal saw the reason.
+func TestStreamingFailureCarriesGitsDiagnosis(t *testing.T) {
+	err := FetchBareRepo(filepath.Join(t.TempDir(), "absent.git"))
+	if err == nil {
+		t.Fatal("fetch of an absent bare repo should fail")
+	}
+	if strings.Contains(err.Error(), "exit status") {
+		t.Errorf("error reports only an exit status, losing git's reason: %v", err)
+	}
+	if !strings.Contains(err.Error(), "not a git repository") {
+		t.Errorf("error does not carry git's diagnosis: %v", err)
+	}
+}
+
+func TestStderrTailKeepsTheDiagnosisNotTheProgress(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			// git writes progress AFTER the fatal on some paths; the fatal is the
+			// answer either way.
+			name: "fatal wins over later progress",
+			in:   "Receiving objects:  50%\rfatal: could not read Username\rReceiving objects: 100%\n",
+			want: "fatal: could not read Username",
+		},
+		{
+			name: "falls back to the last non-empty line",
+			in:   "warning: something\n\n  remote hung up  \n\n",
+			want: "remote hung up",
+		},
+		{
+			name: "empty stays empty so the caller keeps the exit error",
+			in:   "\r\n  \r\n",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tail := &stderrTail{limit: 4096}
+			if _, err := tail.Write([]byte(tt.in)); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if got := tail.diagnosis(); got != tt.want {
+				t.Errorf("diagnosis() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Progress output is unbounded; the buffer must not be.
+func TestStderrTailIsBounded(t *testing.T) {
+	tail := &stderrTail{limit: 64}
+	for i := 0; i < 200; i++ {
+		if _, err := tail.Write([]byte("0123456789")); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+	}
+	if len(tail.buf) > 64 {
+		t.Errorf("buffer grew to %d bytes, limit is 64", len(tail.buf))
+	}
+}
+
+// git translates its diagnostics and hydra puts that text in a machine-readable
+// envelope, so the locale must not come from the operator's environment.
+func TestGitCommandPinsTheLocale(t *testing.T) {
+	t.Setenv("LANG", "pt_BR.UTF-8")
+	t.Setenv("LC_ALL", "pt_BR.UTF-8")
+	cmd := gitCmd("--version")
+	var lcAll, lang string
+	for _, kv := range cmd.Env {
+		switch {
+		case strings.HasPrefix(kv, "LC_ALL="):
+			lcAll = kv
+		case strings.HasPrefix(kv, "LANG="):
+			lang = kv
+		}
+	}
+	if lcAll != "LC_ALL=C" {
+		t.Errorf("LC_ALL not pinned, last value is %q", lcAll)
+	}
+	if lang != "LANG=C" {
+		t.Errorf("LANG not pinned, last value is %q", lang)
+	}
+}
