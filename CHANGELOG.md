@@ -10,6 +10,58 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
+## [Unreleased]
+
+### Security
+
+- **A shared manifest could place files outside the workspace.** `paths.bare_dir` and each group's
+  `path:` are documented as project-relative, and both are joined to the project root to decide
+  where hydra creates, checks out and REMOVES directories. `filepath.Join` resolves `..` rather
+  than rejecting it, so a manifest carrying `groups: {backend: {path: ../../../../tmp/x}}` made
+  `hydra add` create a real git worktree at `/tmp/x/...` and report `outcome: success`; `bare_dir`
+  did the same for the bare repository, and `hydra remove` then deleted out there. A manifest is a
+  committed file, so "check out this branch and run hydra" was a way to write anywhere the user
+  can write. Both fields are now checked on load and on save, refused with `config_invalid`.
+- **A committed symlink let a manifest read secrets from outside the workspace.** `carry`'s
+  destination was contained by the kernel through `os.Root`, but its SOURCE was checked as text,
+  so `from: link/id_rsa` with a repository-committed `link -> ~/.ssh` resolved outside the
+  workspace and copied the file in. The source is now checked after following symlinks. A symlink
+  that stays inside the workspace still works.
+
+### Changed
+
+- **An absolute `paths.bare_dir` or group `path:` no longer loads.** Both are documented as
+  project-relative, and an absolute value is by definition outside the workspace, so it is refused
+  with `config_invalid` (exit 2) naming the field. A workspace that set `bare_dir: /var/cache/hydra`
+  worked on 0.5.2 and will stop loading on upgrade — the fix cannot distinguish a deliberate
+  absolute path from a hostile one. Move the directory inside the workspace, or symlink to it from
+  a relative path.
+- `hooks ls` counts hooks CONFIGURED anywhere in the manifest, which is not what one worktree runs;
+  the column header and the field documentation say so, and the per-level breakdown makes the
+  per-repository number derivable.
+
+### Fixed
+
+- **`post_topic_start` could never fire.** Its guard read `payload.Created`, and the only thing
+  that populates that runs further down, so the count was always zero: an event hydra documents
+  and `hooks ls` counts, that no manifest could trigger. It now fires once per topic — not once
+  per worktree, and not again when a second repository joins a topic that already started, which
+  would make an integration open a duplicate work item.
+- **A version-2 group whose repository is aliased `defaults` or `hooks` lost it.** The key set
+  looks like a schema-3 group and the decode succeeds because yaml ignores unknown sub-keys, so
+  the group read as one with no repositories and they vanished at exit 0, becoming permanent on
+  the next write. A regression in 0.5.2. A modern reading that finds no repositories now yields to
+  a legacy reading that finds real ones.
+- **The wrong group's hook chain ran.** `ResolveHooks` resolved by alias, and an alias may appear
+  in two groups, so a worktree in the second ran the first group's hooks. A regression in 0.5.2;
+  the group is now named rather than inferred.
+- **`apply --dry-run` reported success for a document the real run refuses.** It predicted the
+  worktree half only, so an item whose topic conflicts came back green and then failed. It now
+  checks membership the way the real run does.
+- **`topic remove --with-worktrees` fired `post_remove` once with an empty environment.**
+  `post_remove` is a per-worktree event, as `hydra remove` treats it, so it now fires once per
+  removed worktree with the same context. `pre_topic_remove` remains the once-per-operation event.
+
 ## [0.5.2] - 2026-08-11
 
 ### Fixed
