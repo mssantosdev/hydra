@@ -149,7 +149,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// The two axes resolve INDEPENDENTLY, and either one being unresolvable is
 	// needs_input naming that specific flag. Resolving repos first means a missing
 	// selector is reported before a subprocess is spawned for the branch provider.
-	repos, existing, err := resolveStartRepos(topicID)
+	repos, existing, topicExisted, err := resolveStartRepos(topicID)
 	if err != nil {
 		return err
 	}
@@ -216,9 +216,14 @@ func runStart(cmd *cobra.Command, args []string) error {
 			warnings = append(warnings, fmt.Sprintf("could not record parent %s: %v", startParent, err))
 		}
 	}
-	if topicID != "" && len(payload.Created) > 0 {
-		// ONCE, not once per worktree. Wiring a notification to post_add posts N times for one
-		// piece of work, which is how the channel gets muted.
+	if topicID != "" && !topicExisted && startCreatedCount(results) > 0 {
+		// ONCE PER TOPIC. Once per worktree posts N times for one piece of work, which is how a
+		// channel gets muted; once per INVOCATION announces a second start when a second
+		// repository joins an existing topic, which double-creates whatever the hook creates on
+		// the other side. So: this invocation, and only when it is the one that started the topic.
+		//
+		// The count comes from results rather than payload.Created, which is filled further down.
+		// A guard reading a field populated after it can only ever be false.
 		topicStart, topicErr := runHookEvent("post_topic_start", topicHookContext(topicID), projectRoot)
 		warnings = append(warnings, topicStart.Warnings...)
 		if topicErr != nil {
@@ -292,15 +297,18 @@ func startOne(repo repoContext, t fanout.Target) fanout.ItemResult {
 // It never silently means "every repository": creating a worktree in every repo of a
 // workspace is not a plausible accident to allow, so with no selector and no topic
 // members the caller is asked, naming all three flags that would do.
-func resolveStartRepos(topicID string) ([]repoContext, topic.Topic, error) {
-	var existing topic.Topic
+func resolveStartRepos(topicID string) ([]repoContext, topic.Topic, bool, error) {
+	var (
+		existing topic.Topic
+		existed  bool
+	)
 	if topicID != "" {
 		found, ok, err := topicStore().Get(topicID)
 		if err != nil {
-			return nil, existing, classifyTopicErr(err)
+			return nil, existing, false, classifyTopicErr(err)
 		}
 		if ok {
-			existing = found
+			existing, existed = found, true
 		}
 	}
 
@@ -310,9 +318,9 @@ func resolveStartRepos(topicID string) ([]repoContext, topic.Topic, error) {
 	if hasSelector {
 		repos, err := reposForSelector(selector)
 		if err != nil {
-			return nil, existing, err
+			return nil, existing, existed, err
 		}
-		return repos, existing, nil
+		return repos, existing, existed, nil
 	}
 
 	// No selector: fall back to the topic's existing members, which is what makes
@@ -328,10 +336,10 @@ func resolveStartRepos(topicID string) ([]repoContext, topic.Topic, error) {
 			aliases = append(aliases, member.Repo)
 		}
 		repos, err := reposForSelector(Selector{Repos: aliases})
-		return repos, existing, err
+		return repos, existing, existed, err
 	}
 
-	return nil, existing, output.Errorf(output.CodeNeedsInput,
+	return nil, existing, existed, output.Errorf(output.CodeNeedsInput,
 		"no repositories selected; pass --repos, --group or --all").
 		WithDetail("one_of", []string{"--repos", "--group", "--all"}).
 		WithDetail("reason", "a new topic has no members to infer repositories from")
@@ -513,6 +521,20 @@ func attachStartResults(topicID string, results []fanout.ItemResult, payload *st
 // startAttached carries per-target attach outcomes into the payload without
 // threading another parameter through the fan-out result loop.
 var startAttached map[string]bool
+
+// startCreatedCount counts the worktrees this invocation actually created.
+//
+// It reads the fanout results rather than the JSON payload, so where the payload is filled cannot
+// silence the once-per-topic event.
+func startCreatedCount(results []fanout.ItemResult) int {
+	n := 0
+	for _, result := range results {
+		if result.Disposition == fanout.Created {
+			n++
+		}
+	}
+	return n
+}
 
 func fillStartPayload(payload *startJSON, results []fanout.ItemResult) {
 	for _, result := range results {

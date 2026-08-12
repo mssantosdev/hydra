@@ -135,3 +135,74 @@ func TestHooksHelpListsEveryInjectedVariable(t *testing.T) {
 		}
 	}
 }
+
+// post_topic_start fires ONCE PER TOPIC: for the invocation that started it, and not again when a
+// second repository joins, nor on a converged re-run.
+//
+// Its guard must read a populated count. `payload.Created` is filled after the guard runs, which
+// made the event configured, counted by `hooks ls`, documented, and unreachable. Once reachable, a
+// per-invocation predicate is the opposite error: an integration that opens a work item on start
+// would open a second one when the topic grows.
+func TestStart_PostTopicStartFiresOncePerTopic(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.SetupRepo("frontend", "web", "main", "stage")
+	// A third repository, so the last case can start a topic that really creates something: a
+	// branch whose worktree already exists creates nothing, and then the event is right to stay
+	// quiet for a reason that has nothing to do with the predicate under test.
+	env.SetupRepo("infra", "tf", "main", "stage")
+	env.Chdir()
+
+	// The hooks are added to the manifest SetupRepo wrote rather than replacing it:
+	// writeHooksConfig builds a single-repo config and this test needs two.
+	marker := filepath.Join(env.RootDir, "started.txt")
+	manifest := config.ManifestPath(env.RootDir)
+	loaded, err := config.Load(manifest)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	loaded.Hooks = config.Hooks{
+		PostTopicStart: []config.Hook{{Run: `printf '%s\n' "$HYDRA_TOPIC" >> ` + marker}},
+	}
+	if err := loaded.Save(manifest); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	fires := func() int {
+		data, err := os.ReadFile(marker)
+		if err != nil {
+			return 0
+		}
+		return len(strings.Fields(string(data)))
+	}
+	run := func(label string, args ...string) {
+		resetCommandState(t)
+		rootCmd.SetArgs(args)
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("%s: %v (code %q)", label, err, output.Classify(err).Code)
+		}
+	}
+
+	run("start the topic", "start", "stage", "--repos", "api", "--topic", "7001")
+	if got := fires(); got != 1 {
+		t.Fatalf("starting a topic fired the event %d time(s), want 1", got)
+	}
+
+	run("extend the topic", "start", "stage", "--repos", "web", "--topic", "7001")
+	if got := fires(); got != 1 {
+		t.Errorf("a second repository joining fired it again (%d total): post_topic_start is once "+
+			"per TOPIC, so an integration must not create a second work item", got)
+	}
+
+	run("converged re-run", "start", "stage", "--repos", "api", "--topic", "7001")
+	if got := fires(); got != 1 {
+		t.Errorf("a re-run that created nothing fired it (%d total)", got)
+	}
+
+	run("a different topic", "start", "stage", "--repos", "tf", "--topic", "7002")
+	if got := fires(); got != 2 {
+		t.Errorf("a genuinely new topic did not announce itself (%d fires, want 2)", got)
+	}
+}
