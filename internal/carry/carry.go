@@ -298,15 +298,16 @@ func within(base, resolved string) bool {
 	if base == "" {
 		return false
 	}
-	realBase, err := filepath.EvalSymlinks(base)
-	if err != nil {
-		return false
+	// A path that does not exist cannot be followed, so the textual form is all there is. That is
+	// not a hole: the caller stats the source immediately after and reports a missing one, and a
+	// symlink that does not resolve cannot be read through either.
+	realBase := base
+	if r, err := filepath.EvalSymlinks(base); err == nil {
+		realBase = r
 	}
-	realPath, err := filepath.EvalSymlinks(resolved)
-	if err != nil {
-		// A path that does not exist yet cannot be followed; the textual form is all there is, and
-		// the caller reports it as missing immediately after.
-		realPath = resolved
+	realPath := resolved
+	if r, err := filepath.EvalSymlinks(resolved); err == nil {
+		realPath = r
 	}
 	rel, err := filepath.Rel(realBase, realPath)
 	if err != nil {
