@@ -3,6 +3,7 @@ package carry
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/config"
@@ -213,5 +214,71 @@ func TestApply_SymlinkInsideTheWorktreeCannotRedirectAWrite(t *testing.T) {
 	}
 	if !refused {
 		t.Errorf("the redirected write was not refused: %+v (warnings %v)", results, warnings)
+	}
+}
+
+// A repository can COMMIT a symlink, so `from:` is not trustworthy as text: `link/id_rsa` with
+// `link -> ~/.ssh` joins to a path inside the workspace while resolving to one outside it. Both
+// halves are attacker-supplied — the manifest and the repository content — so the source is checked
+// after following symlinks, not before.
+func TestApplyRefusesASourceReachedThroughASymlinkOutOfTheWorkspace(t *testing.T) {
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "id_rsa")
+	if err := os.WriteFile(secret, []byte("SECRET"), 0o600); err != nil {
+		t.Fatalf("seed secret: %v", err)
+	}
+
+	workspace := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(workspace, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	worktree := filepath.Join(workspace, "wt")
+	if err := os.MkdirAll(worktree, 0o750); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	results, warnings := Apply(
+		[]config.CarryEntry{{From: "link/id_rsa", To: "stolen"}},
+		Plan{WorktreePath: worktree, WorkspaceRoot: workspace},
+	)
+
+	if _, err := os.Stat(filepath.Join(worktree, "stolen")); err == nil {
+		t.Fatal("a secret from outside the workspace was copied into the worktree")
+	}
+	if len(results) != 1 || results[0].Disposition != Missing {
+		t.Errorf("disposition = %+v, want Missing", results)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "escapes the workspace") {
+		t.Errorf("warnings = %v, want one naming the escape", warnings)
+	}
+}
+
+// A symlink that stays INSIDE the workspace is ordinary and must keep working.
+func TestApplyFollowsASymlinkThatStaysInsideTheWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	real := filepath.Join(workspace, "real")
+	if err := os.MkdirAll(real, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "f"), []byte("INSIDE"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.Symlink(real, filepath.Join(workspace, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	worktree := filepath.Join(workspace, "wt")
+	if err := os.MkdirAll(worktree, 0o750); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	if _, warnings := Apply(
+		[]config.CarryEntry{{From: "link/f", To: "carried"}},
+		Plan{WorktreePath: worktree, WorkspaceRoot: workspace},
+	); len(warnings) != 0 {
+		t.Fatalf("a contained symlink was refused: %v", warnings)
+	}
+	got, err := os.ReadFile(filepath.Join(worktree, "carried"))
+	if err != nil || string(got) != "INSIDE" {
+		t.Errorf("carried = %q, %v; want %q", got, err, "INSIDE")
 	}
 }

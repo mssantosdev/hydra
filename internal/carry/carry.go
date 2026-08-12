@@ -283,13 +283,32 @@ func Summary(results []Result) string {
 	return strings.Join(parts, ", ")
 }
 
-// within reports whether resolved is base or below it. filepath.Rel is the check rather than
-// a string prefix, so `/tmp/ws-evil` is not mistaken for something inside `/tmp/ws`.
+// within reports whether resolved is base or below it, AFTER following symlinks.
+//
+// filepath.Rel is the check rather than a string prefix, so `/tmp/ws-evil` is not mistaken for
+// something inside `/tmp/ws`. Symlinks are resolved first because the joined path alone lies: a
+// repository can COMMIT a symlink, so `from: link/id_rsa` with `link -> ~/.ssh` passes a textual
+// check and reads a key from outside the workspace into the worktree. Both halves of that are
+// attacker-supplied — the manifest and the repository content — which is the case this refuses.
+//
+// The write side is stronger: it goes through os.Root, so the kernel refuses an escape even if a
+// symlink is swapped mid-operation. This check runs at resolve time, so that narrow TOCTOU stays
+// open on the read side; closing it means reading through a root handle too.
 func within(base, resolved string) bool {
 	if base == "" {
 		return false
 	}
-	rel, err := filepath.Rel(base, resolved)
+	realBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return false
+	}
+	realPath, err := filepath.EvalSymlinks(resolved)
+	if err != nil {
+		// A path that does not exist yet cannot be followed; the textual form is all there is, and
+		// the caller reports it as missing immediately after.
+		realPath = resolved
+	}
+	rel, err := filepath.Rel(realBase, realPath)
 	if err != nil {
 		return false
 	}
