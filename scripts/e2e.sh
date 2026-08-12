@@ -674,6 +674,11 @@ groups:
     cd "$d/ws" && { "$HYDRA" repo list --output json 2>/dev/null || true; } |
       jq -e ".error.code==\"config_invalid\" and .error.details.field==\"groups.backend.path\"" >/dev/null &&
     [ ! -d "$d-escape" ])'
+# --dry-run predicts, so it prints every bucket and its exit status matches a real run. Moving an
+# existing worktree from `created` to `skipped` silently dropped its text line, which JSON-only
+# checks cannot see.
+check "start --dry-run reports an existing worktree as kept, in text" \
+  '(cd "$T/ws" && "$HYDRA" start main --repos api --dry-run --output text 2>/dev/null | grep -q keep)'
 check "the docs gate refuses to pass when it cannot run its checks" \
   '(d=$(mktemp -d) && cp -r "$(dirname "$HYDRA")/scripts" "$d"/ 2>/dev/null;
     cd "$d" && { bash scripts/check-docs-claims.sh 2>&1 || true; } | grep -q "nothing was verified")'

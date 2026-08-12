@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/config"
@@ -433,3 +436,66 @@ func TestStart_SuggestsStatusForATopic(t *testing.T) {
 // startEnv's config helper is used by the repo-override test; keep the config import
 // honest by asserting the type it produces.
 var _ = config.Defaults{}
+
+// --dry-run predicts, so it must run the same convergence check the real path does. Reporting
+// "would_create" for every target promised to create worktrees that already existed, which made a
+// preflight before a real run always look like work and never like a no-op.
+func TestStart_DryRunReportsSkippedForAWorktreeThatExists(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"start", "stage", "--repos", "api"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("create the worktree: %v", err)
+	}
+
+	resetCommandState(t)
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{"start", "stage", "--repos", "api", "--dry-run", "--output", "json"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+
+	var envelope struct {
+		Data struct {
+			Created []struct{ Disposition string } `json:"created"`
+			Skipped []struct{ Disposition string } `json:"skipped"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v\n%s", err, out.String())
+	}
+	if len(envelope.Data.Created) != 0 {
+		t.Errorf("dry run promised to create a worktree that exists: %+v", envelope.Data.Created)
+	}
+	if len(envelope.Data.Skipped) != 1 || envelope.Data.Skipped[0].Disposition != "skipped" {
+		t.Errorf("skipped = %+v, want one entry reported skipped", envelope.Data.Skipped)
+	}
+}
+
+// A predicted failure must exit non-zero, so a preflight cannot report success for a run that will
+// not succeed.
+func TestStart_DryRunFailsWhenTheTargetDirectoryIsOccupied(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	blocked := filepath.Join(env.RootDir, "backend", "api-feat-blocked")
+	if err := os.MkdirAll(blocked, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(blocked, "f"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"start", "feat/blocked", "--repos", "api", "--dry-run"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("dry run reported success for a target a real run cannot create")
+	}
+}

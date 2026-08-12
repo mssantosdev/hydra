@@ -176,7 +176,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	if startDryRun {
-		return emitStartPreview(cmd, payload, targets)
+		return emitStartPreview(cmd, payload, targets, repos)
 	}
 
 	reposByAlias := make(map[string]repoContext, len(repos))
@@ -590,25 +590,111 @@ func startNext(payload startJSON) []output.Next {
 	}}
 }
 
-func emitStartPreview(cmd *cobra.Command, payload startJSON, targets []fanout.Target) error {
+// startPreviewDisposition predicts one target, mirroring startOne's convergence rule: the branch
+// already at this path is the desired state, the branch somewhere else is a conflict.
+func startPreviewDisposition(repo repoContext, t fanout.Target) string {
+	dirName := worktreeDirName(repo, t.Branch)
+	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, t.Branch); err != nil {
+		if worktreeAlreadyAtTarget(err, t.Path) {
+			return "skipped"
+		}
+		return "failed"
+	}
+	return "would_create"
+}
+
+// emitStartPreview reports what a real run would do.
+//
+// The disposition is COMPUTED, using the same check startOne runs. Reporting "would_create" for
+// every target promised to create worktrees that already exist, so a preflight before a real run
+// always looked like work and never like a no-op.
+func emitStartPreview(cmd *cobra.Command, payload startJSON, targets []fanout.Target, repos []repoContext) error {
+	byAlias := make(map[string]repoContext, len(repos))
+	for _, repo := range repos {
+		byAlias[repo.Alias] = repo
+	}
 	for _, t := range targets {
-		payload.Created = append(payload.Created, startTargetJSON{
+		entry := startTargetJSON{
 			Group: t.Group, Repo: t.Repo, Branch: t.Branch,
 			Name: filepath.Base(t.Path), Path: t.Path,
 			Disposition: "would_create",
-		})
+		}
+		if repo, ok := byAlias[t.Repo]; ok {
+			entry.Disposition = startPreviewDisposition(repo, t)
+		}
+		switch entry.Disposition {
+		case "skipped":
+			payload.Skipped = append(payload.Skipped, entry)
+		case "failed":
+			payload.Failed = append(payload.Failed, entry)
+		default:
+			payload.Created = append(payload.Created, entry)
+		}
 	}
 	summary := fmt.Sprintf("dry run: branch %s across %d repo(s)", payload.Branch, len(targets))
 
-	return emit(cmd, summary, payload, nil, func() {
+	// Every bucket is printed, not just Created: once the preview predicts skips and failures, a
+	// text renderer that loops Created alone silently drops the lines it just learned to compute.
+	//
+	// The outcome rides the envelope too, so a predicted failure exits non-zero. A preflight that
+	// reports success for a document the real run refuses is the thing --dry-run exists to prevent.
+	previewErr := startPreviewError(payload)
+	emitErr := emitResult(cmd, output.Result{
+		Summary: summary,
+		Data:    payload,
+		Outcome: startPreviewOutcome(payload),
+		Err:     previewErr,
+	}, func() {
 		fmt.Println()
 		fmt.Println(styles.Title.Render(summary))
 		fmt.Println()
 		for _, target := range payload.Created {
-			fmt.Printf("  %-20s %-28s %s\n", target.Repo, target.Branch, target.Path)
+			fmt.Printf("  %s %-18s %s\n", styles.Success.Render("new "), target.Repo, target.Path)
+		}
+		for _, target := range payload.Skipped {
+			fmt.Printf("  %s %-18s %s\n", styles.Label.Render("keep"), target.Repo, target.Path)
+		}
+		for _, target := range payload.Failed {
+			fmt.Printf("  %s %-18s %s\n", styles.Error.Render("fail"), target.Repo, target.Path)
 		}
 		fmt.Println()
 	})
+	if emitErr != nil {
+		return emitErr
+	}
+	// The envelope is written first, then the error is returned to set the exit status: a predicted
+	// failure has to be readable AND non-zero, the same way the real run reports one.
+	if previewErr != nil {
+		return previewErr
+	}
+	return nil
+}
+
+// startPreviewOutcome reports the outcome a real run would produce, so --dry-run's exit status
+// matches it.
+func startPreviewOutcome(payload startJSON) output.Outcome {
+	switch {
+	case len(payload.Failed) == 0:
+		return output.OutcomeSuccess
+	case len(payload.Created) == 0 && len(payload.Skipped) == 0:
+		return output.OutcomeFailure
+	default:
+		return output.OutcomePartial
+	}
+}
+
+// startPreviewError names why a predicted run would not fully succeed.
+func startPreviewError(payload startJSON) *output.Error {
+	if len(payload.Failed) == 0 {
+		return nil
+	}
+	code := output.CodeWorktreeNameConflict
+	if len(payload.Created) > 0 || len(payload.Skipped) > 0 {
+		code = output.CodePartialFailure
+	}
+	return output.Errorf(code, "%d of %d worktree(s) would fail",
+		len(payload.Failed), len(payload.Created)+len(payload.Skipped)+len(payload.Failed)).
+		WithDetail("failed", len(payload.Failed))
 }
 
 func printStartText(payload startJSON, summary string) {
