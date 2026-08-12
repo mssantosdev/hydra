@@ -264,3 +264,72 @@ func TestContext_ExportsTopicAndSourceWorktree(t *testing.T) {
 		t.Error("HYDRA_TOPIC must always be exported, even empty")
 	}
 }
+
+// A hook line is where a credential ends up — `post-to-forge --token <PAT>` is how a forge
+// integration gets written first. The whole line was echoed back on three paths, so the token
+// reached anything reading or logging the envelope. The event and index identify the hook, so the
+// arguments are dropped everywhere.
+func TestRunNeverEchoesHookArguments(t *testing.T) {
+	// Not a real credential; shaped like one so the assertion is about the shape that leaks.
+	const secret = "ado_pat_" + "SUPERSECRET123" //nolint:gosec // G101: test fixture, not a credential
+
+	for _, tc := range []struct {
+		name     string
+		optional bool
+	}{
+		{"required hook fails", false},
+		{"optional hook warns", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			result, err := Run(
+				[]config.Hook{{Run: "false --token " + secret, Optional: tc.optional}},
+				Context{Event: "post_add"}, t.TempDir(), &out)
+
+			// Everything a caller can read: the error, its details, and the warnings.
+			var seen []string
+			if err != nil {
+				e := output.Classify(err)
+				seen = append(seen, e.Message)
+				for _, v := range e.Details {
+					if s, ok := v.(string); ok {
+						seen = append(seen, s)
+					}
+				}
+			}
+			seen = append(seen, result.Warnings...)
+
+			for _, s := range seen {
+				if strings.Contains(s, secret) {
+					t.Errorf("hook arguments reached the caller: %q", s)
+				}
+			}
+			// Still identified, or the redaction has made the failure undiagnosable.
+			joined := strings.Join(seen, " ")
+			if !strings.Contains(joined, "post_add") || !strings.Contains(joined, "false") {
+				t.Errorf("hook is no longer identifiable: %q", joined)
+			}
+		})
+	}
+}
+
+func TestHookLabelKeepsTheProgramOnly(t *testing.T) {
+	for run, want := range map[string]string{
+		"post-to-forge --token abc": "post-to-forge",
+		"  spaced   --flag":         "spaced",
+		"single":                    "single",
+		"":                          "hook",
+		"   ":                       "hook",
+		// A leading environment assignment is how a secret is passed inline, so the first field is
+		// the credential and none of it may survive.
+		"ADO_PAT=abc123 ./post-to-forge": "hook",
+		"TOKEN=x":                        "hook",
+		// Only U+0020 was split on, so a tab returned the entire line.
+		"post-to-forge\t--token abc": "post-to-forge",
+		"post-to-forge\n--token abc": "post-to-forge",
+	} {
+		if got := hookLabel(run); got != want {
+			t.Errorf("hookLabel(%q) = %q, want %q", run, got, want)
+		}
+	}
+}

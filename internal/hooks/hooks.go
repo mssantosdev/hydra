@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/mssantosdev/hydra/internal/config"
@@ -97,6 +98,28 @@ type Result struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
+// hookLabel names a hook without quoting its arguments.
+//
+// A hook line is the natural place to put a credential — `post-to-forge --token <PAT>` is how anyone
+// would first write a forge integration — and the whole line was echoed back in error.message, in
+// details.hook, and for an `optional` hook in warnings[] under outcome: success at exit 0, which is
+// the copy a caller logs without thinking. The event and the index already identify a hook uniquely,
+// so the arguments buy nothing the caller needs and carry everything it must not see.
+func hookLabel(run string) string {
+	fields := strings.Fields(run)
+	if len(fields) == 0 {
+		return "hook"
+	}
+	// A leading `NAME=value` is a shell environment assignment, and passing a secret that way is the
+	// canonical idiom — `ADO_PAT=… ./post-to-forge`. The first field IS the credential there, so
+	// nothing about it may be echoed. strings.Fields splits on any unicode space, so a tab-separated
+	// command cannot smuggle the whole line through as one field either.
+	if strings.Contains(fields[0], "=") {
+		return "hook"
+	}
+	return fields[0]
+}
+
 // Run executes a hook chain in cwd, streaming hook output to w (stderr, so it
 // can never corrupt a JSON envelope on stdout).
 //
@@ -120,7 +143,7 @@ func Run(hs []config.Hook, ctx Context, cwd string, w io.Writer) (Result, error)
 			return result, output.Wrap(output.CodeInternal, timeoutErr,
 				"%s hook %d has an invalid timeout %q", ctx.Event, i+1, hook.Timeout).
 				WithDetail("event", ctx.Event).
-				WithDetail("hook", hook.Run).
+				WithDetail("hook", hookLabel(hook.Run)).
 				WithDetail("index", i+1)
 		}
 
@@ -158,7 +181,8 @@ func Run(hs []config.Hook, ctx Context, cwd string, w io.Writer) (Result, error)
 			err = fmt.Errorf("timed out after %s", timeout)
 		}
 		if hook.Optional {
-			warning := fmt.Sprintf("optional %s hook %d (%s) failed: %v", ctx.Event, i+1, hook.Run, err)
+			warning := fmt.Sprintf("optional %s hook %d (%s) failed: %v",
+				ctx.Event, i+1, hookLabel(hook.Run), err)
 			result.Warnings = append(result.Warnings, warning)
 			_, _ = fmt.Fprintf(w, "warning: %s\n", warning)
 			continue
@@ -166,9 +190,9 @@ func Run(hs []config.Hook, ctx Context, cwd string, w io.Writer) (Result, error)
 
 		return result, output.Wrap(output.CodeHookFailed, err,
 			"%s hook %d (%s) failed; fix it and run \"hydra hooks run %s\"",
-			ctx.Event, i+1, hook.Run, ctx.Event).
+			ctx.Event, i+1, hookLabel(hook.Run), ctx.Event).
 			WithDetail("event", ctx.Event).
-			WithDetail("hook", hook.Run).
+			WithDetail("hook", hookLabel(hook.Run)).
 			WithDetail("index", i+1)
 	}
 
