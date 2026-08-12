@@ -13,18 +13,23 @@ import (
 const (
 	CodeNotInProject             = "not_in_project"
 	CodeConfigVersionUnsupported = "config_version_unsupported"
-	CodeProjectUnknown           = "project_unknown"
-	CodeRepoUnknown              = "repo_unknown"
-	CodeBareMissing              = "bare_missing"
-	CodeBranchUnknown            = "branch_unknown"
-	CodeWorktreeExists           = "worktree_exists"
-	CodeWorktreeUnknown          = "worktree_unknown"
-	CodeWorktreeNameConflict     = "worktree_name_conflict"
-	CodeWorktreeDirty            = "worktree_dirty"
-	CodeHookFailed               = "hook_failed"
-	CodeShellHelperMissing       = "shell_helper_missing"
-	CodePartialFailure           = "partial_failure"
-	CodeGitFailed                = "git_failed"
+	// CodeConfigInvalid is a manifest that parses and declares a value hydra refuses to act on.
+	// It is separate from not_in_project (there IS a manifest) and from
+	// config_version_unsupported (the version is fine): a human must edit the file, and no flag
+	// or retry changes that.
+	CodeConfigInvalid        = "config_invalid"
+	CodeProjectUnknown       = "project_unknown"
+	CodeRepoUnknown          = "repo_unknown"
+	CodeBareMissing          = "bare_missing"
+	CodeBranchUnknown        = "branch_unknown"
+	CodeWorktreeExists       = "worktree_exists"
+	CodeWorktreeUnknown      = "worktree_unknown"
+	CodeWorktreeNameConflict = "worktree_name_conflict"
+	CodeWorktreeDirty        = "worktree_dirty"
+	CodeHookFailed           = "hook_failed"
+	CodeShellHelperMissing   = "shell_helper_missing"
+	CodePartialFailure       = "partial_failure"
+	CodeGitFailed            = "git_failed"
 	// Topic membership, the store behind it, and input the caller must supply.
 	CodeTopicUnknown  = "topic_unknown"
 	CodeTopicConflict = "topic_conflict"
@@ -56,6 +61,7 @@ const (
 var exitCodes = map[string]int{
 	CodeNotInProject:             2,
 	CodeConfigVersionUnsupported: 2,
+	CodeConfigInvalid:            2,
 	CodeProjectUnknown:           2,
 	CodeRepoUnknown:              1,
 	CodeBareMissing:              1,

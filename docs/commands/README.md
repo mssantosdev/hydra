@@ -313,6 +313,7 @@ Need cleanup?
 |------|------|-------------|
 | `not_in_project` | 2 | no `.hydra/config.yaml` found walking up, and no `--project` |
 | `config_version_unsupported` | 2 | `.hydra/config.yaml` `version` is not `"2"` |
+| `config_invalid` | 2 | a manifest `path:` or `bare_dir` that leaves the workspace |
 | `project_unknown` | 2 | `--project <name>` not in the registry |
 | `repo_unknown` | 1 | alias not present in any group |
 | `bare_missing` | 1 | `<bare_dir>/<alias>.git` absent |

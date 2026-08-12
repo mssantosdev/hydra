@@ -133,24 +133,35 @@ func (g *Group) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("group must be a mapping, got %v", value.Kind)
 	}
-	// The key set decides which shape to TRY first; the decode decides whether it was right. Both
-	// readings are attempted because one shape is ambiguous on keys alone — a v2 group holding a
-	// repository aliased `repos` looks exactly like a v3 group — and guessing wrong produced an
-	// error naming an internal Go type instead of the manifest.
+	// The key set decides which shape to TRY first; the DECODE decides whether it was right, and a
+	// decode that succeeds is not proof: yaml ignores unknown sub-keys, so a version-2 group whose
+	// repository is aliased `defaults` or `hooks` decodes as a group with none and the repository
+	// disappears at exit 0. So a modern reading that finds NO repositories yields to a legacy
+	// reading that finds real ones. Neither shape is decided on keys alone.
 	type raw Group
 	var (
 		modern raw
 		legacy map[string]Repo
 	)
 	modernErr, legacyErr := error(nil), error(nil)
+	modernOK := false
 	if isGroupShape(value) {
 		if modernErr = value.Decode(&modern); modernErr == nil {
-			*g = Group(modern)
-			return nil
+			modernOK = true
+			if len(modern.Repos) > 0 {
+				*g = Group(modern)
+				return nil
+			}
 		}
 	}
 	if legacyErr = value.Decode(&legacy); legacyErr == nil && isRepoSet(legacy) {
 		*g = Group{Repos: legacy}
+		return nil
+	}
+	// No repositories under either reading: an empty group, or one that only carries settings.
+	// The modern reading is the right answer, and it is the only one that keeps `path:` and friends.
+	if modernOK {
+		*g = Group(modern)
 		return nil
 	}
 	if modernErr != nil {
@@ -290,6 +301,12 @@ func (c *Config) Save(path string) error {
 	// silently, so every comment is dropped with no error. Keep the two levels
 	// straight: `out` is the mapping, `old.Content[0]` is the mapping inside a
 	// document.
+	// Refused on the way OUT as well: hydra must never author a manifest it would then refuse to
+	// read, which would leave a workspace only a hand edit could recover.
+	if err := c.validatePaths(); err != nil {
+		return err
+	}
+
 	var out yaml.Node
 	if err := out.Encode(c); err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -737,6 +754,63 @@ func (e *ErrUnsupportedVersion) Error() string {
 }
 
 // Load reads and validates a config file.
+// ErrUnsafePath is a manifest field that would place files outside the workspace.
+type ErrUnsafePath struct {
+	Field string
+	Value string
+}
+
+func (e *ErrUnsafePath) Error() string {
+	return fmt.Sprintf("%s is %q, which leaves the workspace; it must be a relative path inside it",
+		e.Field, e.Value)
+}
+
+// checkContainedPath refuses a manifest value that does not stay under the workspace root.
+//
+// `paths.bare_dir` and each group's `path:` are documented as project-relative, and both are joined
+// to the project root to decide where hydra creates, checks out and REMOVES directories.
+// filepath.Join resolves `..` rather than rejecting it, so an unchecked value escapes silently: a
+// manifest is a shared, committed file, so "check out this branch" would otherwise be able to mean
+// "write into my home directory on the next add". The CLI already refuses `--group ../..` through
+// validatePathSegment; this is the same rule for the manifest key that means the same thing.
+func checkContainedPath(field, value string) error {
+	if value == "" {
+		return nil
+	}
+	if filepath.IsAbs(value) {
+		return &ErrUnsafePath{Field: field, Value: value}
+	}
+	// Clean collapses `a/../b`, so only a genuine escape survives as a leading `..`.
+	clean := filepath.Clean(value)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return &ErrUnsafePath{Field: field, Value: value}
+	}
+	return nil
+}
+
+// validatePaths checks every manifest field that becomes a filesystem location.
+func (c *Config) validatePaths() error {
+	if err := checkContainedPath("paths.bare_dir", c.Paths.BareDir); err != nil {
+		return err
+	}
+	for _, name := range sortedGroupNames(c) {
+		if err := checkContainedPath(fmt.Sprintf("groups.%s.path", name), c.Groups[name].Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sortedGroupNames keeps the error deterministic when more than one group is unsafe.
+func sortedGroupNames(c *Config) []string {
+	names := make([]string, 0, len(c.Groups))
+	for name := range c.Groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // reading the config path the caller asked for is the whole function
 	if err != nil {
@@ -769,6 +843,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Project == "" {
 		cfg.Project = filepath.Base(ProjectRoot(path))
+	}
+
+	// Checked on the way IN, so no command can act on an escaping path — including the destructive
+	// ones. A manifest arrives from git, so this is the boundary where it stops being trusted.
+	if err := cfg.validatePaths(); err != nil {
+		return nil, err
 	}
 
 	return &cfg, nil
@@ -910,7 +990,7 @@ func (c *Config) HooksFor(event string) ([]Hook, bool) {
 // Lists append rather than override, so a workspace-wide `direnv allow`, a group's shared
 // bring-up and a repo's `go mod download` all run. Overriding would force every child to
 // restate what it inherits.
-func ResolveHooks(c *Config, alias, event string) ([]Hook, bool) {
+func ResolveHooks(c *Config, group, alias, event string) ([]Hook, bool) {
 	if c == nil {
 		return nil, false
 	}
@@ -921,13 +1001,16 @@ func ResolveHooks(c *Config, alias, event string) ([]Hook, bool) {
 	out := make([]Hook, 0, len(chain))
 	out = append(out, chain...)
 
-	ref, ok := c.FindRepo(alias)
-	if !ok {
-		// No repository in scope — a topic event, or a caller that named none. The workspace
-		// chain is the whole answer.
+	// The GROUP is named rather than looked up from the alias. An alias may appear in two groups —
+	// nothing rejects it, because a manifest is hand-editable — and FindRepo collapses those onto
+	// the first, so resolving by alias alone runs one group's chain for a worktree in the other.
+	g, ok := c.Groups[group]
+	if !ok || group == "" {
+		// No group in scope: a topic event, or a caller that named none. The workspace chain is
+		// the whole answer.
 		return out, true
 	}
-	for _, level := range []Hooks{c.Groups[ref.Group].Hooks, ref.Repo.Hooks} {
+	for _, level := range []Hooks{g.Hooks, g.Repos[alias].Hooks} {
 		if hs, _ := hooksOf(level, event); len(hs) > 0 {
 			out = append(out, hs...)
 		}

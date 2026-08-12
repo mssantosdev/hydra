@@ -138,6 +138,7 @@ where
   branch_provider_failed       exit 1
   branch_unknown               exit 1
   busy                         exit 6  retryable
+  config_invalid               exit 2
   config_version_unsupported   exit 2
   git_failed                   exit 1
   hook_failed                  exit 1

@@ -8,7 +8,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/mssantosdev/hydra/internal/git"
-	"github.com/mssantosdev/hydra/internal/hooks"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/topic"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
@@ -730,7 +729,21 @@ func performTopicRemoval(t topic.Topic, described topicJSON, live map[string]wor
 			// cosmetic, and the removal itself already succeeded.
 			_, _ = removeGroupDirIfEmpty(projectRoot, group)
 		}
-		_, _ = runHookEvent("post_remove", hooks.Context{}, projectRoot)
+		// post_remove is a PER-WORKTREE event, so it fires once for each worktree that went, with
+		// the same context `hydra remove` gives it. One firing with an empty context told a hook
+		// something had been removed without saying what, and disagreed with the other command
+		// that raises the same event. The once-per-operation need is pre_topic_remove's job.
+		for _, target := range payload.Targets {
+			if !target.WorktreeGone {
+				continue
+			}
+			wt, ok := live[topicKey(target.Repo, target.Branch)]
+			if !ok {
+				continue
+			}
+			_, _ = runHookEvent("post_remove",
+				hooksContextFor(wt.RepoContext, wt.Branch, wt.Path), projectRoot)
+		}
 	}
 
 	return payload, failures

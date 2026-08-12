@@ -411,13 +411,39 @@ func applyDryRunDisposition(repo repoContext, item applyItem) string {
 		return "failed"
 	}
 	target := worktreePath(projectRoot, repo.Group, dirName)
+	converged := false
 	if err := checkWorktreeNameConflict(repo, projectRoot, dirName, item.Branch); err != nil {
-		if worktreeAlreadyAtTarget(err, target) {
-			return "skipped"
+		if !worktreeAlreadyAtTarget(err, target) {
+			return "failed"
 		}
+		converged = true
+	}
+	// Membership is predicted too. The worktree half is only half the item: a document asking for a
+	// worktree that already belongs to a DIFFERENT topic fails the real run, and a preflight that
+	// reports success for it is not a preflight.
+	if topicConflictFor(item, repo) {
 		return "failed"
 	}
+	if converged {
+		return "skipped"
+	}
 	return "would_create"
+}
+
+// topicConflictFor reports whether the document asks for a topic the worktree cannot have. It
+// mirrors applyTopic's rule without writing: belonging to the REQUESTED topic is convergence,
+// belonging to another is the conflict.
+func topicConflictFor(item applyItem, repo repoContext) bool {
+	if item.Topic == nil || *item.Topic == "" {
+		return false
+	}
+	current, ok, err := topicStore().TopicOf(repo.Alias, item.Branch)
+	if err != nil || !ok {
+		// Unreadable state is reported by the real run, which is where the error belongs; an
+		// unclaimed worktree is free to join.
+		return false
+	}
+	return current != *item.Topic
 }
 
 func applySummary(payload applyJSON) string {

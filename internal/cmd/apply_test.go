@@ -498,3 +498,40 @@ func TestApply_RequiresASourceArgument(t *testing.T) {
 		t.Fatal("a bare apply was accepted; it would block on a terminal")
 	}
 }
+
+// --dry-run must predict the real run for the WHOLE item, not just the worktree half. A document
+// asking for a worktree that already belongs to a different topic fails the real run, so a preflight
+// reporting success for it is not a preflight.
+func TestApply_DryRunPredictsATopicConflict(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	env.SetupRepo("backend", "api", "main", "stage")
+	env.Chdir()
+
+	rootCmd.SetArgs([]string{"start", "stage", "--repos", "api", "--topic", "TOPIC-A"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("claim the worktree for TOPIC-A: %v", err)
+	}
+
+	doc := filepath.Join(env.RootDir, "doc.json")
+	if err := os.WriteFile(doc, []byte(
+		`[{"repo":"api","branch":"stage","topic":"TOPIC-B"}]`), 0o600); err != nil {
+		t.Fatalf("write document: %v", err)
+	}
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"apply", doc, "--dry-run"})
+	dryErr := rootCmd.Execute()
+
+	resetCommandState(t)
+	rootCmd.SetArgs([]string{"apply", doc})
+	realErr := rootCmd.Execute()
+
+	if realErr == nil {
+		t.Fatal("the real run accepted a topic the worktree cannot have; the fixture is wrong")
+	}
+	if dryErr == nil {
+		t.Error("--dry-run reported success for a document the real run refuses")
+	}
+}

@@ -33,7 +33,7 @@ func levelFixture() *Config {
 }
 
 func TestResolveHooksAppendsWorkspaceThenGroupThenRepo(t *testing.T) {
-	got, known := ResolveHooks(levelFixture(), "api", "post_add")
+	got, known := ResolveHooks(levelFixture(), "backend", "api", "post_add")
 	if !known {
 		t.Fatal("post_add reported unknown")
 	}
@@ -51,7 +51,7 @@ func TestResolveHooksAppendsWorkspaceThenGroupThenRepo(t *testing.T) {
 // Appending, not overriding, is the documented rule: a workspace-wide `direnv allow` must still
 // run for a repo that adds its own toolchain step.
 func TestResolveHooksKeepsWorkspaceChainForRepoWithNoneOfItsOwn(t *testing.T) {
-	got, _ := ResolveHooks(levelFixture(), "bare", "post_add")
+	got, _ := ResolveHooks(levelFixture(), "backend", "bare", "post_add")
 	if len(got) != 2 || got[0].Run != "ws" || got[1].Run != "grp" {
 		t.Fatalf("got %+v, want [ws grp]", got)
 	}
@@ -59,14 +59,14 @@ func TestResolveHooksKeepsWorkspaceChainForRepoWithNoneOfItsOwn(t *testing.T) {
 
 // Topic events name no repository, so the workspace chain is the whole answer rather than an error.
 func TestResolveHooksWithNoRepoInScopeReturnsWorkspaceChain(t *testing.T) {
-	got, known := ResolveHooks(levelFixture(), "", "post_add")
+	got, known := ResolveHooks(levelFixture(), "", "", "post_add")
 	if !known || len(got) != 1 || got[0].Run != "ws" {
 		t.Fatalf("got %+v known=%v, want [ws] true", got, known)
 	}
 }
 
 func TestResolveHooksRejectsUnknownEvent(t *testing.T) {
-	if _, known := ResolveHooks(levelFixture(), "api", "post_lunch"); known {
+	if _, known := ResolveHooks(levelFixture(), "backend", "api", "post_lunch"); known {
 		t.Fatal("an invented event was reported known")
 	}
 }
@@ -221,6 +221,32 @@ func TestExplainDefaultsAgreesWithResolveDefaults(t *testing.T) {
 	} {
 		if value != "" && got[key] != value {
 			t.Errorf("%s: reporter says %q, resolver says %q", key, got[key], value)
+		}
+	}
+}
+
+// An alias may appear in two groups, and FindRepo collapses those onto the first. Resolving a hook
+// chain by alias alone therefore ran one group's hooks for a worktree in the other — the wrong
+// chain, silently. The group is named, so it cannot be guessed.
+func TestResolveHooksUsesTheNamedGroupNotTheFirstMatch(t *testing.T) {
+	c := &Config{
+		Version: SchemaVersion,
+		Hooks:   Hooks{PostAdd: []Hook{{Run: "ws"}}},
+		Groups: map[string]Group{
+			"backend": {
+				Hooks: Hooks{PostAdd: []Hook{{Run: "grp-backend"}}},
+				Repos: map[string]Repo{"api": {Remote: "r1"}},
+			},
+			"web": {
+				Hooks: Hooks{PostAdd: []Hook{{Run: "grp-web"}}},
+				Repos: map[string]Repo{"api": {Remote: "r2"}},
+			},
+		},
+	}
+	for group, want := range map[string]string{"backend": "grp-backend", "web": "grp-web"} {
+		got, _ := ResolveHooks(c, group, "api", "post_add")
+		if len(got) != 2 || got[1].Run != want {
+			t.Errorf("group %q resolved to %+v, want the workspace chain then %q", group, got, want)
 		}
 	}
 }

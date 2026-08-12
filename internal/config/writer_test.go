@@ -337,3 +337,55 @@ func TestLegacyGroupHoldingARepoAliasedRepos(t *testing.T) {
 		t.Errorf("repos alias lost its remote: %#v", c.Groups["backend"].Repos)
 	}
 }
+
+// A version-2 group's repositories may be aliased with names that are also Group FIELDS. The key
+// set then looks modern, and the modern decode succeeds because yaml ignores unknown sub-keys — so
+// the group reads as one with no repositories and they vanish at exit 0, becoming permanent on the
+// next write. A modern reading that finds none must yield to a legacy reading that finds real ones.
+func TestLegacyGroupAliasedAsAGroupFieldKeepsItsRepositories(t *testing.T) {
+	for _, alias := range []string{"defaults", "hooks", "repos", "path", "carry"} {
+		t.Run(alias, func(t *testing.T) {
+			var c Config
+			raw := []byte("version: \"2\"\nproject: p\ngroups:\n  backend:\n    " + alias +
+				":\n      remote: r1\n")
+			if err := yaml.Unmarshal(raw, &c); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			got := c.Groups["backend"].Repos
+			if len(got) != 1 || got[alias].Remote != "r1" {
+				t.Fatalf("a repository aliased %q was dropped: %#v", alias, got)
+			}
+		})
+	}
+}
+
+// Two of them at once, so the fix cannot depend on there being exactly one.
+func TestLegacyGroupWithTwoFieldNamedAliases(t *testing.T) {
+	var c Config
+	raw := []byte("version: \"2\"\nproject: p\ngroups:\n  backend:\n    defaults:\n" +
+		"      remote: r1\n    hooks:\n      remote: r2\n")
+	if err := yaml.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := len(c.Groups["backend"].Repos); got != 2 {
+		t.Fatalf("repos = %d, want 2: %#v", got, c.Groups["backend"].Repos)
+	}
+}
+
+// A version-3 group that carries only settings has no repositories and is still a group: the
+// legacy fallback must not claim it.
+func TestModernGroupWithOnlySettingsStaysAGroup(t *testing.T) {
+	var c Config
+	raw := []byte("version: \"3\"\nproject: p\ngroups:\n  backend:\n    defaults:\n" +
+		"      base_branch: main\n")
+	if err := yaml.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	g := c.Groups["backend"]
+	if len(g.Repos) != 0 {
+		t.Errorf("settings were read as a repository set: %#v", g.Repos)
+	}
+	if g.Defaults.BaseBranch != "main" {
+		t.Errorf("the group's own defaults were lost: %#v", g.Defaults)
+	}
+}

@@ -210,6 +210,14 @@ func classifyConfigError(err error) error {
 			WithDetail("found_version", unsupported.Version).
 			WithDetail("required_version", config.SchemaVersion)
 	}
+	// A manifest that exists and is refused is not "no workspace here", and telling the caller to
+	// run `hydra init` would be advice that overwrites nothing and fixes nothing.
+	var unsafe *config.ErrUnsafePath
+	if errors.As(err, &unsafe) {
+		return output.Errorf(output.CodeConfigInvalid, "%s", unsafe.Error()).
+			WithDetail("field", unsafe.Field).
+			WithDetail("value", unsafe.Value)
+	}
 	return output.Errorf(output.CodeNotInProject,
 		"%v\n\nRun \"hydra init\" to create a workspace, or pass --project <name>.", err)
 }
@@ -460,7 +468,7 @@ func runHookEventForProject(c *config.Config, root, event string, hctx hooks.Con
 	}
 	// The repo in the context selects the chain: a hook set on that repo, or on its group, runs
 	// after the workspace's. ResolveHooks walks the level chain; c.Hooks alone would skip both.
-	chain, known := config.ResolveHooks(c, hctx.Repo, event)
+	chain, known := config.ResolveHooks(c, hctx.Group, hctx.Repo, event)
 	if !known {
 		return hooks.Result{}, output.Errorf(output.CodeInternal, "unknown hook event %q", event)
 	}

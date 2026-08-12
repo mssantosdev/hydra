@@ -74,6 +74,11 @@ the group, grouping by domain puts it on each repo. Both are correct.
 |------|---------|-------------|
 | string | `.bare` | Project-relative directory holding bare repositories. Each repo is stored at `<bare_dir>/<alias>.git`. Git data only — never work in this directory directly. |
 
+`bare_dir` and every group `path:` must stay **inside the workspace**. An absolute path, or one
+that climbs out with `..`, is refused with `config_invalid` (exit 2) before any command runs — a
+manifest is a shared, committed file, so it must not be able to place files outside the directory
+it lives in.
+
 Hydra does not support a configurable worktree root path. Worktrees always live as real sibling directories under their group.
 
 ### `groups` (required)

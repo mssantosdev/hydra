@@ -36,7 +36,7 @@ DESCRIPTION
   Use --no-hooks on any command to skip hook execution globally.
 
 SUBCOMMANDS
-  ls          List configured hook events
+  ls          Count the hooks configured for each event, by level
   run <event> Run a hook chain for an event
 
 ENVIRONMENT
@@ -95,11 +95,12 @@ func init() {
 
 type hooksEventEntry struct {
 	Event string `json:"event"`
-	// Count is every hook configured for the event, at any level. Counting only the workspace
-	// under-reported each group and repo chain, so the number contradicted what ran.
+	// Count is every hook CONFIGURED for the event anywhere in the manifest. It is not what a
+	// single worktree runs: the chain is per-repository, so a manifest with hooks on two groups
+	// configures more than any one worktree executes.
 	Count int `json:"count"`
-	// The breakdown, because a total cannot say which chain a given repository gets. What runs
-	// for one repo is workspace + its group + itself; use `hooks run --worktree` to exercise it.
+	// The breakdown, so the per-repository number is derivable: a worktree runs the workspace
+	// chain plus its OWN group's plus its own. `hooks run --worktree <name>` executes exactly that.
 	Workspace int `json:"workspace"`
 	Groups    int `json:"groups"`
 	Repos     int `json:"repos"`
@@ -128,7 +129,7 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 	return emit(cmd, fmt.Sprintf("%d hook event(s) configured", len(entries)), hooksLsPayload{Events: entries, Env: hooks.EnvKeys()}, nil, func() {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %s\n",
 			styles.Label.Render("EVENT"),
-			styles.Label.Render("HOOKS"))
+			styles.Label.Render("CONFIGURED"))
 		for _, entry := range entries {
 			where := ""
 			if entry.Groups > 0 || entry.Repos > 0 {

@@ -85,7 +85,8 @@ Without a declaration only default branches are restored, and `apply -` replays 
 | code | exit | raised when |
 |---|---|---|
 | `not_in_project` | 2 | no `.hydra/config.yaml` walking up, and no `--project` |
-| `config_version_unsupported` | 2 | manifest `version` is neither `"3"` nor `"2"` (v2 is upgraded on write) |
+| `config_version_unsupported` | 2 | manifest `version` is not `"3"` or `"2"` (v2 upgrades on write) |
+| `config_invalid` | 2 | a manifest `path:`/`bare_dir` that leaves the workspace |
 | `state_version_unsupported` | 2 | `.hydra/state.yaml` written by a newer hydra |
 | `project_unknown` | 2 | `--project` names nothing in the registry |
 | `repo_unknown` | 1 | repo alias or group not registered; `details.known` lists them |

@@ -661,6 +661,19 @@ check "the committed SURFACE.txt is not stale" \
 # Point it at a workspace with no binary and require a non-zero exit.
 # Asserting on the MESSAGE, not just a non-zero exit: in a bare directory the script fails for many
 # unrelated reasons, so an exit-code-only check passes with or without the guard and proves nothing.
+# A manifest is a shared, committed file, so it must not be able to place files outside the
+# workspace. filepath.Join RESOLVES `..`, so an unvalidated group path escaped silently and hydra
+# reported success — then `remove` deleted out there too.
+check "a manifest path that leaves the workspace is refused" \
+  '(d=$(mktemp -d) && mkdir -p "$d/ws/.hydra" && printf %s "version: \"3\"
+project: hostile
+groups:
+  backend:
+    path: ../../../../$(basename "$d")-escape
+" > "$d/ws/.hydra/config.yaml" &&
+    cd "$d/ws" && { "$HYDRA" repo list --output json 2>/dev/null || true; } |
+      jq -e ".error.code==\"config_invalid\" and .error.details.field==\"groups.backend.path\"" >/dev/null &&
+    [ ! -d "$d-escape" ])'
 check "the docs gate refuses to pass when it cannot run its checks" \
   '(d=$(mktemp -d) && cp -r "$(dirname "$HYDRA")/scripts" "$d"/ 2>/dev/null;
     cd "$d" && { bash scripts/check-docs-claims.sh 2>&1 || true; } | grep -q "nothing was verified")'
