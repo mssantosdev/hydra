@@ -93,6 +93,11 @@ func init() {
 	hooksRunCmd.Flags().StringVar(&hooksWorktree, "worktree", "", "Worktree directory name or group/name")
 }
 
+type hooksLsHook struct {
+	Path string `json:"path"`
+	Name string `json:"name,omitempty"`
+}
+
 type hooksEventEntry struct {
 	Event string `json:"event"`
 	// Count is every hook CONFIGURED for the event anywhere in the manifest. It is not what a
@@ -101,9 +106,10 @@ type hooksEventEntry struct {
 	Count int `json:"count"`
 	// The breakdown, so the per-repository number is derivable: a worktree runs the workspace
 	// chain plus its OWN group's plus its own. `hooks run --worktree <name>` executes exactly that.
-	Workspace int `json:"workspace"`
-	Groups    int `json:"groups"`
-	Repos     int `json:"repos"`
+	Workspace int           `json:"workspace"`
+	Groups    int           `json:"groups"`
+	Repos     int           `json:"repos"`
+	Hooks     []hooksLsHook `json:"hooks,omitempty"`
 }
 
 type hooksLsPayload struct {
@@ -121,8 +127,13 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 	entries := make([]hooksEventEntry, 0, len(events))
 	for _, event := range events {
 		ws, gs, rs := config.HookCounts(cfg, event)
+		configured := config.AllConfiguredHooks(cfg, event)
+		hookEntries := make([]hooksLsHook, 0, len(configured))
+		for _, hook := range configured {
+			hookEntries = append(hookEntries, hooksLsHook{Path: hook.Path, Name: hook.Name})
+		}
 		entries = append(entries, hooksEventEntry{
-			Event: event, Count: ws + gs + rs, Workspace: ws, Groups: gs, Repos: rs,
+			Event: event, Count: ws + gs + rs, Workspace: ws, Groups: gs, Repos: rs, Hooks: hookEntries,
 		})
 	}
 
@@ -137,6 +148,12 @@ func runHooksLs(cmd *cobra.Command, args []string) error {
 					entry.Workspace, entry.Groups, entry.Repos)
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-14s  %d%s\n", entry.Event, entry.Count, where)
+			for _, hook := range entry.Hooks {
+				if hook.Name == "" {
+					continue
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%16s%s\n", "", hook.Name)
+			}
 		}
 	})
 }
@@ -168,6 +185,7 @@ func runHooksRun(cmd *cobra.Command, args []string) error {
 		Branch:       wt.Branch,
 		WorktreePath: wt.Path,
 		BarePath:     wt.RepoContext.BareRepo,
+		Worktree:     wt.Name(),
 	}
 
 	result, err := runHookEvent(event, hctx, cwd)

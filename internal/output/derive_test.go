@@ -43,31 +43,47 @@ func TestCoverageDerivesTheOnlyConsistentOutcome(t *testing.T) {
 	}
 }
 
-// A fault warning describes the workspace being wrong, not the request being unusual, so it
-// may never sit beside `outcome: success`. `status` reported "all clean" with exactly such a
-// warning present, and a caller gating on outcome or exit status saw nothing.
-func TestFaultWarningsAreDistinguishedFromAdvice(t *testing.T) {
-	faults := []string{
-		"worktree_unknown: g/api: git status failed: fatal: cannot change to '/gone'",
-		"bare_missing: g/api: bare repository missing at .bare/api.git",
-		"api.git is not registered in the manifest",
-		"topic state unreadable: bad yaml",
+// Severity alone decides degradation: a warning that is reworded still degrades; a note does not.
+func TestSeverityDecidesFaultWarnings(t *testing.T) {
+	faults := []*Diagnostic{
+		Warnf(CodeWorktreeUnknown, "worktree path is gone"),
+		Warnf(CodeBareMissing, "bare repository missing"),
+		Warnf(CodeGitFailed, "git status failed"),
+		Warnf(CodeInternal, "topic state unreadable"),
 	}
-	for _, w := range faults {
-		if !HasFault([]string{w}) {
-			t.Errorf("should be a fault: %q", w)
+	for _, d := range faults {
+		if !HasFault(faults) && d.IsFault() {
+			t.Fatalf("HasFault should see %q", d.Code)
 		}
+		if !d.IsFault() {
+			t.Errorf("warning should be a fault: code=%q msg=%q", d.Code, d.Message)
+		}
+	}
+	if !HasFault(faults) {
+		t.Fatal("expected HasFault on warning slice")
 	}
 
-	advice := []string{
-		"--filter branch:nope-* matched none of the 9 worktree(s) in this project",
-		"registered in /home/u/.config/hydra/projects.yaml",
-		"2 detached worktree(s) skipped: a branchless worktree cannot be described by a branch",
+	// Reworded warning still degrades — the old prose matcher broke on this.
+	reworded := []*Diagnostic{
+		Warnf(CodeBareMissing, "the bare repo for api is not on disk at .bare/api.git"),
 	}
-	for _, w := range advice {
-		if HasFault([]string{w}) {
-			t.Errorf("advice must not force a partial: %q", w)
+	if !HasFault(reworded) {
+		t.Fatal("reworded warning must still be a fault")
+	}
+
+	notes := []*Diagnostic{
+		Notef("", "--filter branch:nope-* matched none of the 9 worktree(s) in this project"),
+		Notef("", "registered in /home/u/.config/hydra/projects.yaml"),
+		Notef("", "2 detached worktree(s) skipped"),
+		Notef(CodeHookFailed, "optional hook failed at hooks/post_add"),
+	}
+	for _, d := range notes {
+		if d.IsFault() {
+			t.Errorf("note must not force partial: code=%q msg=%q", d.Code, d.Message)
 		}
+	}
+	if HasFault(notes) {
+		t.Fatal("notes must not be faults")
 	}
 }
 
@@ -87,12 +103,12 @@ func TestEmitJSONCorrectsAnOverclaimedOutcome(t *testing.T) {
 		},
 		{
 			name: "a fault warning forbids success",
-			r:    Result{Outcome: OutcomeSuccess, Warnings: []string{"worktree missing on disk"}},
+			r:    Result{Outcome: OutcomeSuccess, Warnings: []*Diagnostic{Warnf(CodeWorktreeUnknown, "worktree missing on disk")}},
 			want: OutcomePartial,
 		},
 		{
 			name: "advice leaves success alone",
-			r:    Result{Outcome: OutcomeSuccess, Warnings: []string{"matched none of the 9 worktree(s)"}},
+			r:    Result{Outcome: OutcomeSuccess, Warnings: []*Diagnostic{Notef("", "matched none of the 9 worktree(s)")}},
 			want: OutcomeSuccess,
 		},
 		{
@@ -161,7 +177,7 @@ func TestEmittedVerdictDrivesTheExitStatus(t *testing.T) {
 			name: "an emitted fault warning alone still moves the exit",
 			// No error, no explicit outcome: the envelope promotes this to partial, and
 			// the exit has to follow even though the command said nothing was wrong.
-			result:   Result{Warnings: []string{"worktree_unknown: g/api: gone"}},
+			result:   Result{Warnings: []*Diagnostic{Warnf(CodeWorktreeUnknown, "worktree_unknown: g/api: gone")}},
 			wantCode: CodePartialFailure,
 			wantExit: 4,
 		},

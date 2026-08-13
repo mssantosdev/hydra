@@ -233,6 +233,11 @@ func classifyConfigError(err error) error {
 	}
 	// A manifest that exists and is refused is not "no workspace here", and telling the caller to
 	// run `hydra init` would be advice that overwrites nothing and fixes nothing.
+	var invalid *config.ErrConfigInvalid
+	if errors.As(err, &invalid) {
+		return output.Errorf(output.CodeConfigInvalid, "%s", invalid.Error()).
+			WithDetail("field", invalid.Field)
+	}
 	var unsafe *config.ErrUnsafePath
 	if errors.As(err, &unsafe) {
 		return output.Errorf(output.CodeConfigInvalid, "%s", unsafe.Error()).
@@ -279,7 +284,11 @@ func Execute() (string, error) {
 	if executed != nil {
 		name = commandName(executed)
 	}
-	return name, classifyUnknownCommand(err)
+	err = classifyUnknownCommand(err)
+	if emitTextFailure(err) {
+		return name, nil
+	}
+	return name, err
 }
 
 // classifyUnknownCommand turns cobra's unknown-command error into something a caller can
@@ -405,7 +414,7 @@ func explicitJSON() bool {
 // emitValue is the funnel for commands whose payload IS a single value the shell
 // consumes (`hydra path`). Auto mode stays text so `cd "$(hydra path api)"` works;
 // only an explicit --output json (or HYDRA_OUTPUT=json) produces an envelope.
-func emitValue(cmd *cobra.Command, summary string, data any, warnings []string, text func()) error {
+func emitValue(cmd *cobra.Command, summary string, data any, warnings []*output.Diagnostic, text func()) error {
 	if explicitJSON() {
 		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd),
 			output.Result{Summary: summary, Data: data, Warnings: warnings})
@@ -425,7 +434,7 @@ func emitValue(cmd *cobra.Command, summary string, data any, warnings []string, 
 // not a reviewer — makes every command state its one-line answer. That is the whole
 // point of the field: a caller should never have to reconstruct "what happened" by
 // walking data.
-func emit(cmd *cobra.Command, summary string, data any, warnings []string, text func()) error {
+func emit(cmd *cobra.Command, summary string, data any, warnings []*output.Diagnostic, text func()) error {
 	return emitResult(cmd, output.Result{Summary: summary, Data: data, Warnings: warnings}, text)
 }
 
@@ -463,7 +472,7 @@ type projectTarget struct {
 // all=false it is the currently loaded project; with all=true it is every
 // registered project, and unreadable entries become warnings instead of
 // disappearing.
-func projectTargets(all bool) ([]projectTarget, []string, error) {
+func projectTargets(all bool) ([]projectTarget, []*output.Diagnostic, error) {
 	if !all {
 		if cfg == nil {
 			return nil, nil, output.Errorf(output.CodeNotInProject,
@@ -478,18 +487,19 @@ func projectTargets(all bool) ([]projectTarget, []string, error) {
 	}
 
 	var targets []projectTarget
-	var warnings []string
+	var warnings []*output.Diagnostic
 	for _, name := range reg.Names() {
 		root, _ := reg.Resolve(name)
 		loaded, loadErr := config.Load(config.ManifestPath(root))
 		if loadErr != nil {
-			warnings = append(warnings, fmt.Sprintf("%s (%s): %v", name, root, loadErr))
+			warnings = append(warnings, output.Warnf(output.CodeInternal, "%s (%s): %v", name, root, loadErr).
+				WithSubject("project", name))
 			continue
 		}
 		targets = append(targets, projectTarget{Name: name, Root: root, Cfg: loaded})
 	}
 	if len(targets) == 0 && len(warnings) == 0 {
-		warnings = append(warnings, "no projects registered; run \"hydra init\" or \"hydra project add\"")
+		warnings = append(warnings, output.Notef("", "no projects registered; run \"hydra init\" or \"hydra project add\""))
 	}
 	return targets, warnings, nil
 }

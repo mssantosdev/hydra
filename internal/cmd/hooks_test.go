@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -71,14 +72,49 @@ func TestHooksRunRequiredFailure(t *testing.T) {
 	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
 
-	rootCmd.SetArgs([]string{"hooks", "run", "post_add", "--worktree", "api"})
-	err := rootCmd.Execute()
-	if err == nil {
-		t.Fatal("expected hook_failed")
+	outputFlag = "text"
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	he := output.Classify(err)
-	if he.Code != output.CodeHookFailed || he.Exit != 1 {
-		t.Fatalf("code=%s exit=%d", he.Code, he.Exit)
+	os.Stderr = w
+	defer func() {
+		os.Stderr = oldStderr
+		_ = w.Close()
+	}()
+	rootCmd.SetArgs([]string{"hooks", "run", "post_add", "--worktree", "api"})
+	_, runErr := Execute()
+	_ = w.Close()
+	var stderr bytes.Buffer
+	if _, err := io.Copy(&stderr, r); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Close()
+	err = runErr
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	outcome, code := output.EmittedVerdict()
+	if outcome != output.OutcomeFailure || code != output.CodeHookFailed {
+		t.Fatalf("verdict = %s/%s, want failure/hook_failed", outcome, code)
+	}
+	if output.ExitFor(code) != 1 {
+		t.Fatalf("exit = %d, want 1", output.ExitFor(code))
+	}
+
+	got := stderr.String()
+	if strings.HasPrefix(got, "Error:") {
+		t.Fatalf("stderr must not use main's Error: prefix:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "error: hook failed at hooks.post_add[0]\n") {
+		t.Fatalf("stderr = %q, want error: hook failed at hooks.post_add[0]", got)
+	}
+	if !strings.Contains(got, "  exit: 7\n") {
+		t.Fatalf("stderr missing exit line:\n%s", got)
+	}
+	if !strings.Contains(got, `  hint: fix the hook, then run "hydra hooks run post_add --worktree api"`) {
+		t.Fatalf("stderr missing retry hint:\n%s", got)
 	}
 }
 
@@ -204,5 +240,35 @@ func TestStart_PostTopicStartFiresOncePerTopic(t *testing.T) {
 	run("a different topic", "start", "stage", "--repos", "tf", "--topic", "7002")
 	if got := fires(); got != 2 {
 		t.Errorf("a genuinely new topic did not announce itself (%d fires, want 2)", got)
+	}
+}
+
+func TestHooksLsShowsHookNames(t *testing.T) {
+	resetCommandState(t)
+	env := testutil.NewTestEnv(t)
+	env.InitConfig()
+	_, remote, _ := env.SetupRepo("backend", "api", "main")
+	writeHooksConfig(t, env, remote, config.Hooks{
+		PostAdd: []config.Hook{{Name: "install dependencies", Run: "true"}},
+	})
+
+	env.ChdirTo(filepath.Join("backend", "api"))
+	projectRoot = env.RootDir
+	projectConfigPath = config.ManifestPath(env.RootDir)
+	cfg = env.LoadConfig()
+
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stdout)
+
+	rootCmd.SetArgs([]string{"hooks", "ls"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("hooks ls: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "install dependencies") {
+		t.Fatalf("hooks ls output = %q, want hook name", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "true") {
+		t.Fatalf("hooks ls must not echo hook command: %q", stdout.String())
 	}
 }

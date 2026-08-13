@@ -345,11 +345,11 @@ func TestResolve_EmptySelectionExplainsItself(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an empty match must not be an error: %v", err)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "matched none") {
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Message, "matched none") {
 		t.Fatalf("warnings = %q, want one naming the unmatched selector", warnings)
 	}
-	if !strings.Contains(warnings[0], "branch:no-such-*") {
-		t.Errorf("the warning must name the selector, got %q", warnings[0])
+	if !strings.Contains(warnings[0].Message, "branch:no-such-*") {
+		t.Errorf("the warning must name the selector, got %q", warnings[0].Message)
 	}
 }
 

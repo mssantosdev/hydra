@@ -206,8 +206,9 @@ type Repo struct {
 	// BranchPattern and BranchProvider override the project defaults for this repo.
 	// A repo-level entry wins because a monorepo and a service in the same workspace
 	// legitimately name branches differently.
-	BranchPattern  string `yaml:"branch_pattern,omitempty"`
-	BranchProvider string `yaml:"branch_provider,omitempty"`
+	// branch_pattern is a deprecated alias for the scalar form of branch_provider.
+	BranchPattern  string       `yaml:"branch_pattern,omitempty"`
+	BranchProvider BranchNaming `yaml:"branch_provider,omitempty"`
 
 	// Branches is the DECLARED shape of this repository: the branches a workspace built
 	// from this manifest should have worktrees for. `repo restore` creates these from the
@@ -238,19 +239,13 @@ type Repo struct {
 type Defaults struct {
 	BaseBranch string `yaml:"base_branch,omitempty"`
 
-	// BranchPattern is ONE literal string with closed placeholder substitution:
-	// {topic} {kind} {slug} {user} {repo} {group}. It is deliberately not a template
-	// language — no conditionals, per-kind maps, counters, date arithmetic, nested
-	// defaults, alternation or embedded shell. Anything beyond substitution belongs
-	// in BranchProvider, so the pattern cannot grow into the workflow DSL that three
-	// reviewers rejected outright.
-	BranchPattern string `yaml:"branch_pattern,omitempty"`
-
-	// BranchProvider is an executable that receives JSON on stdin and prints one
-	// branch name on stdout. It is NOT a lifecycle hook: hooks run after the branch
-	// exists, route stdout to stderr, and have no timeout, so they cannot return a
-	// value.
-	BranchProvider string `yaml:"branch_provider,omitempty"`
+	// BranchProvider is how a branch is named: a scalar pattern with closed placeholder
+	// substitution ({topic} {kind} {slug} {user} {repo} {group}), or a mapping with
+	// run: that executes a workspace-relative binary. The shape announces which applies.
+	//
+	// branch_pattern is a deprecated alias for the scalar form, kept for one release.
+	BranchProvider BranchNaming `yaml:"branch_provider,omitempty"`
+	BranchPattern  string       `yaml:"branch_pattern,omitempty"`
 
 	// BranchPatternStrict turns an off-pattern explicit branch into an error instead
 	// of a warning. Off by default: branch shape belongs to the team, not to hydra.
@@ -261,6 +256,10 @@ type Defaults struct {
 type Hook struct {
 	Run      string `yaml:"run"`
 	Optional bool   `yaml:"optional,omitempty"`
+
+	// Name is an optional manifest-authored label for the hook. It is echoed only as a
+	// name — never alongside the command line — and does not replace the manifest path.
+	Name string `yaml:"name,omitempty"`
 
 	// Timeout bounds this hook, as a Go duration ("30s", "5m"). Empty uses the package
 	// default. "0" explicitly disables the bound for a hook with no upper limit.
@@ -328,6 +327,9 @@ func (c *Config) Save(path string) error {
 	// Refused on the way OUT as well: hydra must never author a manifest it would then refuse to
 	// read, which would leave a workspace only a hand edit could recover.
 	if err := c.validatePaths(); err != nil {
+		return err
+	}
+	if err := c.validateBranchNaming(); err != nil {
 		return err
 	}
 
@@ -911,6 +913,9 @@ func Load(path string) (*Config, error) {
 	if err := cfg.validatePaths(); err != nil {
 		return nil, err
 	}
+	if err := cfg.validateBranchNaming(); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
 }
@@ -1043,40 +1048,6 @@ func (c *Config) BarePath(projectRoot, alias string) string {
 // an event name.
 func (c *Config) HooksFor(event string) ([]Hook, bool) {
 	return hooksOf(c.Hooks, event)
-}
-
-// ResolveHooks returns the chain to run for one event and one repository, appended
-// workspace → group → repo.
-//
-// Lists append rather than override, so a workspace-wide `direnv allow`, a group's shared
-// bring-up and a repo's `go mod download` all run. Overriding would force every child to
-// restate what it inherits.
-func ResolveHooks(c *Config, group, alias, event string) ([]Hook, bool) {
-	if c == nil {
-		return nil, false
-	}
-	chain, known := hooksOf(c.Hooks, event)
-	if !known {
-		return nil, false
-	}
-	out := make([]Hook, 0, len(chain))
-	out = append(out, chain...)
-
-	// The GROUP is named rather than looked up from the alias. An alias may appear in two groups —
-	// nothing rejects it, because a manifest is hand-editable — and FindRepo collapses those onto
-	// the first, so resolving by alias alone runs one group's chain for a worktree in the other.
-	g, ok := c.Groups[group]
-	if !ok || group == "" {
-		// No group in scope: a topic event, or a caller that named none. The workspace chain is
-		// the whole answer.
-		return out, true
-	}
-	for _, level := range []Hooks{g.Hooks, g.Repos[alias].Hooks} {
-		if hs, _ := hooksOf(level, event); len(hs) > 0 {
-			out = append(out, hs...)
-		}
-	}
-	return out, true
 }
 
 // HookCounts reports how many hooks one event has at each level of the manifest.

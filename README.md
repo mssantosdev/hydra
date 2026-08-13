@@ -317,10 +317,26 @@ On success, stdout contains:
 On failure, **stdout** carries the same single envelope:
 
 ```json
-{"schema":3,"command":"add","outcome":"failure","error":{"code":"worktree_name_conflict","retryable":false,"message":"…","details":{}}}
+{"schema":3,"command":"add","outcome":"failure","error":{"severity":"error","code":"worktree_name_conflict","retryable":false,"message":"…","subject":"worktree:backend/api-stage","details":{}}}
 ```
 
 Branch on `error.code`, not message text. Codes are stable; messages are not.
+
+`error`, every entry of `warnings[]`, and a failed item's `error` inside `data` are all the same
+shape — one diagnostic type in three positions, so a consumer loops once:
+
+| field | meaning |
+|---|---|
+| `severity` | `error`, `warning` or `note`. `error`/`warning` force at least `partial`; a `note` never does |
+| `code` | the stable identifier to branch on. Required except on a note |
+| `message` | one line, for a human |
+| `subject` | what it is about: `worktree:backend/api-stage`, `repo:api`, or `<manifest>:<line>` |
+| `cause` | the underlying tool's own words, verbatim and unparsed |
+| `details` | structured facts; keys are documented per code |
+| `retryable` | only `busy` is true |
+
+A `note` is hydra reporting what it did (`removed empty group directory`), an `optional` hook that
+failed, or a `--against` ref that does not resolve — none of which mean the request was refused.
 
 `retryable` is the one fact a caller cannot derive: the code-to-exit map is published, but "is it worth
 trying again" is not inferable from either the code or the exit status. Only `busy` is retryable.

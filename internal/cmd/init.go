@@ -126,7 +126,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Say where the registration landed. init writes to a global registry; name the path
 	// so callers know which file was updated and that HYDRA_CONFIG_DIR selects another.
-	warnings := []string{"registered in " + registry.Path()}
+	warnings := []*output.Diagnostic{output.Notef("", "registered in %s", registry.Path())}
 
 	return emit(cmd, fmt.Sprintf("workspace %q initialised", result.Project), result, warnings, func() {
 		fmt.Println()

@@ -38,6 +38,9 @@ type Context struct {
 	WorktreePath string
 	BarePath     string
 
+	// Worktree is the short handle accepted by `hydra hooks run --worktree`.
+	Worktree string
+
 	// Topic is the unit of work this operation belongs to, empty when there is none. Its
 	// absence meant a post_add fired by `start --topic X` could not name X, so "do something
 	// for this unit of work" was impossible in a hook — a hole in the extension surface that
@@ -94,30 +97,8 @@ func (c Context) Env() []string {
 
 // Result reports what a hook chain did.
 type Result struct {
-	Ran      int      `json:"ran"`
-	Warnings []string `json:"warnings,omitempty"`
-}
-
-// hookLabel names a hook without quoting its arguments.
-//
-// A hook line is the natural place to put a credential — `post-to-forge --token <PAT>` is how anyone
-// would first write a forge integration — and the whole line was echoed back in error.message, in
-// details.hook, and for an `optional` hook in warnings[] under outcome: success at exit 0, which is
-// the copy a caller logs without thinking. The event and the index already identify a hook uniquely,
-// so the arguments buy nothing the caller needs and carry everything it must not see.
-func hookLabel(run string) string {
-	fields := strings.Fields(run)
-	if len(fields) == 0 {
-		return "hook"
-	}
-	// A leading `NAME=value` is a shell environment assignment, and passing a secret that way is the
-	// canonical idiom — `ADO_PAT=… ./post-to-forge`. The first field IS the credential there, so
-	// nothing about it may be echoed. strings.Fields splits on any unicode space, so a tab-separated
-	// command cannot smuggle the whole line through as one field either.
-	if strings.Contains(fields[0], "=") {
-		return "hook"
-	}
-	return fields[0]
+	Ran      int                  `json:"ran"`
+	Warnings []*output.Diagnostic `json:"warnings,omitempty"`
 }
 
 // Run executes a hook chain in cwd, streaming hook output to w (stderr, so it
@@ -126,25 +107,22 @@ func hookLabel(run string) string {
 // An optional hook that fails produces a warning and the chain continues. A
 // required hook that fails stops the chain and returns hook_failed. A failing
 // hook never rolls back work hydra already completed successfully.
-func Run(hs []config.Hook, ctx Context, cwd string, w io.Writer) (Result, error) {
+func Run(hs []config.ResolvedHook, ctx Context, cwd string, w io.Writer) (Result, error) {
 	var result Result
 	if len(hs) == 0 {
 		return result, nil
 	}
 
 	env := append(os.Environ(), ctx.Env()...)
-	for i, hook := range hs {
+	for _, hook := range hs {
 		if hook.Run == "" {
 			continue
 		}
 
-		timeout, timeoutErr := hookTimeout(hook)
+		timeout, timeoutErr := hookTimeout(hook.Hook)
 		if timeoutErr != nil {
-			return result, output.Wrap(output.CodeInternal, timeoutErr,
-				"%s hook %d has an invalid timeout %q", ctx.Event, i+1, hook.Timeout).
-				WithDetail("event", ctx.Event).
-				WithDetail("hook", hookLabel(hook.Run)).
-				WithDetail("index", i+1)
+			return result, hookConfigError(hook, ctx, timeoutErr,
+				fmt.Sprintf("hook at %s has an invalid timeout %q", hook.Path, hook.Timeout))
 		}
 
 		hookCtx := context.Background()
@@ -178,25 +156,114 @@ func Run(hs []config.Hook, ctx Context, cwd string, w io.Writer) (Result, error)
 		// A timeout is reported as the timeout it is, not as whatever exit status killing the
 		// process produced — "signal: killed" tells a reader nothing about the bound they hit.
 		if timeout > 0 && errors.Is(hookCtx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("timed out after %s", timeout)
+			if hook.Optional {
+				note := optionalHookNote(hook, ctx, fmt.Errorf("timed out after %s", timeout))
+				result.Warnings = append(result.Warnings, note)
+				_, _ = fmt.Fprintf(w, "warning: %s\n", note)
+				continue
+			}
+			return result, hookTimedOutError(hook, ctx, timeout)
 		}
 		if hook.Optional {
-			warning := fmt.Sprintf("optional %s hook %d (%s) failed: %v",
-				ctx.Event, i+1, hookLabel(hook.Run), err)
-			result.Warnings = append(result.Warnings, warning)
-			_, _ = fmt.Fprintf(w, "warning: %s\n", warning)
+			note := optionalHookNote(hook, ctx, err)
+			result.Warnings = append(result.Warnings, note)
+			_, _ = fmt.Fprintf(w, "warning: %s\n", note)
 			continue
 		}
 
-		return result, output.Wrap(output.CodeHookFailed, err,
-			"%s hook %d (%s) failed; fix it and run \"hydra hooks run %s\"",
-			ctx.Event, i+1, hookLabel(hook.Run), ctx.Event).
-			WithDetail("event", ctx.Event).
-			WithDetail("hook", hookLabel(hook.Run)).
-			WithDetail("index", i+1)
+		return result, hookFailureError(hook, ctx, err)
 	}
 
 	return result, nil
+}
+
+func hookConfigError(hook config.ResolvedHook, ctx Context, cause error, message string) *output.Error {
+	return withHookName(hook, output.Wrap(output.CodeInternal, cause, "%s", message).
+		WithDetail("event", ctx.Event).
+		WithDetail("path", hook.Path))
+}
+
+func hookTimedOutError(hook config.ResolvedHook, ctx Context, timeout time.Duration) *output.Error {
+	err := withHookName(hook, output.Errorf(output.CodeHookFailed, "hook timed out at %s after %s", hook.Path, timeout).
+		WithDetail("event", ctx.Event).
+		WithDetail("path", hook.Path).
+		WithDetail("exit", -1))
+	return withHookRetry(err, ctx)
+}
+
+func hookFailureError(hook config.ResolvedHook, ctx Context, cause error) *output.Error {
+	exit := hookExitCode(cause)
+	err := withHookName(hook, output.Errorf(output.CodeHookFailed, "%s", hookFailureMessage(hook, ctx, exit)).
+		WithDetail("event", ctx.Event).
+		WithDetail("path", hook.Path).
+		WithDetail("exit", exit))
+	return withHookRetry(err, ctx)
+}
+
+// optionalHookNote records an optional hook failure as a note with CodeHookFailed: the
+// manifest declared the failure acceptable, so the request was satisfied, but agents still
+// need a code to find it.
+func optionalHookNote(hook config.ResolvedHook, ctx Context, cause error) *output.Diagnostic {
+	exit := hookExitCode(cause)
+	msg := "optional " + hookFailureMessage(hook, ctx, exit)
+	d := output.Notef(output.CodeHookFailed, "%s", msg)
+	if cause != nil {
+		d = d.WithCause(cause.Error())
+	}
+	if hook.Name != "" {
+		if d.Details == nil {
+			d.Details = map[string]any{}
+		}
+		d.Details["name"] = hook.Name
+	}
+	if ctx.Worktree != "" {
+		d = d.WithSubject("worktree", ctx.Worktree)
+	}
+	return d
+}
+
+func hookFailureMessage(hook config.ResolvedHook, ctx Context, exit int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "hook failed at %s", hook.Path)
+	if hook.Name != "" {
+		fmt.Fprintf(&b, "\n  name: %s", hook.Name)
+	}
+	fmt.Fprintf(&b, "\n  exit: %d", exit)
+	if ctx.Worktree != "" {
+		fmt.Fprintf(&b, "\n  hint: fix the hook, then run \"hydra hooks run %s --worktree %s\"", ctx.Event, ctx.Worktree)
+	} else {
+		fmt.Fprintf(&b, "\n  hint: fix the hook, then run \"hydra hooks run %s\"", ctx.Event)
+	}
+	return b.String()
+}
+
+func withHookName(hook config.ResolvedHook, err *output.Error) *output.Error {
+	if hook.Name == "" {
+		return err
+	}
+	return err.WithDetail("name", hook.Name)
+}
+
+func withHookRetry(err *output.Error, ctx Context) *output.Error {
+	next := []string{"hydra", "hooks", "run", ctx.Event}
+	if ctx.Worktree != "" {
+		next = append(next, "--worktree", ctx.Worktree)
+	}
+	return err.WithNext(output.Next{
+		Argv: next,
+		Why:  "re-run the hook chain after fixing it",
+	})
+}
+
+func hookExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
 }
 
 // hookTimeout resolves a hook's bound: its own `timeout:` when set, otherwise DefaultTimeout.

@@ -75,6 +75,11 @@ type Request struct {
 
 	// Timeout bounds the provider. Zero uses DefaultProviderTimeout.
 	Timeout time.Duration
+
+	// SkipProvider suppresses runnable branch_provider execution. Callers set this
+	// for a convergent re-run that creates nothing, or while validating a request
+	// before repositories are known to be actionable.
+	SkipProvider bool
 }
 
 // Resolution is the outcome of the chain.
@@ -199,7 +204,7 @@ func Resolve(ctx context.Context, r Request) (Resolution, error) {
 		}
 	}
 
-	if r.Provider != "" {
+	if r.Provider != "" && !r.SkipProvider {
 		branch, err := runProvider(ctx, r)
 		if err != nil {
 			return Resolution{}, err
@@ -225,6 +230,28 @@ func Resolve(ctx context.Context, r Request) (Resolution, error) {
 		Missing: []string{"--branch"},
 		Reason:  "no branch given, no topic members to extend, and no branch_pattern configured",
 	}
+}
+
+// ResolveUnlessConverged resolves a branch name, skipping a runnable provider whenever
+// anything else can name the branch and that branch is already satisfied.
+//
+// The guarantee is exactly that, and no stronger: when NO other source names the branch —
+// no positional, no --branch, no topic members to extend, no branch_pattern — the provider
+// IS the naming authority, so it must be asked before hydra can know which branch the run
+// is even about. A convergent re-run in that configuration therefore does invoke it once,
+// and then creates nothing. Wanting otherwise would require caching the provider's last
+// answer, which would be wrong for the case providers exist for: returning the NEXT name.
+func ResolveUnlessConverged(ctx context.Context, r Request, converged func(string) bool) (Resolution, error) {
+	if converged != nil {
+		preview := r
+		preview.SkipProvider = true
+		if resolution, err := Resolve(ctx, preview); err == nil {
+			if converged(resolution.Branch) {
+				return resolution, nil
+			}
+		}
+	}
+	return Resolve(ctx, r)
 }
 
 // validateExplicit checks a user-supplied name and reports whether it matches the
@@ -446,6 +473,7 @@ func runProvider(ctx context.Context, r Request) (string, error) {
 	// a metacharacter cannot become a second command.
 	//nolint:gosec // G204: the provider is operator-configured workspace policy, like a hook
 	command := exec.CommandContext(runCtx, r.Provider)
+	command.Dir = r.ProjectRoot
 	command.Stdin = bytes.NewReader(payload)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout

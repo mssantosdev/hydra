@@ -481,3 +481,49 @@ func TestNeedsInputError_OneOfMessage(t *testing.T) {
 		t.Errorf("message = %q, want it to say one of", err.Error())
 	}
 }
+
+// A convergent re-run that creates nothing must not invoke a runnable branch_provider.
+// The convergence callback mirrors start's startReposConverged wiring: preview via the
+// pattern, then skip the provider when every target is already at that branch.
+func TestResolveUnlessConverged_SkipsProviderOnNoOp(t *testing.T) {
+	provider := writeProvider(t, `echo "must/not/run"; exit 1`)
+
+	got, err := ResolveUnlessConverged(context.Background(), Request{
+		Provider: provider,
+		Pattern:  "{kind}/{slug}",
+		Kind:     "feat",
+		Slug:     "login",
+	}, func(branch string) bool {
+		return branch == "feat/login"
+	})
+	if err != nil {
+		t.Fatalf("ResolveUnlessConverged: %v", err)
+	}
+	if got.Branch != "feat/login" {
+		t.Fatalf("branch = %q, want feat/login", got.Branch)
+	}
+	if got.Source != SourcePattern {
+		t.Fatalf("source = %q, want %q", got.Source, SourcePattern)
+	}
+}
+
+// When convergence does not apply, the provider still runs.
+func TestResolveUnlessConverged_InvokesProviderWhenNotConverged(t *testing.T) {
+	provider := writeProvider(t, `echo "from/provider"`)
+
+	got, err := ResolveUnlessConverged(context.Background(), Request{
+		Provider: provider,
+		Pattern:  "{kind}/{slug}",
+		Kind:     "feat",
+		Slug:     "login",
+	}, func(string) bool { return false })
+	if err != nil {
+		t.Fatalf("ResolveUnlessConverged: %v", err)
+	}
+	if got.Branch != "from/provider" {
+		t.Fatalf("branch = %q, want from/provider", got.Branch)
+	}
+	if got.Source != SourceProvider {
+		t.Fatalf("source = %q, want %q", got.Source, SourceProvider)
+	}
+}

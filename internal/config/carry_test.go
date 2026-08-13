@@ -140,7 +140,7 @@ func TestRegisterRepo_PreservesEverythingElse(t *testing.T) {
 				Remote:         "git@example.com:o/api.git",
 				DefaultBranch:  "main",
 				BranchPattern:  "{kind}/{slug}",
-				BranchProvider: "/usr/local/bin/branch-name",
+				BranchProvider: BranchNaming{runnable: &BranchRunnable{Run: "./scripts/branch-name"}},
 				Branches:       []string{"main", "stage", "prod"},
 				Carry:          []CarryEntry{{Path: ".env"}},
 			},
@@ -153,7 +153,7 @@ func TestRegisterRepo_PreservesEverythingElse(t *testing.T) {
 	if got.DefaultBranch != "master" {
 		t.Errorf("default branch = %q, want the new value", got.DefaultBranch)
 	}
-	if got.BranchPattern == "" || got.BranchProvider == "" {
+	if got.BranchPattern == "" || got.BranchProvider.IsZero() {
 		t.Error("branch_pattern/branch_provider were dropped — the pre-existing bug")
 	}
 	if len(got.Branches) != 3 {

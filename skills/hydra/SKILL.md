@@ -22,33 +22,34 @@ These hold for every command. Rely on them instead of probing.
 
 ```json
 {"schema":3,"command":"list","outcome":"success","summary":"2 worktree(s)","data":{},"warnings":[]}
-{"schema":3,"command":"add","outcome":"failure","error":{"code":"worktree_dirty","retryable":false,"message":"…","details":{}}}
+{"schema":3,"command":"add","outcome":"failure","error":{"severity":"error","code":"worktree_dirty","retryable":false,"message":"…","subject":"worktree:backend/api-stage","details":{}}}
 ```
 
-ONE envelope, on stdout, success or failure. `outcome` is `success`, `partial` or `failure`; a
-**partial** carries both `data` and `error` — the work that landed is real. `next[]` is argv plus a
-reason, never acted on. No `exit` field: the process status carries it.
+ONE envelope, on stdout, success or failure. `outcome` is `success`, `partial` or `failure`; a **partial**
+carries both `data` and `error` — the work that landed is real. `next[]` is argv plus a reason, never acted
+on. No `exit` field: the process status carries it.
+
+`error`, each `warnings[]` entry, and a failed item's `error` in `data` are ONE shape: `severity`
+(`error`|`warning`|`note`), `code`, `message`, `details`, `retryable`, plus optional `subject`
+(`worktree:…`, `repo:…`, `<manifest>:<line>`) and `cause` (the tool's own words verbatim).
+`error`/`warning` force at least `partial`; a `note` never does, and only a note may omit `code`.
 
 ## Decisions
 
-**Which command creates worktrees?** One repo, one branch → `add`. Several repos, one unit of work →
-`start --topic <id> --repos a,b`, which also records the topic. A captured set →
-`list -o json | … | apply -`. `start` is `add` across repositories; `apply -` is its batch form,
-consuming exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
+**Which command creates worktrees?** One repo one branch → `add`; several repos one unit of work →
+`start --topic <id> --repos a,b` (also records the topic); a captured set → `list -o json | … | apply -`,
+which consumes exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
 
-**Which worktrees does this act on?** A bare handle (`api-stage`, `backend/api-stage`) → exactly one.
-`--topic <id>` → recorded members. `--repos`/`--group`/`--all` → those repositories.
-`--filter dirty|behind|branch:<glob>` → narrow further. Combine freely; they intersect.
+**Which worktrees does it act on?** A bare handle (`api-stage`, `backend/api-stage`) → exactly one;
+`--topic <id>` → recorded members; `--repos`/`--group`/`--all` → those repos; `--filter
+dirty|behind|branch:<glob>` narrows further. Combine freely; they intersect.
 
-**`topic_unknown`?** Never recorded. `details.known` lists real ids; `topic attach` records one. Never guess from a branch name. **`topic_not_closeable`?** `details.blocked_by` names every open or unmerged child at once. **`busy`?** A lock was held — retry with backoff, the ONLY retryable code.
+**Rebuilding a workspace elsewhere?** A manifest declaring `branches:` per repo is enough: `repo restore`
+creates that set (additive, `--jobs N`); `repo set <alias> --branches a,b` declares it later. Without a
+declaration only default branches are restored. `apply -` replays a captured set. For `sync`, uncommitted
+work needs `--dirty stash|reset|skip`. Repos and worktrees stay separate.
 
-**`worktree_dirty`?** Uncommitted work is in the way. For `sync`, choose `--dirty stash|reset|skip`. For `remove`, commit or pass `--force`. Never `--force` blindly.
-
-**Rebuilding a workspace elsewhere?** A manifest declaring `branches:` per repo is enough on its own — `repo restore` creates that set (additive, `--jobs N`), and `repo set <alias> --branches a,b` declares it later.
-Without a declaration only default branches are restored, and `apply -` replays a captured set. Repos and worktrees stay separate.
-
-**Workspace looks wrong?** `doctor --output json` first. `checks[].fixable` says whether
-`doctor --fix` can repair it.
+**Workspace looks wrong?** `doctor --output json` first; `checks[].fixable` says whether `doctor --fix` repairs it.
 
 ## Commands
 
@@ -85,36 +86,35 @@ Without a declaration only default branches are restored, and `apply -` replays 
 | code | exit | raised when |
 |---|---|---|
 | `not_in_project` | 2 | no `.hydra/config.yaml` walking up, and no `--project` |
+| `config_invalid` | 2 | a manifest value hydra refuses; `details.line` points at it |
 | `config_version_unsupported` | 2 | manifest `version` is not `"3"` or `"2"` (v2 upgrades on write) |
-| `config_invalid` | 2 | a manifest `path:`/`bare_dir` that leaves the workspace |
 | `state_version_unsupported` | 2 | `.hydra/state.yaml` written by a newer hydra |
 | `project_unknown` | 2 | `--project` names nothing in the registry |
+| `usage` | 2 | bad flag value or exclusive flags; fix argv, `details.valid` lists legal values |
 | `repo_unknown` | 1 | repo alias or group not registered; `details.known` lists them |
 | `bare_missing` | 1 | `.bare/<alias>.git` is gone; run `doctor` |
 | `branch_unknown` | 1 | a base ref or branch name does not resolve |
 | `worktree_exists` | 1 | that branch already has a worktree |
 | `worktree_unknown` | 1 | no worktree by that name |
 | `worktree_name_conflict` | 1 | a name does not identify exactly one worktree |
-| `worktree_dirty` | 5 | destructive op blocked by uncommitted changes |
 | `topic_unknown` | 1 | id not recorded; `details.known` lists valid ids |
-| `topic_not_closeable` | 1 | a child is open or unmerged; `details.blocked_by` names every reason |
 | `topic_conflict` | 1 | that worktree already belongs to another topic |
-| `branch_provider_failed` | 1 | configured `branch_provider` failed or timed out |
-| `hook_failed` | 1 | a non-`optional` hook exited non-zero |
+| `topic_not_closeable` | 1 | a child is open or unmerged; `details.blocked_by` names every reason |
+| `branch_provider_failed` | 1 | the manifest's `branch_provider` script failed or timed out |
+| `hook_failed` | 1 | a non-`optional` hook failed; the worktree IS created — fix it, then `hooks run <event>` |
+| `git_failed` | 1 | an underlying git invocation failed; `cause` carries git's words |
+| `project_exists` | 1 | that project name is already registered |
+| `unknown_command` | 1 | no such subcommand; `details.did_you_mean` lists real ones |
+| `internal` | 1 | unclassified: a hydra bug, not your input |
 | `shell_helper_missing` | 3 | `switch --cd` with no shell helper |
-| `partial_failure` | 4 | some items succeeded, some failed |
-| `busy` | 6 | a lock was held — **the only retryable code** |
-| `needs_input` | 7 | a value is missing; `details.missing`/`one_of` name it |
-| `git_failed` | 1 | an underlying git invocation failed |
-| `project_exists` | 1 | that project name is already registered (the opposite of `project_unknown`) |
-| `unknown_command` | 1 | no such subcommand; `details.did_you_mean`/`available` list real ones |
-| `usage` | 2 | a bad flag value, or flags that exclude each other |
-| `internal` | 1 | anything unclassified |
+| `partial_failure` | 4 | some items succeeded, some failed — read `data` AND `error` |
+| `worktree_dirty` | 5 | uncommitted changes block a destructive op; commit or `--force`, never blindly |
+| `busy` | 6 | a lock was held — retry with backoff, the ONLY retryable code |
+| `needs_input` | 7 | a value is missing; add the flag in `details.missing`/`one_of`, never prompt |
 
 ## Anti-patterns
 
-- Rebuilding `<group>/<repo>-<branch>` instead of reading `data[].path` — `--as` may have overridden it.
-- Treating `upstream: null` as a failure; it is a branch with no upstream yet.
-- Retrying anything but `busy`, or retrying `needs_input` without adding the flag. Never delete after a failure: a `hook_failed` worktree was created correctly. Re-running `add` is safe but reports `skipped` and does NOT re-run the hook — fix the hook, then `hooks run post_add --worktree <name>`.
+- Rebuilding `<group>/<repo>-<branch>` instead of reading `data[].path` — `--as` may have overridden it. Treating `upstream: null` as a failure; it is a branch with no upstream yet.
+- Deleting after a failure. Re-running `add` is safe and reports `skipped`, but does NOT re-run the hook.
 - Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged. Ask first.
 - Assuming `hydra run` gets a shell. It does not — pass `-- sh -c '…'` when you need one.

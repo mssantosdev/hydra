@@ -13,6 +13,7 @@ package carry
 import (
 	"errors"
 	"fmt"
+	"github.com/mssantosdev/hydra/internal/output"
 	"io"
 	"os"
 	"path/filepath"
@@ -56,12 +57,12 @@ type Plan struct {
 // not do. It NEVER returns a fatal error for a missing source: a `.env` that does not exist
 // yet is the normal state of a fresh machine, and failing the worktree creation over it would
 // make `repo restore` unusable on exactly the machine that needs it most.
-func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []string) {
+func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []*output.Diagnostic) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
 	results := make([]Result, 0, len(entries))
-	var warnings []string
+	var warnings []*output.Diagnostic
 
 	// Every write goes through a root opened on the worktree, so containment is enforced by
 	// the kernel rather than by a check we have to remember. os.Root refuses any path that
@@ -71,7 +72,11 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []string) {
 	// "write to my ~/.ssh on the next add".
 	root, err := os.OpenRoot(plan.WorktreePath)
 	if err != nil {
-		return nil, []string{fmt.Sprintf("carry: cannot open %s: %v", plan.WorktreePath, err)}
+		return nil, []*output.Diagnostic{
+			output.Warnf(output.CodeInternal, "carry: cannot open %s", plan.WorktreePath).
+				WithSubject("worktree", plan.WorktreePath).
+				WithCause(err.Error()),
+		}
 	}
 	defer func() { _ = root.Close() }()
 
@@ -83,7 +88,8 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []string) {
 			res.Disposition = Missing
 			res.Reason = reason
 			results = append(results, res)
-			warnings = append(warnings, fmt.Sprintf("carry %s: %s", res.Dest, reason))
+			warnings = append(warnings, output.Notef("", "carry %s: %s", res.Dest, reason).
+				WithSubject("worktree", filepath.Base(plan.WorktreePath)))
 			continue
 		}
 		res.From = src
@@ -96,7 +102,9 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []string) {
 			res.Disposition = Missing
 			res.Reason = "destination escapes the worktree"
 			results = append(results, res)
-			warnings = append(warnings, fmt.Sprintf("carry %s: destination escapes the worktree; refused", res.Dest))
+			warnings = append(warnings, output.Warnf(output.CodeConfigInvalid,
+				"carry %s: destination escapes the worktree; refused", res.Dest).
+				WithSubject("worktree", filepath.Base(plan.WorktreePath)))
 			continue
 		}
 
@@ -114,7 +122,9 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []string) {
 			res.Disposition = Missing
 			res.Reason = err.Error()
 			results = append(results, res)
-			warnings = append(warnings, fmt.Sprintf("carry %s: %v", res.Dest, err))
+			warnings = append(warnings, output.Warnf(output.CodeInternal, "carry %s: %v", res.Dest, err).
+				WithSubject("worktree", filepath.Base(plan.WorktreePath)).
+				WithCause(err.Error()))
 			continue
 		}
 		res.Disposition = Placed

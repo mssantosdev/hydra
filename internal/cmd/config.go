@@ -189,7 +189,7 @@ func emitGlobalConfig(cmd *cobra.Command, gcfg *global.GlobalConfig, changed, wi
 	// Outside a workspace there is no manifest to read, which is why this is absent rather
 	// than empty and needs no flag to ask for it. The resolved globals are used rather than a
 	// second lookup, so --project and --config choose the manifest this command describes.
-	var warnings []string
+	var warnings []*output.Diagnostic
 	if withManifest {
 		switch {
 		case cfg != nil:
@@ -200,7 +200,17 @@ func emitGlobalConfig(cmd *cobra.Command, gcfg *global.GlobalConfig, changed, wi
 		case projectLoadErr != nil:
 			// Staying silent here would be the worst place to do it: a manifest that cannot be
 			// parsed is exactly what someone runs `config show` to find out about.
-			warnings = append(warnings, projectLoadErr.Error())
+			//
+			// But `config show` is DOCUMENTED to work outside a workspace, so "there is no
+			// manifest here" is the expected answer, not a fault — reporting it as one made
+			// this command exit 4 in any directory that is not a workspace. A manifest that
+			// EXISTS and is broken stays a fault.
+			loadErr := output.Classify(projectLoadErr)
+			if loadErr.Code == output.CodeNotInProject {
+				warnings = append(warnings, output.Notef(loadErr.Code, "%s", loadErr.Message))
+			} else {
+				warnings = append(warnings, output.Warnf(loadErr.Code, "%s", loadErr.Message))
+			}
 		}
 	}
 	summary := "global configuration"

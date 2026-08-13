@@ -30,6 +30,37 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Added
 
+- **One diagnostic shape, in all three places something can go wrong.** `error` was a structured
+  object, `warnings` was `[]string` with no code to branch on, and a failed item inside `data` was a
+  bare `error` STRING — the same JSON key the envelope uses for an object, at a different type, which
+  a consumer walking the envelope generically could not handle. All three are now the same type:
+  `severity` (`error`|`warning`|`note`), `code`, `message`, `details`, `retryable`, plus optional
+  `subject` (`worktree:backend/api-stage`, `repo:api`, or `<manifest>:<line>`) and `cause` (the
+  underlying tool's words, verbatim). Three shapes became one; `Error` is a Go alias of `Diagnostic`
+  so promoting a per-item failure to the envelope cannot drift.
+- **`severity` replaces guessing.** Whether a warning degraded `outcome: success` to `partial` was
+  decided by case-insensitively substring-matching English prose in the warning text against a list
+  of ten markers, six of which were phrases like `"not registered"` and `"unreadable"`. Rewording any
+  message silently stopped it degrading anything. Severity now decides, exactly: `error` and
+  `warning` mean the request was not satisfied; a `note` means it was, and never degrades. The prose
+  matcher and its two helpers are deleted.
+- **`hydra apply` bounds its input.** `--max-items` (default 500) and `--max-size` (default 1 MiB),
+  each disabled with `0`, refused with `usage` (exit 2) naming the limit, the observed value and the
+  flag that raises it — before any filesystem work. The document is also fully parsed and validated
+  before anything is created, so a large input is merely slow in proportion to its size.
+- **Hooks can be named.** `name:` on a hook entry, echoed as a name only. A failure now reports the
+  hook's manifest PATH — `groups.backend.hooks.post_add[0]` — which is clickable and stable, where
+  the old `post_add hook 1` was an ordinal a reader had to count across three merge levels and which
+  shifted whenever anyone added a hook at a higher one.
+- **`branch_provider` takes two shapes, and the shape says whether anything executes.** A string is a
+  pattern with closed placeholder substitution; a mapping with `run:` executes a script. `run:` is the
+  same word hooks use for the same thing, so a manifest reviewer's eye lands on it — where
+  `branch_provider: x` announced "this executes" only to someone who already knew. `branch_pattern`
+  remains as a deprecated alias for the string form; setting both is `config_invalid`, as is
+  `branch_pattern_strict` beside the runnable form, and as is a bare `run: name-branch`, which would
+  resolve through the caller's `PATH` and run different code on different machines.
+
+
 - **New error code `usage` (exit 2)** for a malformed invocation: a bad flag value, or flags that
   exclude each other. These reported `internal` — the unclassified catch-all — so an agent could not
   tell "fix your command line" from "hydra broke". Reclassified: unknown flags and wrong argument
@@ -57,6 +88,26 @@ is permanently bound to different content in the Go checksum database, so it can
   per-repository number derivable.
 
 ### Fixed
+
+- **`hydra apply` failed every item after the first in a repo.** The worktree cache recorded a nil
+  error under the repo's key, which made the key present, so the next lookup took the error path and
+  returned an empty worktree list with no error. Every later item then saw no existing worktrees and a
+  converged worktree was reported as an unregistered directory — so `hydra list -o json | hydra apply -`,
+  the round trip the design rests on, exited 4 on any workspace with two worktrees in one repo.
+- **`hydra apply --dry-run` was 45x slower than it needed to be.** Planning built a repository context
+  per ITEM, and each one asks git for `origin/HEAD` when the manifest omits `default_branch`, so a
+  3000-item document spawned 3000 `git symbolic-ref` processes: 14 seconds to do no work at all. Each
+  distinct repository is resolved once — 3000 items now takes 0.3s and 2 git invocations. The
+  performance test passed at 14s because its fixture has no `origin/HEAD`, so the spawn failed fast
+  in-test and succeeded slowly in the field; its bound is tightened to catch that.
+- **`config show` exited 4 outside a workspace.** It is documented to work there, and "no manifest
+  here" is the expected answer rather than a fault. A manifest that EXISTS and cannot be parsed stays
+  a fault, which is what someone runs `config show` to find out about.
+- **An unknown `--against` ref made `status` exit 4.** The worktree was inspected fine; only the extra
+  comparison was missing, and a ref that does not resolve is the caller's to fix. It is a note now, so
+  it is no longer counted among "worktrees that could not be inspected". A rev-list that fails for any
+  other reason is still a fault, which is the distinction `git.ErrRefUnknown` exists for.
+
 
 - **A JSON caller learned less about a git failure than a human did.** Long-running git operations
   (fetch, pull, stash) streamed stderr to the terminal and returned only `exit status N`, so the

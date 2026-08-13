@@ -194,11 +194,12 @@ func ResolveDefaults(c *Config, alias string) Defaults {
 		if level.BaseBranch != "" {
 			out.BaseBranch = level.BaseBranch
 		}
-		if level.BranchPattern != "" {
-			out.BranchPattern = level.BranchPattern
-		}
-		if level.BranchProvider != "" {
+		if !level.BranchProvider.IsZero() {
 			out.BranchProvider = level.BranchProvider
+			out.BranchPattern = ""
+		} else if level.BranchPattern != "" {
+			out.BranchPattern = level.BranchPattern
+			out.BranchProvider = BranchNaming{}
 		}
 		// A bool has no "unset", so strictness is turned ON by any level and never off by a
 		// silent zero value. Escaping an inherited strict pattern is a deliberate edit at the
@@ -218,11 +219,11 @@ func ResolveDefaults(c *Config, alias string) Defaults {
 // The block wins where it is set, so a manifest using both is not ambiguous.
 func repoDefaults(r Repo) Defaults {
 	out := r.Defaults
-	if out.BranchPattern == "" {
-		out.BranchPattern = r.BranchPattern
-	}
-	if out.BranchProvider == "" {
+	if out.BranchProvider.IsZero() && !r.BranchProvider.IsZero() {
 		out.BranchProvider = r.BranchProvider
+	}
+	if out.BranchPattern == "" && r.BranchPattern != "" && out.BranchProvider.IsZero() {
+		out.BranchPattern = r.BranchPattern
 	}
 	return out
 }
@@ -326,8 +327,14 @@ func settingsOf(d Defaults) []ResolvedSetting {
 		}
 	}
 	add("base_branch", d.BaseBranch)
-	add("branch_pattern", d.BranchPattern)
-	add("branch_provider", d.BranchProvider)
+	naming := d.effectiveNaming()
+	if run, ok := naming.Runnable(); ok {
+		add("branch_provider", run.Run)
+	} else if pattern := naming.Pattern(); pattern != "" {
+		add("branch_provider", pattern)
+	} else if d.BranchPattern != "" {
+		add("branch_pattern", d.BranchPattern)
+	}
 	// A bool is not a string with an empty case, so it does not pretend to be one.
 	if d.BranchPatternStrict {
 		add("branch_pattern_strict", "true")

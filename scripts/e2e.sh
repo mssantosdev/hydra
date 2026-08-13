@@ -717,7 +717,7 @@ check "the replica holds every branch the source had" \
 printf '[{"repo":"api","branch":""},{"repo":"api","branch":"main"}]' > "$T/detached.json"
 check "a skipped detached worktree is warned about, not dropped in silence" \
   '(cd "$T/ws2" && "$HYDRA" apply - < "$T/detached.json" --output json |
-    jq -e "(.warnings|length)==1 and (.warnings[0]|test(\"detached\"))" >/dev/null)'
+    jq -e "(.warnings|length)==1 and (.warnings[0].message|test(\"detached\"))" >/dev/null)'
 check "applying the same document twice creates nothing" \
   '(cd "$T/ws2" && "$HYDRA" apply - < "$T/captured.json" --output json |
     jq -e ".data.created==0 and .data.failed==0" >/dev/null)'
@@ -785,7 +785,7 @@ check "COLUMNS narrows piped output" \
         while IFS= read -r l; do printf "%s\n" "${#l}"; done | sort -rn | head -1)" -le 48 ]'
 check "init reports the registry it wrote to" \
   '(mkdir -p "$T/ws4" && cd "$T/ws4" && "$HYDRA" init --project-name w4 --output json 2>/dev/null |
-    jq -e "[.warnings[]|select(test(\"projects.yaml\"))]|length==1" >/dev/null)'
+    jq -e "[.warnings[]|select(.message|test(\"projects.yaml\"))]|length==1" >/dev/null)'
 
 # ------------------------- 14. an unregistered bare repo is a failure (0.3.3)
 echo "== 14. hydra cannot silently omit a repository it has on disk =="
@@ -850,7 +850,7 @@ check "and its exit status agrees with that outcome" \
   '(cd "$T/hookws" && "$HYDRA" status --output json >/dev/null 2>&1; test $? -eq 4)'
 check "the warning carries a hydra code, not raw git text alone" \
   '(cd "$T/hookws" && { "$HYDRA" status --output json || true; } 2>/dev/null |
-    jq -e "[.warnings[]|test(\"^(worktree_unknown|git_failed|bare_missing):\")]|any" >/dev/null)'
+    jq -e "[.warnings[]|.code]|any(.==\"worktree_unknown\" or .==\"git_failed\" or .==\"bare_missing\")" >/dev/null)'
 check "status points at doctor without being asked" \
   '(cd "$T/hookws" && { "$HYDRA" status --output json || true; } 2>/dev/null |
     jq -e "[.next[].argv[1]]|index(\"doctor\")!=null" >/dev/null)'
@@ -905,7 +905,7 @@ check "the healthy repo really did fast-forward" \
   '[ "$(git -C "$SB/ws/g/alpha" rev-parse HEAD)" = "$(git -C "$SB/up-alpha" rev-parse HEAD)" ]'
 check "the unreachable remote is reported with a hydra code" \
   '(cd "$SB/ws" && { "$HYDRA" sync --yes --output json || true; } 2>/dev/null |
-    jq -e "[.warnings[]|test(\"^git_failed:\")]|any" >/dev/null)'
+    jq -e "[.warnings[]|.code]|any(.==\"git_failed\")" >/dev/null)'
 check "and sync exits consistently with a partial outcome" \
   '(cd "$SB/ws" && "$HYDRA" sync --yes --output json >/dev/null 2>&1; test $? -eq 4)'
 # `present` names a fact about disk, so deleting the directory must change it.

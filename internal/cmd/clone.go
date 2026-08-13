@@ -263,7 +263,7 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 
 // performClone creates the bare repository and the selected worktrees. It is the
 // shared engine behind `hydra repo add` and `hydra new --remote`.
-func performClone(opts *CloneOptions, c *config.Config, configPath, root string) (cloneResult, []string, error) {
+func performClone(opts *CloneOptions, c *config.Config, configPath, root string) (cloneResult, []*output.Diagnostic, error) {
 	result := cloneResult{
 		Project:  c.Project,
 		Root:     root,
@@ -272,7 +272,7 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		Remote:   opts.URL,
 		BarePath: c.BarePath(root, opts.Alias),
 	}
-	var warnings []string
+	var warnings []*output.Diagnostic
 
 	if err := os.MkdirAll(filepath.Dir(result.BarePath), 0750); err != nil {
 		return result, nil, output.Wrap(output.CodeInternal, err, "failed to create the bare directory")
@@ -311,7 +311,8 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		// Resume: bring a possibly half-built bare repo up to spec instead of
 		// failing or discarding whatever was already fetched.
 		log.Debug("repairing existing bare repository", "path", result.BarePath)
-		warnings = append(warnings, fmt.Sprintf("%s: bare repository already existed; completing it instead of re-cloning", opts.Alias))
+		warnings = append(warnings, output.Notef("", "%s: bare repository already existed; completing it instead of re-cloning", opts.Alias).
+			WithSubject("repo", opts.Alias))
 		if err := git.RepairBareRemote(result.BarePath, opts.URL); err != nil {
 			return result, warnings, output.Wrap(output.CodeGitFailed, err,
 				"failed to complete the existing bare repository for %q", opts.Alias)
@@ -331,7 +332,8 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 
 	defaultBranch, defaultErr := git.GetRemoteDefaultBranch(result.BarePath)
 	if defaultErr != nil {
-		warnings = append(warnings, fmt.Sprintf("%s: origin/HEAD is not set; run \"hydra doctor --fix\"", opts.Alias))
+		warnings = append(warnings, output.Warnf(output.CodeGitFailed, "%s: origin/HEAD is not set; run \"hydra doctor --fix\"", opts.Alias).
+			WithSubject("repo", opts.Alias))
 	}
 
 	repo := repoContext{
@@ -400,7 +402,7 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 	var hookMu sync.Mutex
 	results := fanout.Run(context.Background(), targets, fanout.Config{
 		SerialPerRepo: true,
-		Hook: func(_ context.Context, t fanout.Target) ([]string, error) {
+		Hook: func(_ context.Context, t fanout.Target) ([]*output.Diagnostic, error) {
 			// runHookEventForProject is not documented as concurrency-safe and writes
 			// through shared config; SerialPerRepo already prevents overlap here, and
 			// the lock makes that independent of the engine's scheduling.
@@ -457,7 +459,9 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 			idx.decorate(&entry)
 		}
 		if trackErr != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: %v", item.Target.Branch, trackErr))
+			warnings = append(warnings, output.Warnf(output.CodeGitFailed, "%s: %v", item.Target.Branch, trackErr).
+				WithSubject("worktree", item.Target.Key()).
+				WithCause(trackErr.Error()))
 		}
 		result.Worktrees = append(result.Worktrees, entry)
 	}

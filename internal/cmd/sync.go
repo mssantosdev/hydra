@@ -315,21 +315,24 @@ func detectSyncAlias(wd string) string {
 	return best.repo
 }
 
-func gatherSyncEntries(projectCfg *config.Config, root, targetAlias string) ([]syncEntry, []string) {
+func gatherSyncEntries(projectCfg *config.Config, root, targetAlias string) ([]syncEntry, []*output.Diagnostic) {
 	var entries []syncEntry
-	var warnings []string
+	var warnings []*output.Diagnostic
 	for _, ref := range projectCfg.Repos() {
 		if targetAlias != "" && ref.Alias != targetAlias {
 			continue
 		}
 		bare := projectCfg.BarePath(root, ref.Alias)
 		if _, err := os.Stat(bare); err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s/%s: bare repository missing at %s", ref.Group, ref.Alias, bare))
+			warnings = append(warnings, output.Warnf(output.CodeBareMissing, "%s/%s: bare repository missing at %s", ref.Group, ref.Alias, bare).
+				WithSubject("repo", ref.Group+"/"+ref.Alias))
 			continue
 		}
 		wtList, err := git.ListWorktrees(bare)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s/%s: %v", ref.Group, ref.Alias, err))
+			warnings = append(warnings, output.Warnf(output.CodeGitFailed, "%s/%s: %v", ref.Group, ref.Alias, err).
+				WithSubject("repo", ref.Group+"/"+ref.Alias).
+				WithCause(err.Error()))
 			continue
 		}
 		for _, wt := range wtList {
@@ -354,26 +357,27 @@ func gatherSyncEntries(projectCfg *config.Config, root, targetAlias string) ([]s
 // A repository that cannot be fetched is still handed to the pull stage: it may be
 // fast-forwardable from refs already on disk, and if it is not, the failure is reported per
 // worktree where a caller can see which one it was.
-func fetchSyncRepos(entries []syncEntry) []string {
+func fetchSyncRepos(entries []syncEntry) []*output.Diagnostic {
 	seen := make(map[string]struct{})
-	var failures []string
+	var failures []*output.Diagnostic
 	for _, entry := range entries {
 		if _, ok := seen[entry.barePath]; ok {
 			continue
 		}
 		seen[entry.barePath] = struct{}{}
 		if err := git.FetchBareRepo(entry.barePath); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %s: failed to fetch: %v",
-				output.CodeGitFailed, entry.repo, err))
+			failures = append(failures, output.Warnf(output.CodeGitFailed, "%s: failed to fetch: %v", entry.repo, err).
+				WithSubject("repo", entry.repo).
+				WithCause(err.Error()))
 		}
 	}
 	return failures
 }
 
-func enrichSyncEntries(entries []syncEntry) ([]syncEntry, []string) {
+func enrichSyncEntries(entries []syncEntry) ([]syncEntry, []*output.Diagnostic) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var warnings []string
+	var warnings []*output.Diagnostic
 	sem := make(chan struct{}, 5)
 	for i := range entries {
 		wg.Add(1)
@@ -384,7 +388,8 @@ func enrichSyncEntries(entries []syncEntry) ([]syncEntry, []string) {
 			status, err := git.CheckWorktreeStatus(entries[idx].path)
 			if err != nil {
 				mu.Lock()
-				warnings = append(warnings, fmt.Sprintf("%s/%s: %v", entries[idx].group, entries[idx].name, err))
+				warnings = append(warnings, output.Warnf(output.CodeGitFailed, "%s/%s: %v", entries[idx].group, entries[idx].name, err).
+					WithCause(err.Error()))
 				mu.Unlock()
 				return
 			}
@@ -612,7 +617,7 @@ func selectedSyncEntries(candidates []syncEntry) []syncEntry {
 // Delegation gives deterministic result order, per-item post_sync hooks, hook failures
 // as warnings, and bounded cross-repo concurrency. SerialPerRepo stays false: pulls
 // across worktrees of one repo are safe; only creation contends on config.lock.
-func executeSync(selected []syncEntry) ([]syncOpResult, []string) {
+func executeSync(selected []syncEntry) ([]syncOpResult, []*output.Diagnostic) {
 	targets := make([]fanout.Target, 0, len(selected))
 	entryByKey := make(map[string]syncEntry, len(selected))
 	for _, entry := range selected {
@@ -632,7 +637,7 @@ func executeSync(selected []syncEntry) ([]syncOpResult, []string) {
 	results := fanout.Run(context.Background(), targets, fanout.Config{
 		SerialPerRepo: false,
 		Reporter:      reporter,
-		Hook: func(_ context.Context, t fanout.Target) ([]string, error) {
+		Hook: func(_ context.Context, t fanout.Target) ([]*output.Diagnostic, error) {
 			entry := entryByKey[t.Key()]
 			hctx := hooks.Context{
 				Group:        entry.group,
@@ -650,12 +655,12 @@ func executeSync(selected []syncEntry) ([]syncOpResult, []string) {
 	reporter.finish()
 
 	ops := make([]syncOpResult, 0, len(results))
-	var hookWarnings []string
+	var hookWarnings []*output.Diagnostic
 	for _, result := range results {
 		entry := entryByKey[result.Target.Key()]
 		ops = append(ops, syncOpResultFrom(entry, result))
 		for _, warning := range result.HookWarnings {
-			hookWarnings = append(hookWarnings, fmt.Sprintf("%s/%s: %s", entry.repo, entry.branch, warning))
+			hookWarnings = append(hookWarnings, warning.WithSubject("worktree", entry.repo+"/"+entry.branch))
 		}
 	}
 

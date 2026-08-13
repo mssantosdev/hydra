@@ -149,11 +149,12 @@ func runRepoSet(cmd *cobra.Command, args []string) error {
 		Undeclared: undeclaredWorktrees(repo, branches),
 	}
 
-	var warnings []string
+	var warnings []*output.Diagnostic
 	if len(payload.Undeclared) > 0 {
-		warnings = append(warnings, fmt.Sprintf(
+		warnings = append(warnings, output.Notef("",
 			"%s: %d worktree(s) exist outside the declared branches and were left alone: %s",
-			ref.Alias, len(payload.Undeclared), strings.Join(payload.Undeclared, ", ")))
+			ref.Alias, len(payload.Undeclared), strings.Join(payload.Undeclared, ", ")).
+			WithSubject("repo", ref.Alias))
 	}
 
 	return emitResult(cmd, output.Result{

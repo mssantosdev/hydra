@@ -130,14 +130,14 @@ type Next struct {
 // corrupts the envelope. The exit status still carries the code, and `hydra commands`
 // still publishes the code→exit table.
 type envelope struct {
-	Schema   int      `json:"schema"`
-	Command  string   `json:"command"`
-	Outcome  Outcome  `json:"outcome"`
-	Summary  string   `json:"summary,omitempty"`
-	Data     any      `json:"data,omitempty"`
-	Error    *Error   `json:"error,omitempty"`
-	Next     []Next   `json:"next,omitempty"`
-	Warnings []string `json:"warnings"`
+	Schema   int           `json:"schema"`
+	Command  string        `json:"command"`
+	Outcome  Outcome       `json:"outcome"`
+	Summary  string        `json:"summary,omitempty"`
+	Data     any           `json:"data,omitempty"`
+	Error    *Error        `json:"error,omitempty"`
+	Next     []Next        `json:"next,omitempty"`
+	Warnings []*Diagnostic `json:"warnings"`
 }
 
 // Result is what a command emits on success.
@@ -150,7 +150,7 @@ type Result struct {
 	Summary  string
 	Data     any
 	Next     []Next
-	Warnings []string
+	Warnings []*Diagnostic
 	// Err rides a partial: the items that landed are in Data, and this says what did
 	// not. Set it and the outcome becomes partial without a second envelope.
 	Err *Error
@@ -169,18 +169,24 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 		r.Outcome = OutcomeSuccess
 	}
 	if r.Warnings == nil {
-		r.Warnings = []string{}
+		r.Warnings = []*Diagnostic{}
 	}
 
 	// An error on the envelope means at least a partial, whatever the caller said.
 	if r.Err != nil && r.Outcome == OutcomeSuccess {
 		r.Outcome = OutcomePartial
 	}
-	// `success` may not co-exist with a warning about the workspace's own integrity.
-	// Those are facts about the workspace being wrong, and a caller gating on outcome or
-	// exit status would otherwise sail straight past them.
-	if r.Outcome == OutcomeSuccess && HasFault(r.Warnings) {
-		r.Outcome = OutcomePartial
+	// `success` may not co-exist with an error or a warning. Those say the caller did not
+	// get what they asked for, and one gating on outcome or exit status would otherwise
+	// sail straight past them. A NOTE never degrades: the request was satisfied.
+	//
+	// This used to be decided by case-insensitively substring-matching English prose in
+	// the warning text, so rewording a message silently stopped it degrading anything.
+	for _, d := range r.Warnings {
+		if r.Outcome == OutcomeSuccess && d.IsFault() {
+			r.Outcome = OutcomePartial
+			break
+		}
 	}
 	recordVerdict(r.Outcome, r.Err)
 
@@ -229,6 +235,10 @@ func EmittedVerdict() (Outcome, string) { return emittedOutcome, emittedCode }
 // ResetVerdict clears the recorded verdict. Tests need it because the state is process-wide.
 func ResetVerdict() { emittedOutcome, emittedCode = OutcomeSuccess, "" }
 
+// AdoptTextFailure records a failure that cmd already rendered on stderr in text mode.
+// main derives the exit code from EmittedVerdict without printing a second "Error:" line.
+func AdoptTextFailure(e *Error) { recordVerdict(OutcomeFailure, e) }
+
 // EmitError writes the envelope for a total failure. Callers write it to STDOUT: a
 // failure envelope is as machine-readable as a success one, and putting it on stderr
 // made the two impossible to read with one idiom.
@@ -243,7 +253,7 @@ func EmitError(w io.Writer, cmd string, e *Error) error {
 		Outcome:  OutcomeFailure,
 		Error:    e,
 		Next:     next,
-		Warnings: []string{},
+		Warnings: []*Diagnostic{},
 	})
 }
 

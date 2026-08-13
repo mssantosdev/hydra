@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
@@ -109,7 +110,7 @@ func TestStatusAgainst_UnknownRefWarnsAndStillLists(t *testing.T) {
 	}
 
 	var envelope struct {
-		Warnings []string             `json:"warnings"`
+		Warnings []*output.Diagnostic `json:"warnings"`
 		Data     statusProjectPayload `json:"data"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {

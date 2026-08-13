@@ -63,8 +63,14 @@ func warningsFromEnvelope(t *testing.T, envelope map[string]any) []string {
 	}
 	out := make([]string, 0, len(raw))
 	for _, item := range raw {
-		s, _ := item.(string)
-		out = append(out, s)
+		switch v := item.(type) {
+		case string:
+			out = append(out, v)
+		case map[string]any:
+			if msg, ok := v["message"].(string); ok {
+				out = append(out, msg)
+			}
+		}
 	}
 	return out
 }

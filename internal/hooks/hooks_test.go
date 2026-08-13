@@ -3,6 +3,7 @@ package hooks
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,14 @@ import (
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/output"
 )
+
+func testHooks(event string, hooks ...config.Hook) []config.ResolvedHook {
+	out := make([]config.ResolvedHook, len(hooks))
+	for i, h := range hooks {
+		out[i] = config.ResolvedHook{Hook: h, Path: fmt.Sprintf("hooks.%s[%d]", event, i)}
+	}
+	return out
+}
 
 func testContext(worktree string) Context {
 	return Context{
@@ -34,7 +43,7 @@ func TestRunInjectsEnvironmentAndCwd(t *testing.T) {
 
 	hook := config.Hook{Run: `printf '%s|%s|%s|%s|%s\n' "$HYDRA_EVENT" "$HYDRA_PROJECT" "$HYDRA_GROUP" "$HYDRA_REPO" "$HYDRA_BRANCH" > env.txt && pwd > cwd.txt`}
 
-	result, err := Run([]config.Hook{hook}, testContext(worktree), worktree, &log)
+	result, err := Run(testHooks("post_add", hook), testContext(worktree), worktree, &log)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -66,7 +75,7 @@ func TestRunUsesShellSoOperatorsWork(t *testing.T) {
 	var log strings.Builder
 
 	hook := config.Hook{Run: `echo one > a.txt && echo two >> a.txt`}
-	if _, err := Run([]config.Hook{hook}, testContext(worktree), worktree, &log); err != nil {
+	if _, err := Run(testHooks("post_add", hook), testContext(worktree), worktree, &log); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -85,10 +94,10 @@ func TestRequiredHookFailureStopsChain(t *testing.T) {
 	worktree := t.TempDir()
 	var log strings.Builder
 
-	hooks := []config.Hook{
-		{Run: "exit 3"},
-		{Run: "touch should-not-exist.txt"},
-	}
+	hooks := testHooks("post_add",
+		config.Hook{Run: "exit 3"},
+		config.Hook{Run: "touch should-not-exist.txt"},
+	)
 
 	result, err := Run(hooks, testContext(worktree), worktree, &log)
 	if err == nil {
@@ -105,8 +114,8 @@ func TestRequiredHookFailureStopsChain(t *testing.T) {
 	if e.Exit != 1 {
 		t.Errorf("exit = %d, want 1", e.Exit)
 	}
-	if e.Details["event"] != "post_add" || e.Details["index"] != 1 {
-		t.Errorf("details = %v, want event post_add at index 1", e.Details)
+	if e.Details["event"] != "post_add" || e.Details["path"] != "hooks.post_add[0]" {
+		t.Errorf("details = %v, want event post_add at hooks.post_add[0]", e.Details)
 	}
 	if result.Ran != 1 {
 		t.Errorf("Ran = %d, want 1: the chain must stop at the failure", result.Ran)
@@ -122,10 +131,10 @@ func TestOptionalHookFailureWarnsAndContinues(t *testing.T) {
 	worktree := t.TempDir()
 	var log strings.Builder
 
-	hooks := []config.Hook{
-		{Run: "exit 7", Optional: true},
-		{Run: "touch ran.txt"},
-	}
+	hooks := testHooks("post_add",
+		config.Hook{Run: "exit 7", Optional: true},
+		config.Hook{Run: "touch ran.txt"},
+	)
 
 	result, err := Run(hooks, testContext(worktree), worktree, &log)
 	if err != nil {
@@ -134,8 +143,14 @@ func TestOptionalHookFailureWarnsAndContinues(t *testing.T) {
 	if len(result.Warnings) != 1 {
 		t.Fatalf("Warnings = %v, want exactly one", result.Warnings)
 	}
-	if !strings.Contains(result.Warnings[0], "optional") {
-		t.Errorf("warning should name the hook as optional: %q", result.Warnings[0])
+	if !strings.Contains(result.Warnings[0].Message, "optional") {
+		t.Errorf("warning should name the hook as optional: %q", result.Warnings[0].Message)
+	}
+	if result.Warnings[0].Severity != output.SeverityNote {
+		t.Errorf("optional hook failure = %q, want note", result.Warnings[0].Severity)
+	}
+	if result.Warnings[0].Code != output.CodeHookFailed {
+		t.Errorf("code = %q, want %q", result.Warnings[0].Code, output.CodeHookFailed)
 	}
 	if result.Ran != 2 {
 		t.Errorf("Ran = %d, want 2: the chain must continue", result.Ran)
@@ -191,7 +206,7 @@ func TestRun_BoundsAHangingHook(t *testing.T) {
 	var out bytes.Buffer
 	start := time.Now()
 	_, err := Run(
-		[]config.Hook{{Run: "sleep 30", Timeout: "150ms"}},
+		testHooks("post_add", config.Hook{Run: "sleep 30", Timeout: "150ms"}),
 		Context{Event: "post_add"}, t.TempDir(), &out,
 	)
 	elapsed := time.Since(start)
@@ -204,7 +219,7 @@ func TestRun_BoundsAHangingHook(t *testing.T) {
 	}
 	// The reason has to name the bound. "signal: killed" tells a reader nothing about what
 	// they hit or how to change it.
-	if !strings.Contains(err.Error(), "timed out after 150ms") {
+	if !strings.Contains(err.Error(), "hook timed out at hooks.post_add[0] after 150ms") {
 		t.Errorf("error does not name the timeout: %v", err)
 	}
 }
@@ -213,7 +228,7 @@ func TestRun_BoundsAHangingHook(t *testing.T) {
 func TestRun_ZeroTimeoutIsUnbounded(t *testing.T) {
 	var out bytes.Buffer
 	if _, err := Run(
-		[]config.Hook{{Run: "true", Timeout: "0"}},
+		testHooks("post_add", config.Hook{Run: "true", Timeout: "0"}),
 		Context{Event: "post_add"}, t.TempDir(), &out,
 	); err != nil {
 		t.Fatalf("an unbounded hook that succeeds must succeed: %v", err)
@@ -223,7 +238,7 @@ func TestRun_ZeroTimeoutIsUnbounded(t *testing.T) {
 func TestRun_InvalidTimeoutIsRefused(t *testing.T) {
 	var out bytes.Buffer
 	_, err := Run(
-		[]config.Hook{{Run: "true", Timeout: "soon"}},
+		testHooks("post_add", config.Hook{Run: "true", Timeout: "soon"}),
 		Context{Event: "post_add"}, t.TempDir(), &out,
 	)
 	if err == nil {
@@ -283,7 +298,7 @@ func TestRunNeverEchoesHookArguments(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
 			result, err := Run(
-				[]config.Hook{{Run: "false --token " + secret, Optional: tc.optional}},
+				[]config.ResolvedHook{{Hook: config.Hook{Run: "false --token " + secret, Optional: tc.optional}, Path: "hooks.post_add[0]"}},
 				Context{Event: "post_add"}, t.TempDir(), &out)
 
 			// Everything a caller can read: the error, its details, and the warnings.
@@ -297,7 +312,9 @@ func TestRunNeverEchoesHookArguments(t *testing.T) {
 					}
 				}
 			}
-			seen = append(seen, result.Warnings...)
+			for _, w := range result.Warnings {
+				seen = append(seen, w.Message)
+			}
 
 			for _, s := range seen {
 				if strings.Contains(s, secret) {
@@ -306,30 +323,51 @@ func TestRunNeverEchoesHookArguments(t *testing.T) {
 			}
 			// Still identified, or the redaction has made the failure undiagnosable.
 			joined := strings.Join(seen, " ")
-			if !strings.Contains(joined, "post_add") || !strings.Contains(joined, "false") {
+			if !strings.Contains(joined, "post_add") || !strings.Contains(joined, "hooks.post_add[0]") {
 				t.Errorf("hook is no longer identifiable: %q", joined)
 			}
 		})
 	}
 }
 
-func TestHookLabelKeepsTheProgramOnly(t *testing.T) {
-	for run, want := range map[string]string{
-		"post-to-forge --token abc": "post-to-forge",
-		"  spaced   --flag":         "spaced",
-		"single":                    "single",
-		"":                          "hook",
-		"   ":                       "hook",
-		// A leading environment assignment is how a secret is passed inline, so the first field is
-		// the credential and none of it may survive.
-		"ADO_PAT=abc123 ./post-to-forge": "hook",
-		"TOKEN=x":                        "hook",
-		// Only U+0020 was split on, so a tab returned the entire line.
-		"post-to-forge\t--token abc": "post-to-forge",
-		"post-to-forge\n--token abc": "post-to-forge",
-	} {
-		if got := hookLabel(run); got != want {
-			t.Errorf("hookLabel(%q) = %q, want %q", run, got, want)
+func TestHookFailureReportsNameAndPath(t *testing.T) {
+	worktree := t.TempDir()
+	var log strings.Builder
+
+	hook := config.ResolvedHook{
+		Hook: config.Hook{Name: "install dependencies", Run: "exit 2"},
+		Path: "groups.backend.hooks.post_add[0]",
+	}
+	ctx := testContext(worktree)
+	ctx.Worktree = "api-stage"
+
+	_, err := Run([]config.ResolvedHook{hook}, ctx, worktree, &log)
+	if err == nil {
+		t.Fatal("expected hook failure")
+	}
+	e := output.Classify(err)
+	if e.Details["path"] != hook.Path {
+		t.Errorf("path = %v, want %q", e.Details["path"], hook.Path)
+	}
+	if e.Details["name"] != hook.Name {
+		t.Errorf("name = %v, want %q", e.Details["name"], hook.Name)
+	}
+	if e.Details["event"] != "post_add" {
+		t.Errorf("event = %v, want post_add", e.Details["event"])
+	}
+	if !strings.Contains(e.Message, hook.Path) {
+		t.Errorf("message = %q, want manifest path", e.Message)
+	}
+	if strings.Contains(e.Message, hook.Run) {
+		t.Error("hook command must not appear in the failure message")
+	}
+	want := []string{"hydra", "hooks", "run", "post_add", "--worktree", "api-stage"}
+	if len(e.Next) != 1 || len(e.Next[0].Argv) != len(want) {
+		t.Fatalf("next = %+v, want argv %v", e.Next, want)
+	}
+	for i, arg := range want {
+		if e.Next[0].Argv[i] != arg {
+			t.Fatalf("next argv[%d] = %q, want %q", i, e.Next[0].Argv[i], arg)
 		}
 	}
 }

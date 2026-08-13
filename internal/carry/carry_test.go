@@ -248,7 +248,7 @@ func TestApplyRefusesASourceReachedThroughASymlinkOutOfTheWorkspace(t *testing.T
 	if len(results) != 1 || results[0].Disposition != Missing {
 		t.Errorf("disposition = %+v, want Missing", results)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "escapes the workspace") {
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Message, "escapes the workspace") {
 		t.Errorf("warnings = %v, want one naming the escape", warnings)
 	}
 }

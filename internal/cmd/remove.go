@@ -141,7 +141,7 @@ func runRemove(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	var warnings []string
+	var warnings []*output.Diagnostic
 	preResult, preErr := runHookEvent("pre_remove", hooksContextFor(repo, wt.Branch, wt.Path), wt.Path)
 	warnings = append(warnings, preResult.Warnings...)
 	if preErr != nil {
@@ -171,20 +171,23 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	// and returning an error here would report a failure for work that was done.
 	if wt.Branch != "" {
 		if id, ok, err := topicStore().TopicOf(repo.Alias, wt.Branch); err != nil {
-			warnings = append(warnings, fmt.Sprintf("topic membership not updated: %v", classifyTopicErr(err)))
+			warnings = append(warnings, output.Warnf(output.CodeTopicConflict, "topic membership not updated: %v", classifyTopicErr(err)).
+				WithCause(err.Error()))
 		} else if ok {
 			result.Topic = &id
 			if err := topicStore().Detach(id, repo.Alias, wt.Branch); err != nil {
-				warnings = append(warnings, fmt.Sprintf(
+				warnings = append(warnings, output.Warnf(output.CodeTopicConflict,
 					"worktree removed but it is still recorded in topic %q; run \"hydra doctor --fix\": %v",
-					id, classifyTopicErr(err)))
+					id, classifyTopicErr(err)).
+					WithSubject("topic", id).
+					WithCause(err.Error()))
 			}
 		}
 	}
 
 	if removeDeleteBranch {
 		if wt.Branch == "" {
-			warnings = append(warnings, "worktree was detached; there is no branch to delete")
+			warnings = append(warnings, output.Notef("", "worktree was detached; there is no branch to delete"))
 		} else if err := git.DeleteBranch(repo.BareRepo, wt.Branch, removeForce || mergeVerified); err != nil {
 			// Report the real failure. Never print success for work not done.
 			return output.Wrap(output.CodeGitFailed, err,
@@ -197,9 +200,9 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	if removed, err := removeGroupDirIfEmpty(projectRoot, repo.Group); err != nil {
-		warnings = append(warnings, err.Error())
+		warnings = append(warnings, output.Classify(err))
 	} else if removed {
-		warnings = append(warnings, fmt.Sprintf("removed empty group directory %s", repo.Group))
+		warnings = append(warnings, output.Notef("", "removed empty group directory %s", repo.Group))
 	}
 
 	postResult, postErr := runHookEvent("post_remove", hooksContextFor(repo, wt.Branch, wt.Path), projectRoot)

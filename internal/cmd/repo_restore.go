@@ -50,17 +50,17 @@ func init() {
 }
 
 type restoreRepoJSON struct {
-	Group       string `json:"group"`
-	Repo        string `json:"repo"`
-	Remote      string `json:"remote"`
-	Branch      string `json:"branch"`
-	Disposition string `json:"disposition"`
-	Error       string `json:"error,omitempty"`
+	Group       string             `json:"group"`
+	Repo        string             `json:"repo"`
+	Remote      string             `json:"remote"`
+	Branch      string             `json:"branch"`
+	Disposition string             `json:"disposition"`
+	Error       *output.Diagnostic `json:"error,omitempty"`
 
 	// Warnings are this repository's non-fatal problems — most usefully the carried files
 	// that had no source, which is the normal state of a fresh machine. Per-repo rather than
 	// only aggregated, so a caller restoring twelve repos can tell which one cannot run.
-	Warnings []string `json:"warnings,omitempty"`
+	Warnings []*output.Diagnostic `json:"warnings,omitempty"`
 }
 
 type restoreJSON struct {
@@ -88,7 +88,7 @@ func runRepoRestore(cmd *cobra.Command, _ []string) error {
 
 	declared := declaredRepos(cfg)
 	payload := restoreJSON{DryRun: restoreDryRun, Total: len(declared), Declared: declaredWorktrees(declared)}
-	var warnings []string
+	var warnings []*output.Diagnostic
 
 	// Each repository is its own bare repo, so cloning them concurrently contends on
 	// nothing — the per-bare serialisation that worktree creation needs does not apply
@@ -136,12 +136,11 @@ func runRepoRestore(cmd *cobra.Command, _ []string) error {
 		default:
 			payload.Present++
 		}
-		if entry.Disposition == "skipped" && entry.Error != "" {
-			warnings = append(warnings, fmt.Sprintf("%s/%s: %s",
-				entry.Group, entry.Repo, entry.Error))
+		if entry.Disposition == "skipped" && entry.Error != nil {
+			warnings = append(warnings, entry.Error.WithSubject("repo", entry.Group+"/"+entry.Repo))
 		}
 		for _, w := range entry.Warnings {
-			warnings = append(warnings, fmt.Sprintf("%s/%s: %s", entry.Group, entry.Repo, w))
+			warnings = append(warnings, w.WithSubject("repo", entry.Group+"/"+entry.Repo))
 		}
 	}
 
@@ -280,8 +279,8 @@ func printRestoreText(p restoreJSON, summary string) {
 	fmt.Println(styles.Label.Render(summary))
 	for _, r := range p.Repos {
 		line := fmt.Sprintf("  %-10s %s/%s", r.Disposition, r.Group, r.Repo)
-		if r.Error != "" {
-			line += "  " + r.Error
+		if r.Error != nil {
+			line += "  " + r.Error.Message
 		}
 		fmt.Println(line)
 	}
@@ -302,7 +301,7 @@ func restoreOne(ref declaredRepo) (restoreRepoJSON, fanout.Disposition, error) {
 		// A repository with no remote cannot be cloned. That is a manifest problem, not
 		// a failure of this run, so it becomes a warning and the rest proceeds.
 		entry.Disposition = "skipped"
-		entry.Error = "no remote recorded in the manifest"
+		entry.Error = output.Warnf(output.CodeConfigInvalid, "no remote recorded in the manifest").WithSubject("repo", ref.Alias)
 		return entry, fanout.Skipped, nil
 
 	case barePresent(cfg, projectRoot, ref.Alias):
@@ -339,7 +338,7 @@ func restoreOne(ref declaredRepo) (restoreRepoJSON, fanout.Disposition, error) {
 	entry.Warnings = cloneWarnings
 	if err != nil {
 		entry.Disposition = "failed"
-		entry.Error = output.Classify(err).Message
+		entry.Error = output.Classify(err)
 		return entry, fanout.Failed, err
 	}
 	entry.Disposition = "cloned"

@@ -102,15 +102,15 @@ type runResultJSON struct {
 	//
 	// stdout keeps its HEAD and stderr its TAIL: a compiler prints the useful part
 	// first, while an error is the last thing written before a non-zero exit.
-	Stdout      string `json:"stdout,omitempty"`
-	Stderr      string `json:"stderr,omitempty"`
-	StdoutBytes int64  `json:"stdout_bytes"`
-	StderrBytes int64  `json:"stderr_bytes"`
-	StdoutTrunc bool   `json:"stdout_truncated,omitempty"`
-	StderrTrunc bool   `json:"stderr_truncated,omitempty"`
-	Failed      bool   `json:"failed"`
-	Error       string `json:"error,omitempty"`
-	MS          int64  `json:"duration_ms"`
+	Stdout      string             `json:"stdout,omitempty"`
+	Stderr      string             `json:"stderr,omitempty"`
+	StdoutBytes int64              `json:"stdout_bytes"`
+	StderrBytes int64              `json:"stderr_bytes"`
+	StdoutTrunc bool               `json:"stdout_truncated,omitempty"`
+	StderrTrunc bool               `json:"stderr_truncated,omitempty"`
+	Failed      bool               `json:"failed"`
+	Error       *output.Diagnostic `json:"error,omitempty"`
+	MS          int64              `json:"duration_ms"`
 }
 
 type runJSON struct {
@@ -174,7 +174,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 		if result.Disposition == fanout.Failed {
 			entry.Failed = true
-			entry.Error = result.Reason
+			if result.Err != nil {
+				entry.Error = output.Classify(result.Err)
+			} else {
+				entry.Error = output.Errorf(output.CodeGitFailed, "%s", result.Reason)
+			}
 			entry.ExitCode = exitCodeOf(result.Err)
 			payload.Failed++
 			if entry.ExitCode == -1 {
@@ -248,7 +252,7 @@ func splitRunArgs(cmd *cobra.Command, args []string) (handle string, command []s
 var runTopics map[string]string
 
 // runTargets resolves what to run in, accepting either a bare handle or a selector.
-func runTargets(handle string) ([]fanout.Target, []string, error) {
+func runTargets(handle string) ([]fanout.Target, []*output.Diagnostic, error) {
 	if handle != "" {
 		// A handle addresses exactly one worktree, and ambiguity is an error — the same
 		// rule every other command follows.
@@ -409,7 +413,7 @@ func printRunText(payload runJSON, summary string) {
 		detail := ""
 		if result.Failed {
 			status = styles.Error.Render("fail")
-			detail = "  " + result.Error
+			detail = "  " + result.Error.Message
 		}
 		fmt.Printf("  %s %-24s %s%s\n", status, result.Repo+"/"+result.Branch,
 			fmt.Sprintf("%dms", result.MS), detail)

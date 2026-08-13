@@ -141,7 +141,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 
 	var worktrees []worktreeJSON
 	// Carry warnings from adopted worktrees ride the same envelope as everything else.
-	var adoptWarnings []string
+	var adoptWarnings []*output.Diagnostic
 	for _, candidate := range candidates {
 		dirName := worktreeDirName(repo, candidate.Branch)
 		targetPath := worktreePath(projectRoot, repo.Group, dirName)

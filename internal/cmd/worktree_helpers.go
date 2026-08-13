@@ -427,22 +427,24 @@ func listRepoWorktrees(repo repoContext) ([]worktreeContext, error) {
 
 // collectWorktrees gathers every worktree in a project. Per-repo failures become
 // warnings rather than silently vanishing.
-func collectWorktrees(cfg *config.Config, projectRoot string) ([]worktreeContext, []string) {
+func collectWorktrees(cfg *config.Config, projectRoot string) ([]worktreeContext, []*output.Diagnostic) {
 	var items []worktreeContext
-	var warnings []string
+	var warnings []*output.Diagnostic
 
 	for _, repo := range allRepoContexts(cfg, projectRoot) {
 		if _, err := os.Stat(repo.BareRepo); err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: %s/%s: bare repository missing at %s",
-				output.CodeBareMissing, repo.Group, repo.Alias, repo.BareRepo))
+			warnings = append(warnings, output.Warnf(output.CodeBareMissing, "%s/%s: bare repository missing at %s",
+				repo.Group, repo.Alias, repo.BareRepo).
+				WithSubject("repo", repo.Group+"/"+repo.Alias))
 			continue
 		}
 		worktrees, err := listRepoWorktrees(repo)
 		if err != nil {
 			// Prefix the hydra code so callers can match on output.CodeGitFailed. The git
 			// message is kept because it names the real cause, localised text and all.
-			warnings = append(warnings, fmt.Sprintf("%s: %s/%s: %v",
-				output.CodeGitFailed, repo.Group, repo.Alias, err))
+			warnings = append(warnings, output.Warnf(output.CodeGitFailed, "%s/%s: %v", repo.Group, repo.Alias, err).
+				WithSubject("repo", repo.Group+"/"+repo.Alias).
+				WithCause(err.Error()))
 			continue
 		}
 		items = append(items, worktrees...)
@@ -634,7 +636,7 @@ func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, b
 // checking that a worktree is runnable actually needs.
 type carryOutcome struct {
 	Results  []carry.Result
-	Warnings []string
+	Warnings []*output.Diagnostic
 }
 
 // carrySourceWorktree picks where bare-form entries copy from: the worktree of the branch
@@ -698,6 +700,7 @@ func hooksContextFor(repo repoContext, branch, worktreePath string) hooks.Contex
 		Branch:       branch,
 		WorktreePath: worktreePath,
 		BarePath:     repo.BareRepo,
+		Worktree:     filepath.Base(worktreePath),
 	}
 	// A hook fired by `start --topic X` could not name X, so acting on a unit of work was
 	// impossible from a hook. Best-effort: a missing or unreadable store leaves it empty rather

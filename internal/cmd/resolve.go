@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path"
 	"sort"
@@ -150,7 +150,7 @@ type resolvedWorktree struct {
 //
 // Repository failures are counted explicitly so advisory warnings (empty selector,
 // unresolvable --against ref, and similar) do not inflate the failure count.
-func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree, []string, int, error) {
+func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree, []*output.Diagnostic, int, error) {
 	parsed, err := parseFilters(sel.Filter)
 	if err != nil {
 		return nil, nil, 0, err
@@ -188,7 +188,8 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 		if sel.Topic != "" {
 			return nil, warnings, repoFailures, indexErr
 		}
-		warnings = append(warnings, fmt.Sprintf("topic state unreadable: %v", indexErr))
+		warnings = append(warnings, output.Warnf(output.CodeInternal, "topic state unreadable: %v", indexErr).
+			WithCause(indexErr.Error()))
 	}
 
 	// Phase one: cheap.
@@ -232,8 +233,9 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 			if _, statErr := os.Stat(target.Context.Path); statErr != nil {
 				code = output.CodeWorktreeUnknown
 			}
-			warnings = append(warnings, fmt.Sprintf("%s: %s: %v",
-				code, target.Context.Qualified(), err))
+			warnings = append(warnings, output.Warnf(code, "%s: %v", target.Context.Qualified(), err).
+				WithSubject("worktree", target.Context.Qualified()).
+				WithCause(err.Error()))
 			// Keep the un-tracked item so the worktree is still reported, but never
 			// let it satisfy a derived filter: its dirty/behind fields are unknown,
 			// not false.
@@ -263,7 +265,7 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 // empty list concludes the workspace has no such work rather than that its selector was
 // wrong. Naming how many candidates were considered makes the two cases tellable apart
 // without turning a valid answer into an error.
-func emptySelectionWarning(warnings []string, sel Selector, candidates, kept int) []string {
+func emptySelectionWarning(warnings []*output.Diagnostic, sel Selector, candidates, kept int) []*output.Diagnostic {
 	if kept > 0 || candidates == 0 {
 		return warnings
 	}
@@ -283,8 +285,7 @@ func emptySelectionWarning(warnings []string, sel Selector, candidates, kept int
 	if len(used) == 0 {
 		return warnings
 	}
-	return append(warnings, fmt.Sprintf(
-		"%s matched none of the %d worktree(s) in this project",
+	return append(warnings, output.Notef("", "%s matched none of the %d worktree(s) in this project",
 		strings.Join(used, " "), candidates))
 }
 
@@ -295,14 +296,29 @@ func emptySelectionWarning(warnings []string, sel Selector, candidates, kept int
 // normal case — a release branch often exists in some repos and not others.
 //
 // A detached worktree is skipped: there is no branch to compare.
-func decorateAgainst(item *worktreeJSON, ctx worktreeContext, ref string, warnings *[]string) {
+func decorateAgainst(item *worktreeJSON, ctx worktreeContext, ref string, warnings *[]*output.Diagnostic) {
 	if ref == "" || item.Detached {
 		return
 	}
 
 	ahead, behind, err := git.CountAgainst(ctx.Path, ref)
 	if err != nil {
-		*warnings = append(*warnings, fmt.Sprintf("%s: %v", ctx.Qualified(), err))
+		// A ref that does not resolve is the CALLER's to fix and says nothing about the
+		// workspace: the worktree WAS inspected, only the extra comparison is missing.
+		// So it is a note carrying `usage`, and it must not be counted among "worktrees
+		// that could not be inspected" — counting it made an unknown --against ref exit
+		// 4 on a healthy workspace. git.ErrRefUnknown exists for this distinction.
+		if errors.Is(err, git.ErrRefUnknown) {
+			*warnings = append(*warnings, output.Notef(output.CodeUsage,
+				"%s: %v", ctx.Qualified(), err).
+				WithSubject("worktree", ctx.Qualified()))
+			return
+		}
+		// A rev-list that failed for any other reason IS a fault: the repository is
+		// broken, not the request.
+		*warnings = append(*warnings, output.Warnf(output.CodeGitFailed, "%s: %v", ctx.Qualified(), err).
+			WithSubject("worktree", ctx.Qualified()).
+			WithCause(err.Error()))
 		return
 	}
 	item.Against = &againstJSON{

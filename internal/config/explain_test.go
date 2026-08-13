@@ -53,8 +53,8 @@ func TestExplainDefaultsNamesTheWinningLevel(t *testing.T) {
 		t.Errorf("api.base_branch = %q from %q, want develop from group backend", got.Value, got.From)
 	}
 	// The repo overrides both.
-	if got := findSetting(t, rows, "api.branch_pattern"); got.Value != "feat/{slug}" || got.From != "repo api" {
-		t.Errorf("api.branch_pattern = %q from %q, want feat/{slug} from repo api", got.Value, got.From)
+	if got := findSetting(t, rows, "api.branch_provider"); got.Value != "feat/{slug}" || got.From != "repo api" {
+		t.Errorf("api.branch_provider = %q from %q, want feat/{slug} from repo api", got.Value, got.From)
 	}
 	// A repo that only inherits the GROUP's override still reports the group, not itself.
 	if got := findSetting(t, rows, "billing.base_branch"); got.From != "group backend" {
@@ -68,7 +68,7 @@ func TestExplainDefaultsNamesTheWinningLevel(t *testing.T) {
 func TestExplainDefaultsOmitsPureInheritance(t *testing.T) {
 	rows := ExplainDefaults(explainSetup())
 	for _, r := range rows {
-		if r.Key == "storefront.base_branch" || r.Key == "storefront.branch_pattern" {
+		if r.Key == "storefront.base_branch" || r.Key == "storefront.branch_provider" {
 			t.Errorf("storefront inherits everything and should contribute no rows, got %+v", r)
 		}
 	}

@@ -137,9 +137,9 @@ func runList(cmd *cobra.Command, args []string) error {
 
 // collectProjectWorktrees resolves each target's worktrees through the shared
 // resolver, so selector semantics cannot differ between list and status.
-func collectProjectWorktrees(targets []projectTarget, sel Selector) ([]projectWorktrees, []string, int, int, error) {
+func collectProjectWorktrees(targets []projectTarget, sel Selector) ([]projectWorktrees, []*output.Diagnostic, int, int, error) {
 	var projects []projectWorktrees
-	var warnings []string
+	var warnings []*output.Diagnostic
 	attempted, succeeded := 0, 0
 
 	for _, target := range targets {
@@ -176,7 +176,7 @@ func collectProjectWorktrees(targets []projectTarget, sel Selector) ([]projectWo
 	return projects, warnings, attempted, succeeded, nil
 }
 
-func checkWorktreePartialFailure(targets []projectTarget, targetWarnings []string, attempted, succeeded int) error {
+func checkWorktreePartialFailure(targets []projectTarget, targetWarnings []*output.Diagnostic, attempted, succeeded int) error {
 	if len(targets) == 0 && len(targetWarnings) > 0 {
 		return output.Errorf(output.CodePartialFailure, "every registered project failed to load")
 	}

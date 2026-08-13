@@ -14,6 +14,7 @@ package fanout
 
 import (
 	"context"
+	"github.com/mssantosdev/hydra/internal/output"
 	"sort"
 	"sync"
 	"time"
@@ -64,7 +65,7 @@ type ItemResult struct {
 	Err    error
 	// HookWarnings are collected rather than fatal, so one repo's bad hook cannot
 	// abort the rest of the fan-out.
-	HookWarnings []string
+	HookWarnings []*output.Diagnostic
 	Duration     time.Duration
 }
 
@@ -77,7 +78,7 @@ type ItemOp func(ctx context.Context, t Target) ItemResult
 
 // HookFunc runs the per-item hook event. It returns warnings and a fatal error;
 // fanout treats the error as a warning on that item and keeps going.
-type HookFunc func(ctx context.Context, t Target) ([]string, error)
+type HookFunc func(ctx context.Context, t Target) ([]*output.Diagnostic, error)
 
 // Reporter observes item lifecycle so a TTY caller can render live progress.
 // Implementations MUST be safe for concurrent use: items in different repos run
@@ -241,7 +242,8 @@ func runItem(ctx context.Context, t Target, cfg Config, op ItemOp) ItemResult {
 		warnings, err := cfg.Hook(itemCtx, t)
 		result.HookWarnings = append(result.HookWarnings, warnings...)
 		if err != nil {
-			result.HookWarnings = append(result.HookWarnings, err.Error())
+			result.HookWarnings = append(result.HookWarnings,
+				output.Notef(output.CodeHookFailed, "%v", err))
 		}
 	}
 

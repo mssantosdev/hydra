@@ -140,11 +140,38 @@ func RetryableCodes() []string {
 	return codes
 }
 
-// Error is a user-facing hydra failure carrying a stable code and exit status.
-type Error struct {
+// Diagnostic is the ONE shape for anything that went wrong, wherever it appears: the
+// envelope's fatal error, one entry in warnings[], or one failed item inside a
+// partial's data.
+//
+// It exists because those were three different shapes. `error` was this struct,
+// `warnings` was []string with no code to branch on, and a per-item failure was a bare
+// `error string` field inside five different command payloads — the same JSON key as
+// the envelope's error, at a different type, which a generic consumer cannot walk.
+// Three shapes became one; nothing was added to get here.
+type Diagnostic struct {
+	// Severity is "error" or "warning". Position already implies it in the envelope,
+	// but carrying it is what lets a caller flatten every diagnostic from every
+	// position into one list and loop once.
+	Severity string `json:"severity"`
+
 	Code    string         `json:"code"`
 	Message string         `json:"message"`
 	Details map[string]any `json:"details,omitempty"`
+
+	// Subject is what this diagnostic is ABOUT, addressed the way a caller would
+	// address it: "worktree:backend/api-stage", "repo:api", "topic:2072958", or for
+	// the manifest ".hydra/config.yaml:24". One field answers "which thing", and when
+	// the thing is a file that is the file:line every compiler prints. hydra's errors
+	// are mostly about worktrees and locks, so a subject is the right anchor and a
+	// line number is the special case rather than the shape.
+	Subject string `json:"subject,omitempty"`
+
+	// Cause is the underlying tool's own words, verbatim and unparsed — git's stderr,
+	// a branch provider's output. Separate from Message because hydra's explanation
+	// and git's explanation are two different facts; folding them together is how
+	// "git fetch origin failed: exit status 128" ever reached a caller.
+	Cause string `json:"cause,omitempty"`
 
 	// Retryable is serialised because it is the one fact a caller cannot derive:
 	// the code->exit map is published, but "is it worth trying again" is not
@@ -156,17 +183,43 @@ type Error struct {
 	// exit status in a second place that could disagree with it.
 	Exit int `json:"-"`
 
-	// Next carries the invocation that recovers from this error, as argv rather than
-	// prose. It rides the error because guidance a caller has to know to ask for is not
-	// an affordance: it has to arrive in the failing call's own envelope.
+	// Next carries the invocation that recovers from this diagnostic, as argv rather
+	// than prose. It rides the diagnostic rather than the envelope so that in a
+	// partial, the recovery for item three is attached to item three.
 	Next []Next `json:"-"`
 
 	wrapped error
 }
 
+// Error is the fatal diagnostic. It is an ALIAS, not a second type: a warning that
+// turns out to be fatal, or a per-item failure promoted to the envelope, needs no
+// conversion and cannot drift from the shape it is promoted into.
+type Error = Diagnostic
+
 func (e *Error) Error() string { return e.Message }
 
 func (e *Error) Unwrap() error { return e.wrapped }
+
+// Severity values.
+//
+// Three, not two, because hydra's warnings[] currently holds three different kinds of
+// thing and that is precisely why telling them apart needs a list of English substrings
+// were three different kinds of thing mixed together. Making the distinction a field
+// makes it exact and deletes the prose matching that used to tell them apart.
+//
+//   - error:   fatal. The command did not do what was asked.
+//   - warning: something is wrong and the command continued. DEGRADES a success to
+//     partial, because "success" beside a broken workspace is the same lie in a
+//     quieter register.
+//   - note:    hydra did something worth saying. Never degrades an outcome.
+//
+// A code names the CONDITION and is required for an error or a warning. A note omits it
+// only when there is no condition to name, just an action hydra took.
+const (
+	SeverityError   = "error"
+	SeverityWarning = "warning"
+	SeverityNote    = "note"
+)
 
 // Errorf builds an Error with the exit code and retry flag bound to code.
 //
@@ -174,6 +227,7 @@ func (e *Error) Unwrap() error { return e.wrapped }
 // error whose retryability disagrees with its code.
 func Errorf(code, format string, args ...any) *Error {
 	return &Error{
+		Severity:  SeverityError,
 		Code:      code,
 		Message:   fmt.Sprintf(format, args...),
 		Retryable: Retryable(code),
@@ -181,19 +235,86 @@ func Errorf(code, format string, args ...any) *Error {
 	}
 }
 
+// Warnf builds a WARNING diagnostic: the same shape as an error, so a caller loops
+// once over one type, and carrying a code so a warning can be branched on. A
+// warnings[] of bare strings could only be logged.
+func Warnf(code, format string, args ...any) *Diagnostic {
+	return &Diagnostic{
+		Severity:  SeverityWarning,
+		Code:      code,
+		Message:   fmt.Sprintf(format, args...),
+		Retryable: Retryable(code),
+		// No Exit: a warning does not decide the process status. Promoting one to
+		// fatal goes through Errorf, which binds the exit from the same code.
+	}
+}
+
+// Notef builds a NOTE: the caller got what they asked for, and hydra has something to
+// say about how. The code MAY be empty, for a note that reports an action rather than a
+// condition ("removed empty group directory"). It is set when there IS a condition worth
+// branching on: an `optional: true` hook that failed carries CodeHookFailed as a note,
+// because the manifest declared that failure acceptable — so the request was satisfied,
+// and severity answers "did the caller get what they asked for" rather than "was anything
+// imperfect". The code is what still lets an agent find it.
+func Notef(code, format string, args ...any) *Diagnostic {
+	return &Diagnostic{
+		Severity: SeverityNote,
+		Code:     code,
+		Message:  fmt.Sprintf(format, args...),
+	}
+}
+
+// IsFault reports whether a diagnostic must prevent a success verdict. Exact, where the
+// predicate it replaces case-insensitively substring-matched English prose and so
+// silently stopped working whenever a warning was reworded.
+func (e *Diagnostic) String() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+func (e *Diagnostic) IsFault() bool {
+	return e != nil && (e.Severity == SeverityError || e.Severity == SeverityWarning)
+}
+
 // Wrap builds an Error preserving an underlying cause.
+//
+// The cause is folded into the message for humans AND kept verbatim in Cause, because
+// a caller that wants git's own words should not have to split a string hydra built.
 func Wrap(code string, cause error, format string, args ...any) *Error {
 	msg := fmt.Sprintf(format, args...)
+	verbatim := ""
 	if cause != nil {
 		msg = fmt.Sprintf("%s: %v", msg, cause)
+		verbatim = cause.Error()
 	}
 	return &Error{
+		Severity:  SeverityError,
 		Code:      code,
 		Message:   msg,
+		Cause:     verbatim,
 		Retryable: Retryable(code),
 		Exit:      ExitFor(code),
 		wrapped:   cause,
 	}
+}
+
+// WithSubject names what the diagnostic is about, as "<kind>:<name>" — or as
+// "<path>:<line>" when the subject is the manifest. Callers pass the pair rather than
+// a pre-joined string so the separator cannot drift per command.
+func (e *Diagnostic) WithSubject(kind, name string) *Diagnostic {
+	if kind == "" || name == "" {
+		return e
+	}
+	e.Subject = kind + ":" + name
+	return e
+}
+
+// WithCause records the underlying tool's own words, unparsed.
+func (e *Diagnostic) WithCause(cause string) *Diagnostic {
+	e.Cause = cause
+	return e
 }
 
 // WithDetail attaches a structured detail to the error and returns it.

@@ -3,10 +3,12 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
@@ -21,7 +23,7 @@ func applyWith(t *testing.T, doc string, args ...string) (applyJSON, error) {
 }
 
 // applyReporting also returns the envelope warnings, for the cases that assert on them.
-func applyReporting(t *testing.T, doc string, args ...string) (applyJSON, []string, error) {
+func applyReporting(t *testing.T, doc string, args ...string) (applyJSON, []*output.Diagnostic, error) {
 	t.Helper()
 	resetCommandState(t)
 	stdout, _ := resetCommandIO()
@@ -30,8 +32,8 @@ func applyReporting(t *testing.T, doc string, args ...string) (applyJSON, []stri
 	err := rootCmd.Execute()
 
 	var envelope struct {
-		Data     applyJSON `json:"data"`
-		Warnings []string  `json:"warnings"`
+		Data     applyJSON            `json:"data"`
+		Warnings []*output.Diagnostic `json:"warnings"`
 	}
 	if stdout.Len() > 0 {
 		if jsonErr := json.Unmarshal(stdout.Bytes(), &envelope); jsonErr != nil {
@@ -218,7 +220,7 @@ func TestApply_WarnsAboutBranchlessItemsRatherThanDroppingThem(t *testing.T) {
 	if payload.Total != 1 {
 		t.Errorf("total = %d, want only the item with a branch", payload.Total)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "detached") {
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Message, "detached") {
 		t.Errorf("warnings = %q, want one naming the skipped detached worktree", warnings)
 	}
 }
@@ -533,5 +535,179 @@ func TestApply_DryRunPredictsATopicConflict(t *testing.T) {
 	}
 	if dryErr == nil {
 		t.Error("--dry-run reported success for a document the real run refuses")
+	}
+}
+
+func applyBareArrayDoc(n int, branchPrefix string) string {
+	var b strings.Builder
+	b.WriteString("[")
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, `{"repo":"api","branch":"%s-%d"}`, branchPrefix, i)
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
+func TestApply_ExceedsMaxItemsRefusesBeforeWork(t *testing.T) {
+	resetCommandState(t)
+	env := applyEnv(t)
+
+	doc := applyBareArrayDoc(defaultApplyMaxItems+1, "feat/max")
+	_, err := applyWith(t, doc)
+	if err == nil {
+		t.Fatal("expected refusal when over --max-items")
+	}
+	e := output.Classify(err)
+	if e.Code != output.CodeUsage {
+		t.Fatalf("code = %q, want %q", e.Code, output.CodeUsage)
+	}
+	if e.Details["flag"] != "--max-items" {
+		t.Fatalf("details.flag = %v, want --max-items", e.Details["flag"])
+	}
+	for i := 0; i < 3; i++ {
+		if env.DirExists(env.GetWorktreePath("backend", fmt.Sprintf("api-feat-max-%d", i))) {
+			t.Fatalf("worktree %d exists after over-limit refusal", i)
+		}
+	}
+}
+
+func TestApply_ExceedsMaxSizeRefusesBeforeWork(t *testing.T) {
+	resetCommandState(t)
+	env := applyEnv(t)
+
+	doc := applyBareArrayDoc(3, "feat/size")
+	resetCommandState(t)
+	_, err := applyWith(t, doc, "--max-size", fmt.Sprintf("%d", len(doc)-1))
+	if err == nil {
+		t.Fatal("expected refusal when over --max-size")
+	}
+	e := output.Classify(err)
+	if e.Code != output.CodeUsage {
+		t.Fatalf("code = %q, want %q", e.Code, output.CodeUsage)
+	}
+	if e.Details["flag"] != "--max-size" {
+		t.Fatalf("details.flag = %v, want --max-size", e.Details["flag"])
+	}
+	if env.DirExists(env.GetWorktreePath("backend", "api-feat-size-0")) {
+		t.Error("worktree exists after over-size refusal")
+	}
+}
+
+func TestApply_UnlimitedOverridesAcceptLargeDocument(t *testing.T) {
+	resetCommandState(t)
+	applyEnv(t)
+
+	doc := applyBareArrayDoc(defaultApplyMaxItems+1, "feat/unlim")
+	_, err := applyWith(t, doc, "--max-items", "0", "--dry-run")
+	if err != nil {
+		t.Fatalf("apply with --max-items 0: %v", err)
+	}
+}
+
+func TestApply_DefaultLimitsAppearInHelp(t *testing.T) {
+	f := applyCmd.Flags().Lookup("max-items")
+	if f == nil {
+		t.Fatal("max-items flag missing")
+	}
+	if !strings.Contains(f.Usage, fmt.Sprintf("%d", defaultApplyMaxItems)) {
+		t.Errorf("max-items usage %q must mention default %d", f.Usage, defaultApplyMaxItems)
+	}
+	f = applyCmd.Flags().Lookup("max-size")
+	if f == nil {
+		t.Fatal("max-size flag missing")
+	}
+	if !strings.Contains(f.Usage, fmt.Sprintf("%d", defaultApplyMaxSize)) {
+		t.Errorf("max-size usage %q must mention default %d", f.Usage, defaultApplyMaxSize)
+	}
+}
+
+func TestApply_DryRunLargeDocumentIsFastAndCreatesNothing(t *testing.T) {
+	resetCommandState(t)
+	env := applyEnv(t)
+
+	const n = 3000
+	doc := applyBareArrayDoc(n, "feat/bulk")
+	start := time.Now()
+	payload, err := applyWith(t, doc, "--max-items", "0", "--dry-run")
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if !payload.DryRun || payload.Total != n {
+		t.Fatalf("dry_run=%v total=%d want %d", payload.DryRun, payload.Total, n)
+	}
+	// 3s, not 5s, and the difference matters: this took 14s in a real workspace while
+	// passing here, because planApplyItems built a repoContext per ITEM and each one
+	// asked git for origin/HEAD. The fixture's bare repo has no origin/HEAD, so that
+	// spawn failed fast in-test and succeeded slowly in the field. The bound now sits
+	// well inside what a per-item spawn costs.
+	if elapsed > 3*time.Second {
+		t.Fatalf("dry-run took %s; expected well under 3s for %d items", elapsed, n)
+	}
+	for i := 0; i < 3; i++ {
+		if env.DirExists(env.GetWorktreePath("backend", fmt.Sprintf("api-feat-bulk-%d", i))) {
+			t.Fatalf("dry-run created worktree %d", i)
+		}
+	}
+}
+
+// Two items in ONE repo must both converge. The worktree cache recorded a nil error
+// under the repo's key, which made the key present, so every item after the first took
+// the error path and saw an empty worktree list — a converged worktree was then reported
+// as an unregistered directory and the round trip `list | apply -` exited 4.
+func TestApply_SecondItemInSameRepoStillConverges(t *testing.T) {
+	resetCommandState(t)
+	applyEnv(t)
+
+	// Two worktrees in ONE repo is the shape that broke: the cache is keyed per repo.
+	resetCommandState(t)
+	resetCommandIO()
+	rootCmd.SetArgs([]string{"add", "api", "stage", "--output", "json"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("add stage: %v", err)
+	}
+
+	resetCommandState(t)
+	stdout, _ := resetCommandIO()
+	rootCmd.SetArgs([]string{"list", "--output", "json"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	listed := stdout.String()
+
+	resetCommandState(t)
+	stdout, _ = resetCommandIO()
+	rootCmd.SetIn(strings.NewReader(listed))
+	rootCmd.SetArgs([]string{"apply", "-", "--dry-run", "--output", "json"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("replaying what list emitted must converge, not fail: %v\n%s", err, stdout.String())
+	}
+
+	var envelope struct {
+		Data struct {
+			Total   int `json:"total"`
+			Failed  int `json:"failed"`
+			Results []struct {
+				Branch      string `json:"branch"`
+				Disposition string `json:"disposition"`
+			} `json:"results"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v\n%s", err, stdout.String())
+	}
+	if envelope.Data.Total < 2 {
+		t.Fatalf("fixture needs two worktrees in one repo, got %d", envelope.Data.Total)
+	}
+	if envelope.Data.Failed != 0 {
+		t.Errorf("failed = %d, want 0: %s", envelope.Data.Failed, stdout.String())
+	}
+	for _, r := range envelope.Data.Results {
+		if r.Disposition != "skipped" {
+			t.Errorf("branch %s disposition = %q, want skipped", r.Branch, r.Disposition)
+		}
 	}
 }

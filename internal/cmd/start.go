@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mssantosdev/hydra/internal/branchresolve"
 	"github.com/mssantosdev/hydra/internal/config"
@@ -115,12 +116,12 @@ type startTargetJSON struct {
 	// Name is the worktree directory name, which is the HANDLE every other command
 	// takes. Without it a caller has to take the basename of Path to address the
 	// worktree it just created.
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Disposition string `json:"disposition"`
-	Reason      string `json:"reason,omitempty"`
-	Attached    bool   `json:"attached"`
-	Error       string `json:"error,omitempty"`
+	Name        string             `json:"name"`
+	Path        string             `json:"path"`
+	Disposition string             `json:"disposition"`
+	Reason      string             `json:"reason,omitempty"`
+	Attached    bool               `json:"attached"`
+	Error       *output.Diagnostic `json:"error,omitempty"`
 }
 
 type startJSON struct {
@@ -188,7 +189,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// concurrent adds were measured to leave worktrees with no upstream at all.
 	results := fanout.Run(context.Background(), targets, fanout.Config{
 		SerialPerRepo: true,
-		Hook: func(_ context.Context, t fanout.Target) ([]string, error) {
+		Hook: func(_ context.Context, t fanout.Target) ([]*output.Diagnostic, error) {
 			repo := reposByAlias[t.Repo]
 			result, hookErr := runHookEvent("post_add", hooksContextFor(repo, t.Branch, t.Path), t.Path)
 			return result.Warnings, hookErr
@@ -197,7 +198,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return startOne(reposByAlias[t.Repo], t)
 	})
 
-	var warnings []string
+	var warnings []*output.Diagnostic
 	for _, result := range results {
 		warnings = append(warnings, result.HookWarnings...)
 	}
@@ -213,7 +214,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// anything, would both be announcing something that does not exist yet.
 	if topicID != "" && startParent != "" {
 		if err := topicStore().SetParent(topicID, startParent); err != nil {
-			warnings = append(warnings, fmt.Sprintf("could not record parent %s: %v", startParent, err))
+			warnings = append(warnings, output.Warnf(output.CodeTopicConflict, "could not record parent %s: %v", startParent, err).
+				WithSubject("topic", topicID).
+				WithCause(err.Error()))
 		}
 	}
 	if topicID != "" && !topicExisted && startCreatedCount(results) > 0 {
@@ -227,7 +230,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		topicStart, topicErr := runHookEvent("post_topic_start", topicHookContext(topicID), projectRoot)
 		warnings = append(warnings, topicStart.Warnings...)
 		if topicErr != nil {
-			warnings = append(warnings, topicErr.Error())
+			warnings = append(warnings, output.Classify(topicErr))
 		}
 	}
 
@@ -388,6 +391,18 @@ func reposForSelector(selector Selector) ([]repoContext, error) {
 // resolveStartBranch runs the precedence chain, mapping its errors onto the output
 // enum so every call site reports the same codes.
 func resolveStartBranch(positional, topicID string, existing topic.Topic, repos []repoContext) (string, branchresolve.Source, error) {
+	request := startBranchRequest(positional, topicID, existing, repos)
+
+	resolution, err := branchresolve.ResolveUnlessConverged(context.Background(), request, func(branch string) bool {
+		return startReposConverged(repos, branch)
+	})
+	if err != nil {
+		return "", "", classifyBranchErr(err, request)
+	}
+	return resolution.Branch, resolution.Source, nil
+}
+
+func startBranchRequest(positional, topicID string, existing topic.Topic, repos []repoContext) branchresolve.Request {
 	memberBranches := make([]string, 0, len(existing.Members))
 	for _, member := range existing.Members {
 		memberBranches = append(memberBranches, member.Branch)
@@ -396,7 +411,7 @@ func resolveStartBranch(positional, topicID string, existing topic.Topic, repos 
 	// The pattern and provider are per-repo, and a single start may span repos with
 	// different ones. Resolving once against the FIRST target keeps one branch name
 	// for the whole topic, which is the invariant a topic exists to hold.
-	pattern, provider, strict := branchPolicyFor(repos)
+	pattern, provider, strict, timeout := branchPolicyFor(repos)
 
 	request := branchresolve.Request{
 		Positional:     positional,
@@ -405,6 +420,7 @@ func resolveStartBranch(positional, topicID string, existing topic.Topic, repos 
 		Pattern:        pattern,
 		Provider:       provider,
 		Strict:         strict,
+		Timeout:        timeout,
 		Topic:          topicID,
 		Kind:           startKind,
 		Slug:           startSlug,
@@ -416,12 +432,24 @@ func resolveStartBranch(positional, topicID string, existing topic.Topic, repos 
 		request.Repo = repos[0].Alias
 		request.Group = repos[0].Group
 	}
+	return request
+}
 
-	resolution, err := branchresolve.Resolve(context.Background(), request)
-	if err != nil {
-		return "", "", classifyBranchErr(err, request)
+// startReposConverged reports whether every selected repository already has a worktree
+// at the branch start would converge to.
+func startReposConverged(repos []repoContext, branch string) bool {
+	for _, repo := range repos {
+		dirName := worktreeDirName(repo, branch)
+		path := worktreePath(projectRoot, repo.Group, dirName)
+		if err := checkWorktreeNameConflict(repo, projectRoot, dirName, branch); err != nil {
+			if worktreeAlreadyAtTarget(err, path) {
+				continue
+			}
+			return false
+		}
+		return false
 	}
-	return resolution.Branch, resolution.Source, nil
+	return len(repos) > 0
 }
 
 // branchPolicyFor returns the branch policy for a set of worktrees.
@@ -431,13 +459,14 @@ func resolveStartBranch(positional, topicID string, existing topic.Topic, repos 
 //
 // The first repo decides. A policy is a naming convention, so one branch name is being built for
 // all of them; disagreeing repos would need N names, which `start` does not model.
-func branchPolicyFor(repos []repoContext) (pattern, provider string, strict bool) {
+func branchPolicyFor(repos []repoContext) (pattern, provider string, strict bool, timeout time.Duration) {
 	alias := ""
 	if len(repos) > 0 {
 		alias = repos[0].Alias
 	}
 	d := config.ResolveDefaults(cfg, alias)
-	return d.BranchPattern, d.BranchProvider, d.BranchPatternStrict
+	pattern, provider, timeout = d.BranchNamingPolicy()
+	return pattern, provider, d.BranchPatternStrict, timeout
 }
 
 // resolveStartUser fills {user} from git, honouring --user first.
@@ -492,12 +521,12 @@ func classifyBranchErr(err error, request branchresolve.Request) error {
 }
 
 // attachStartResults records membership for every worktree that now exists.
-func attachStartResults(topicID string, results []fanout.ItemResult, payload *startJSON) []string {
+func attachStartResults(topicID string, results []fanout.ItemResult, payload *startJSON) []*output.Diagnostic {
 	if topicID == "" || startNoAssign {
 		return nil
 	}
 
-	var warnings []string
+	var warnings []*output.Diagnostic
 	attached := make(map[string]bool, len(results))
 	for _, result := range results {
 		if result.Disposition == fanout.Failed {
@@ -507,8 +536,11 @@ func attachStartResults(topicID string, results []fanout.ItemResult, payload *st
 		if err := topicStore().Attach(topicID, member); err != nil {
 			// The worktree exists and is correct; only the record failed. Reporting it
 			// as a failure would claim the git work did not happen.
-			warnings = append(warnings, fmt.Sprintf("%s: worktree created but not recorded in topic %q: %v",
-				result.Target.Repo, topicID, output.Classify(classifyTopicErr(err)).Message))
+			warnings = append(warnings, output.Warnf(output.CodeTopicConflict,
+				"%s: worktree created but not recorded in topic %q: %v",
+				result.Target.Repo, topicID, output.Classify(classifyTopicErr(err)).Message).
+				WithSubject("topic", topicID).
+				WithCause(err.Error()))
 			continue
 		}
 		attached[result.Target.Key()] = true
@@ -554,7 +586,11 @@ func fillStartPayload(payload *startJSON, results []fanout.ItemResult) {
 		case fanout.Skipped:
 			payload.Skipped = append(payload.Skipped, entry)
 		case fanout.Failed:
-			entry.Error = result.Reason
+			if result.Err != nil {
+				entry.Error = output.Classify(result.Err)
+			} else {
+				entry.Error = output.Errorf(output.CodeGitFailed, "%s", result.Reason)
+			}
 			payload.Failed = append(payload.Failed, entry)
 		}
 	}

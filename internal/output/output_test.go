@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -102,7 +103,7 @@ func TestEmitJSONEnvelope(t *testing.T) {
 		Summary  string         `json:"summary"`
 		Data     map[string]any `json:"data"`
 		Next     []Next         `json:"next"`
-		Warnings []string       `json:"warnings"`
+		Warnings []*Diagnostic  `json:"warnings"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
 		t.Fatalf("envelope is not valid JSON: %v\n%s", err, buf.String())
@@ -330,5 +331,102 @@ func TestWrapKeepsCause(t *testing.T) {
 	}
 	if e.Code != CodeGitFailed || e.Exit != 1 {
 		t.Errorf("Wrap produced %+v, want git_failed/1", e)
+	}
+}
+
+// One shape, three positions. The fatal error, a warning, and a per-item failure must
+// be the same Go type, or they drift: warnings were []string and a per-item failure was
+// a bare `error string` under the same JSON key the envelope uses for an object.
+func TestDiagnosticIsOneTypeForErrorsAndWarnings(t *testing.T) {
+	// Errorf returns *Error and Notef returns *Diagnostic. Both assign to the same
+	// declared variable type below, which compiles ONLY because Error is an alias
+	// rather than a second struct. That is the property under test.
+	var fatal, advisory *Diagnostic
+	fatal = Errorf(CodeWorktreeDirty, "3 uncommitted change(s)")
+	advisory = Notef(CodeHookFailed, "optional hook did not run")
+
+	if fatal.Severity != SeverityError {
+		t.Errorf("Errorf severity = %q, want %q", fatal.Severity, SeverityError)
+	}
+	if advisory.Severity != SeverityNote {
+		t.Errorf("Notef severity = %q, want %q", advisory.Severity, SeverityNote)
+	}
+	// An optional hook failure is a note with CodeHookFailed: the manifest declared it
+	// acceptable, so the request was satisfied, but agents still need a code to find it.
+	if advisory.Code != CodeHookFailed {
+		t.Errorf("Notef code = %q, want %q", advisory.Code, CodeHookFailed)
+	}
+	if advisory.IsFault() {
+		t.Error("optional hook failure as note must not degrade success")
+	}
+	// A warning must not decide the process status.
+	if advisory.Exit != 0 {
+		t.Errorf("Warnf exit = %d, want 0: a warning does not set the exit status", advisory.Exit)
+	}
+	if fatal.Exit != ExitFor(CodeWorktreeDirty) {
+		t.Errorf("Errorf exit = %d, want %d", fatal.Exit, ExitFor(CodeWorktreeDirty))
+	}
+}
+
+func TestWrapKeepsTheCauseVerbatim(t *testing.T) {
+	underlying := errors.New("fatal: not a git repository: '/w/.bare/api.git'")
+	err := Wrap(CodeGitFailed, underlying, "failed to fetch %q", "api")
+
+	// The human message folds both facts...
+	if !strings.Contains(err.Message, "failed to fetch") || !strings.Contains(err.Message, "not a git repository") {
+		t.Errorf("message lost one of the two facts: %q", err.Message)
+	}
+	// ...and the tool's own words stay separately addressable, so a caller does not
+	// have to split a string hydra built.
+	if err.Cause != underlying.Error() {
+		t.Errorf("cause = %q, want the underlying error verbatim", err.Cause)
+	}
+	if !errors.Is(err, underlying) {
+		t.Error("Wrap no longer unwraps to its cause")
+	}
+}
+
+func TestWithSubjectNamesWhichThing(t *testing.T) {
+	tests := []struct {
+		name, kind, subject, want string
+	}{
+		{"worktree", "worktree", "backend/api-stage", "worktree:backend/api-stage"},
+		{"manifest line", ".hydra/config.yaml", "24", ".hydra/config.yaml:24"},
+		{"empty kind is ignored", "", "x", ""},
+		{"empty name is ignored", "worktree", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Errorf(CodeInternal, "x").WithSubject(tt.kind, tt.subject)
+			if got.Subject != tt.want {
+				t.Errorf("Subject = %q, want %q", got.Subject, tt.want)
+			}
+		})
+	}
+}
+
+// The envelope contract: exit never serialises, next never serialises on the
+// diagnostic itself, and an absent subject/cause/details are omitted rather than null.
+func TestDiagnosticJSONOmitsWhatIsAbsent(t *testing.T) {
+	blob, err := json.Marshal(Errorf(CodeBusy, "a lock was held"))
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(blob, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for _, absent := range []string{"exit", "next", "subject", "cause", "details"} {
+		if _, ok := got[absent]; ok {
+			t.Errorf("%q is serialised when it should be absent: %s", absent, blob)
+		}
+	}
+	for _, required := range []string{"severity", "code", "message", "retryable"} {
+		if _, ok := got[required]; !ok {
+			t.Errorf("%q is missing: %s", required, blob)
+		}
+	}
+	if got["retryable"] != true {
+		t.Errorf("busy must be retryable: %s", blob)
 	}
 }

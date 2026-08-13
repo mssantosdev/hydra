@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mssantosdev/hydra/internal/output"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -190,7 +191,7 @@ func TestRun_HookRunsPerSucceedingItem(t *testing.T) {
 	}
 
 	results := Run(context.Background(), targets, Config{
-		Hook: func(_ context.Context, t Target) ([]string, error) {
+		Hook: func(_ context.Context, t Target) ([]*output.Diagnostic, error) {
 			mu.Lock()
 			hooked = append(hooked, t.Key())
 			mu.Unlock()
@@ -222,9 +223,9 @@ func TestRun_HookFailureDegradesToWarningAndContinues(t *testing.T) {
 	}
 
 	results := Run(context.Background(), targets, Config{
-		Hook: func(_ context.Context, t Target) ([]string, error) {
+		Hook: func(_ context.Context, t Target) ([]*output.Diagnostic, error) {
 			if t.Repo == "api" {
-				return []string{"hook said something"}, errors.New("hook exited 1")
+				return []*output.Diagnostic{output.Notef("", "hook said something")}, errors.New("hook exited 1")
 			}
 			return nil, nil
 		},

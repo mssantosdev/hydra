@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
@@ -23,7 +24,7 @@ type syncEnvelope struct {
 			Failed int `json:"failed"`
 		} `json:"summary"`
 	} `json:"data"`
-	Warnings []string `json:"warnings"`
+	Warnings []*output.Diagnostic `json:"warnings"`
 }
 
 // TestSync_HookFailureWarnsAndKeepsPulling: a failing post_sync hook is a warning after

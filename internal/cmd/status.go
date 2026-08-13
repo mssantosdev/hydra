@@ -282,7 +282,7 @@ func upstreamLabelJSON(item worktreeJSON) string {
 
 // statusFaultNext points at doctor when status could not inspect everything it was asked
 // about, so the follow-up arrives without the caller knowing to look for it.
-func statusFaultNext(warnings []string) []output.Next {
+func statusFaultNext(warnings []*output.Diagnostic) []output.Next {
 	if !output.HasFault(warnings) {
 		return nil
 	}
@@ -293,12 +293,6 @@ func statusFaultNext(warnings []string) []output.Next {
 }
 
 // countFaults counts the warnings that describe a workspace integrity problem.
-func countFaults(warnings []string) int {
-	n := 0
-	for _, w := range warnings {
-		if output.HasFault([]string{w}) {
-			n++
-		}
-	}
-	return n
+func countFaults(warnings []*output.Diagnostic) int {
+	return output.CountFaults(warnings)
 }

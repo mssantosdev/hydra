@@ -97,10 +97,11 @@ func TestRepoDefaultsMergesBothSpellingsBlockWinning(t *testing.T) {
 		repo Repo
 		want Defaults
 	}{
-		{"flat only", Repo{BranchPattern: "flat", BranchProvider: "fp"}, Defaults{BranchPattern: "flat", BranchProvider: "fp"}},
+		{"flat pattern only", Repo{BranchPattern: "flat"}, Defaults{BranchPattern: "flat"}},
+		{"flat provider only", Repo{BranchProvider: BranchNaming{pattern: "fp"}}, Defaults{BranchProvider: BranchNaming{pattern: "fp"}}},
 		{"block only", Repo{Defaults: Defaults{BranchPattern: "blk"}}, Defaults{BranchPattern: "blk"}},
 		{"block wins", Repo{BranchPattern: "flat", Defaults: Defaults{BranchPattern: "blk"}}, Defaults{BranchPattern: "blk"}},
-		{"block fills only what it sets", Repo{BranchProvider: "fp", Defaults: Defaults{BranchPattern: "blk"}}, Defaults{BranchPattern: "blk", BranchProvider: "fp"}},
+		{"block fills only what it sets", Repo{BranchProvider: BranchNaming{pattern: "fp"}, Defaults: Defaults{BranchPattern: "blk"}}, Defaults{BranchPattern: "blk", BranchProvider: BranchNaming{pattern: "fp"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := repoDefaults(tc.repo)
@@ -204,7 +205,7 @@ func TestExplainDefaultsAgreesWithResolveDefaults(t *testing.T) {
 		Groups: map[string]Group{
 			"backend": {
 				Defaults: Defaults{BaseBranch: "develop"},
-				Repos:    map[string]Repo{"api": {Remote: "r", BranchProvider: "cmd"}},
+				Repos:    map[string]Repo{"api": {Remote: "r", BranchProvider: BranchNaming{pattern: "cmd"}}},
 			},
 		},
 	}
@@ -217,7 +218,7 @@ func TestExplainDefaultsAgreesWithResolveDefaults(t *testing.T) {
 	}
 	for key, value := range map[string]string{
 		"base_branch":     want.BaseBranch,
-		"branch_provider": want.BranchProvider,
+		"branch_provider": want.effectiveNaming().Pattern(),
 	} {
 		if value != "" && got[key] != value {
 			t.Errorf("%s: reporter says %q, resolver says %q", key, got[key], value)
@@ -248,5 +249,52 @@ func TestResolveHooksUsesTheNamedGroupNotTheFirstMatch(t *testing.T) {
 		if len(got) != 2 || got[1].Run != want {
 			t.Errorf("group %q resolved to %+v, want the workspace chain then %q", group, got, want)
 		}
+	}
+}
+
+func TestResolveHooksTagsWorkspacePath(t *testing.T) {
+	c := &Config{
+		Version: SchemaVersion,
+		Hooks:   Hooks{PostAdd: []Hook{{Run: "ws"}}},
+		Groups: map[string]Group{
+			"backend": {Repos: map[string]Repo{"api": {Remote: "r"}}},
+		},
+	}
+	got, known := ResolveHooks(c, "backend", "api", "post_add")
+	if !known || len(got) != 1 || got[0].Path != "hooks.post_add[0]" {
+		t.Fatalf("got %+v known=%v, want hooks.post_add[0]", got, known)
+	}
+}
+
+func TestResolveHooksTagsGroupPath(t *testing.T) {
+	c := &Config{
+		Version: SchemaVersion,
+		Groups: map[string]Group{
+			"backend": {
+				Hooks: Hooks{PostAdd: []Hook{{Run: "grp"}}},
+				Repos: map[string]Repo{"api": {Remote: "r"}},
+			},
+		},
+	}
+	got, _ := ResolveHooks(c, "backend", "api", "post_add")
+	if len(got) != 1 || got[0].Path != "groups.backend.hooks.post_add[0]" {
+		t.Fatalf("got %+v, want groups.backend.hooks.post_add[0]", got)
+	}
+}
+
+func TestResolveHooksTagsRepoPath(t *testing.T) {
+	c := &Config{
+		Version: SchemaVersion,
+		Groups: map[string]Group{
+			"backend": {
+				Repos: map[string]Repo{
+					"api": {Remote: "r", Hooks: Hooks{PostAdd: []Hook{{Run: "repo"}}}},
+				},
+			},
+		},
+	}
+	got, _ := ResolveHooks(c, "backend", "api", "post_add")
+	if len(got) != 1 || got[0].Path != "groups.backend.repos.api.hooks.post_add[0]" {
+		t.Fatalf("got %+v, want groups.backend.repos.api.hooks.post_add[0]", got)
 	}
 }

@@ -159,7 +159,9 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	warnings := carried.Warnings
 	if trackErr != nil {
-		warnings = append(warnings, fmt.Sprintf("%s: %v", branch, trackErr))
+		warnings = append(warnings, output.Warnf(output.CodeGitFailed, "%s: %v", branch, trackErr).
+			WithSubject("worktree", wt.Qualified()).
+			WithCause(trackErr.Error()))
 	}
 
 	// Hooks fire only on creation, matching fanout's rule for start: re-running add must
