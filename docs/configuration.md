@@ -1,7 +1,7 @@
 ---
 title: "Configuration"
-description: "Hydra .hydra/config.yaml schema v2 specification"
-ai_context: "Complete .hydra/config.yaml specification for schema version 2"
+description: "Hydra .hydra/config.yaml schema v3 specification"
+ai_context: "Complete .hydra/config.yaml specification for schema version 3; version 2 loads and upgrades on write"
 ---
 
 # Configuration

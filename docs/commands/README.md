@@ -14,8 +14,9 @@ Complete reference for all Hydra commands. Global flags on every command:
 | `--project <name>` | Target a registered project by name |
 | `--config <path>` | Path to `.hydra/config.yaml` |
 | `--verbose` | Verbose logging |
-| `--yes` | Skip confirmation prompts |
 | `--no-hooks` | Skip all configured hooks |
+
+`--yes` is **not** global: `remove`, `sync`, `topic`, `repo remove` and `init-shell` each define it.
 
 ## Quick Command Table
 
@@ -312,7 +313,7 @@ Need cleanup?
 | code | exit | raised when |
 |------|------|-------------|
 | `not_in_project` | 2 | no `.hydra/config.yaml` found walking up, and no `--project` |
-| `config_version_unsupported` | 2 | `.hydra/config.yaml` `version` is not `"2"` |
+| `config_version_unsupported` | 2 | `.hydra/config.yaml` `version` is not `"3"` or `"2"` (v2 loads and upgrades on write) |
 | `config_invalid` | 2 | a manifest `path:` or `bare_dir` that leaves the workspace |
 | `project_unknown` | 2 | `--project <name>` not in the registry |
 | `repo_unknown` | 1 | alias not present in any group |
@@ -326,13 +327,23 @@ Need cleanup?
 | `shell_helper_missing` | 3 | `switch --cd` with no shell helper installed |
 | `partial_failure` | 4 | some items succeeded, some failed |
 | `git_failed` | 1 | an underlying git invocation failed |
+| `topic_unknown` | 1 | `--topic <id>` is not recorded; `details.known` lists valid ids |
+| `topic_conflict` | 1 | that worktree already belongs to another topic |
+| `topic_not_closeable` | 1 | a child is open or unmerged; `details.blocked_by` names every reason |
+| `state_version_unsupported` | 2 | `.hydra/state.yaml` was written by a newer hydra |
+| `branch_provider_failed` | 1 | a configured `branch_provider` failed or timed out |
+| `project_exists` | 1 | that project name is already registered |
+| `unknown_command` | 1 | no such subcommand; `details.did_you_mean` lists real ones |
+| `usage` | 2 | a bad flag value, or flags that exclude each other |
+| `busy` | 6 | a git or state lock was held — **the only retryable code** |
+| `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names it |
 | `internal` | 1 | anything unclassified |
 
 In JSON mode, branch on `error.code` — never on message text.
 
 ## See Also
 
-- [Configuration](../configuration.md) — `.hydra/config.yaml` schema v2
+- [Configuration](../configuration.md) — `.hydra/config.yaml` schema v3 (v2 loads and upgrades on write)
 - [skills/hydra/SKILL.md](../../skills/hydra/SKILL.md) — Agent contract
 - [Worktree Management](./worktree-management.md) — `add` / `remove` details
 - [Project Bootstrap](./project-bootstrap.md) — `new` / `init` / `repo add` / `repo add --adopt`

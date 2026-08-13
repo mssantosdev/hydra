@@ -151,7 +151,7 @@ Complete documentation is in [`docs/`](docs/):
   - [Worktree Management](docs/commands/worktree-management.md) — `add`, `remove`
   - [Topics and execution](docs/commands/topics-and-execution.md) — topics, `start`, `run`, and `apply`
   - [Project Bootstrap](docs/commands/project-bootstrap.md) — `new`, `init`, `repo add`, `repo add --adopt`
-- **[Configuration](docs/configuration.md)** — `.hydra/config.yaml` schema v2
+- **[Configuration](docs/configuration.md)** — `.hydra/config.yaml` schema v3 (v2 loads and upgrades on write)
 - **[CHANGELOG.md](CHANGELOG.md)** — release notes, including breaking changes and how to migrate
 
 For AI agents and automation, use the embedded skill contract:
@@ -295,7 +295,8 @@ Two commands are value emitters rather than reporters, and are exempt from the
   pass `--output json` explicitly to get the envelope with group, repo, and branch.
 - `hydra skill` writes `SKILL.md` verbatim, so `hydra skill > SKILL.md` is never mangled.
 
-Global flags also include `--project <name>`, `--config <path>`, `--verbose`, `--yes`, and `--no-hooks`.
+Global flags also include `--project <name>`, `--config <path>`, `--verbose`, and `--no-hooks`.
+`--yes` is NOT global: it is defined per command (`remove`, `sync`, `topic`, `repo remove`, `init-shell`).
 
 ### Success envelope
 
@@ -313,7 +314,7 @@ On success, stdout contains:
 
 ### Error envelope
 
-On failure, stderr contains:
+On failure, **stdout** carries the same single envelope:
 
 ```json
 {"schema":3,"command":"add","outcome":"failure","error":{"code":"worktree_name_conflict","retryable":false,"message":"…","details":{}}}
@@ -353,6 +354,9 @@ would create a second place that could disagree.
 | `busy` | 6 | a git or state lock was held — **the only retryable code** |
 | `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names the flag |
 | `usage` | 2 | a bad flag value, or flags that exclude each other |
+| `topic_not_closeable` | 1 | a child topic is open or unmerged; `details.blocked_by` names every reason |
+| `project_exists` | 1 | that project name is already registered (the opposite of `project_unknown`) |
+| `unknown_command` | 1 | no such subcommand; `details.did_you_mean`/`available` list real ones |
 | `internal` | 1 | anything unclassified |
 
 ### Agent onboarding
