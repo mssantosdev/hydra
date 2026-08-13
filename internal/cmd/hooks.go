@@ -151,7 +151,7 @@ type hooksRunPayload struct {
 func runHooksRun(cmd *cobra.Command, args []string) error {
 	event := args[0]
 	if _, ok := cfg.HooksFor(event); !ok {
-		return output.Errorf(output.CodeInternal, "unknown hook event: %s", event)
+		return output.Errorf(output.CodeUsage, "unknown hook event: %s", event)
 	}
 
 	wt, cwd, err := resolveHooksWorktree(event)

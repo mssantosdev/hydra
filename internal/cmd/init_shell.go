@@ -61,7 +61,7 @@ func init() {
 
 func runInitShell(cmd *cobra.Command, args []string) error {
 	if withCompletion && withoutCompletion {
-		return output.Errorf(output.CodeInternal,
+		return output.Errorf(output.CodeUsage,
 			"--with-completion and --without-completion are mutually exclusive")
 	}
 
@@ -70,7 +70,7 @@ func runInitShell(cmd *cobra.Command, args []string) error {
 		shell = args[0]
 	}
 	if shell != "bash" && shell != "zsh" && shell != "fish" {
-		return output.Errorf(output.CodeInternal,
+		return output.Errorf(output.CodeUsage,
 			"unsupported shell: %s (supported: bash, zsh, fish)", shell)
 	}
 
@@ -370,7 +370,7 @@ func renderCompletionScript(shell string) (string, error) {
 			return "", err
 		}
 	default:
-		return "", output.Errorf(output.CodeInternal, "unsupported shell: %s", shell)
+		return "", output.Errorf(output.CodeUsage, "unsupported shell: %s", shell)
 	}
 	return buf.String(), nil
 }

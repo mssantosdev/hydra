@@ -83,7 +83,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 			`no hydra workspace found; run "hydra init" or pass --project <name>`)
 	}
 	if err := validatePathSegment("group", adoptGroup); err != nil {
-		return output.Errorf(output.CodeInternal, "%v", err)
+		return output.Errorf(output.CodeUsage, "%v", err)
 	}
 
 	checkoutPath, err := filepath.Abs(args[0])
@@ -91,7 +91,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 		return output.Wrap(output.CodeInternal, err, "failed to resolve checkout path")
 	}
 	if _, err := os.Stat(filepath.Join(checkoutPath, ".git")); err != nil {
-		return output.Errorf(output.CodeInternal, "%s is not a git checkout", checkoutPath)
+		return output.Errorf(output.CodeUsage, "%s is not a git checkout", checkoutPath)
 	}
 
 	remoteURL, err := git.GetRemoteURL(checkoutPath)
@@ -104,7 +104,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 		alias = filepath.Base(checkoutPath)
 	}
 	if err := validatePathSegment("alias", alias); err != nil {
-		return output.Errorf(output.CodeInternal, "%v", err)
+		return output.Errorf(output.CodeUsage, "%v", err)
 	}
 
 	branch := strings.TrimSpace(adoptBranch)

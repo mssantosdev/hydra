@@ -352,6 +352,7 @@ would create a second place that could disagree.
 | `branch_provider_failed` | 1 | a configured `branch_provider` failed or timed out |
 | `busy` | 6 | a git or state lock was held — **the only retryable code** |
 | `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names the flag |
+| `usage` | 2 | a bad flag value, or flags that exclude each other |
 | `internal` | 1 | anything unclassified |
 
 ### Agent onboarding

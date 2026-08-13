@@ -13,8 +13,8 @@ These hold for every command. Rely on them instead of probing.
 2. Branch on `error.code`, never on message wording. Codes are stable; messages are not.
 3. **Creation is convergent**: `add`, `start`, `apply`, `repo add`, `repo restore` twice is a no-op at exit 0, reported as `skipped`. Removing what is already gone is `worktree_unknown`/`topic_unknown`, never a silent success.
 4. Nothing is inferred from a branch name. Topic membership is recorded, never guessed.
-5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`one_of`; a WRONG one is
-   `internal` with the legal set in `details.valid`. Never blocks on a prompt when machine-readable.
+5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`one_of`; a WRONG or
+   contradictory one is `usage` (exit 2) with the legal set in `details.valid`. Never blocks on a prompt.
 6. A handle matching several worktrees is an error, never a silent first match.
 7. `hydra commands --output json` publishes the whole surface and the code→exit table. Human guide: https://mssantosdev.github.io/hydra/
 
@@ -108,7 +108,8 @@ Without a declaration only default branches are restored, and `apply -` replays 
 | `git_failed` | 1 | an underlying git invocation failed |
 | `project_exists` | 1 | that project name is already registered (the opposite of `project_unknown`) |
 | `unknown_command` | 1 | no such subcommand; `details.did_you_mean`/`available` list real ones |
-| `internal` | 1 | anything unclassified, including a bad flag value |
+| `usage` | 2 | a bad flag value, or flags that exclude each other |
+| `internal` | 1 | anything unclassified |
 
 ## Anti-patterns
 
@@ -116,5 +117,4 @@ Without a declaration only default branches are restored, and `apply -` replays 
 - Treating `upstream: null` as a failure; it is a branch with no upstream yet.
 - Retrying anything but `busy`, or retrying `needs_input` without adding the flag. Never delete after a failure: a `hook_failed` worktree was created correctly. Re-running `add` is safe but reports `skipped` and does NOT re-run the hook — fix the hook, then `hooks run post_add --worktree <name>`.
 - Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged. Ask first.
-- Passing `--force` to escape `worktree_dirty` without checking what is uncommitted.
 - Assuming `hydra run` gets a shell. It does not — pass `-- sh -c '…'` when you need one.

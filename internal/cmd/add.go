@@ -116,7 +116,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if dirName == "" {
 		dirName = worktreeDirName(repo, branch)
 	} else if err := validatePathSegment("--as", dirName); err != nil {
-		return output.Wrap(output.CodeInternal, err, "invalid --as value")
+		return output.Wrap(output.CodeUsage, err, "invalid --as value")
 	}
 
 	target := worktreePath(projectRoot, repo.Group, dirName)
@@ -226,12 +226,17 @@ func resolveAddTarget(args []string) (string, string, error) {
 	}
 
 	if !interactive() {
+		// On a terminal the two selects below ask for these; this is that prompt,
+		// replaced. repo_unknown/branch_unknown were wrong here: those mean a NAMED
+		// thing does not exist, and nothing was named.
 		if len(args) == 0 {
-			return "", "", output.Errorf(output.CodeRepoUnknown,
-				"a repo alias and a branch are required: hydra add <alias> <branch>")
+			return "", "", output.Errorf(output.CodeNeedsInput,
+				"a repo alias and a branch are required: hydra add <alias> <branch>").
+				WithDetail("missing", []string{"<alias>", "<branch>"})
 		}
-		return "", "", output.Errorf(output.CodeBranchUnknown,
-			"a branch is required: hydra add %s <branch>", args[0])
+		return "", "", output.Errorf(output.CodeNeedsInput,
+			"a branch is required: hydra add %s <branch>", args[0]).
+			WithDetail("missing", []string{"<branch>"})
 	}
 
 	alias := ""

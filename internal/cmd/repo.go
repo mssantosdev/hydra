@@ -120,7 +120,7 @@ func runRepoAdd(cmd *cobra.Command, args []string) error {
 	// Branch selection has no meaning for an existing checkout: it already has the
 	// branch it is on. Saying so beats silently dropping the flag.
 	if len(cloneBranches) > 0 || cloneAll {
-		return output.Errorf(output.CodeInternal,
+		return output.Errorf(output.CodeUsage,
 			"--branches and --all do not apply with --adopt; the checkout already has a branch").
 			WithDetail("path", source)
 	}

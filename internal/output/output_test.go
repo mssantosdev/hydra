@@ -273,7 +273,11 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		CodeTopicNotCloseable: 1,
 		CodeProjectExists:     1,
 		CodeUnknownCommand:    1,
-		CodeInternal:          1,
+		// usage is a malformed invocation: exit 2 like the other "fix your
+		// input, no state changed" codes, not needs_input's 7 - that one means
+		// a prompt was replaced, this one means the flags contradict.
+		CodeUsage:    2,
+		CodeInternal: 1,
 	}
 
 	got := ExitCodes()

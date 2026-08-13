@@ -60,7 +60,7 @@ func runCompletion(cmd *cobra.Command, args []string) error {
 			return output.Wrap(output.CodeInternal, err, "failed to generate fish completion")
 		}
 	default:
-		return output.Errorf(output.CodeInternal,
+		return output.Errorf(output.CodeUsage,
 			"unsupported shell: %s (supported: bash, zsh, fish)", args[0])
 	}
 

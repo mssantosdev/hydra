@@ -148,7 +148,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		// Validate before SetTheme, which assigns and saves without checking; reject unknown
 		// themes at the command so the config file never stores an invalid name.
 		if !themes.IsValid(value) {
-			return output.Errorf(output.CodeInternal, "unknown theme %q", value).
+			return output.Errorf(output.CodeUsage, "unknown theme %q", value).
 				WithDetail("theme", value).
 				WithDetail("valid", themes.GetNames())
 		}
@@ -160,7 +160,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 			return output.Wrap(output.CodeInternal, err, "failed to set the editor")
 		}
 	default:
-		return output.Errorf(output.CodeInternal, "unknown setting %q", key).
+		return output.Errorf(output.CodeUsage, "unknown setting %q", key).
 			WithDetail("key", key).
 			WithDetail("valid", []string{"theme", "editor"})
 	}

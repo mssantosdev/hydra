@@ -627,10 +627,8 @@ func buildInfoVersion() (version, commit, builtAt string) {
 // withUsageGuidance attaches the offending command's usage line and a pointer at its help
 // to cobra's argument and flag errors.
 //
-// These stay `internal`, which the contract documents as the unclassified catch-all
-// including a bad flag value — but `hydra path a b` reporting only
-// "accepts at most 1 arg(s), received 2" reads as hydra breaking rather than as the caller
-// mis-typing, and offers nothing to act on. The code is unchanged; the recovery is not.
+// These are `usage`: the caller mis-typed, nothing broke, and no state changed.
+// They reported `internal` for two releases, which read as hydra breaking.
 func withUsageGuidance(err error) error {
 	msg := err.Error()
 	usageish := strings.Contains(msg, "arg(s)") ||
@@ -648,7 +646,9 @@ func withUsageGuidance(err error) error {
 		name = executedCmd.CommandPath()
 		usage = executedCmd.UseLine()
 	}
-	wrapped := output.Wrap(output.CodeInternal, err, "%s", msg)
+	// Errorf, not Wrap: the wrapped error IS msg, and wrapping doubled the text
+	// ("unknown flag: --x: unknown flag: --x") in every envelope this built.
+	wrapped := output.Errorf(output.CodeUsage, "%s", msg)
 	if usage != "" {
 		wrapped = wrapped.WithDetail("usage", usage)
 	}

@@ -216,7 +216,8 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 		}
 		opts.URL = strings.TrimSpace(opts.URL)
 		if opts.URL == "" {
-			return nil, output.Errorf(output.CodeInternal, "a repository URL is required")
+			return nil, output.Errorf(output.CodeNeedsInput, "a repository URL is required").
+				WithDetail("missing", []string{"<url>"})
 		}
 	}
 
@@ -224,7 +225,7 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 		opts.Alias = aliasFromURL(opts.URL)
 	}
 	if err := validatePathSegment("alias", opts.Alias); err != nil {
-		return nil, output.Wrap(output.CodeInternal, err, "invalid alias")
+		return nil, output.Wrap(output.CodeUsage, err, "invalid alias")
 	}
 
 	if opts.Group == "" {
@@ -238,11 +239,12 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 		opts.Group = strings.TrimSpace(opts.Group)
 	}
 	if opts.Group == "" {
-		return nil, output.Errorf(output.CodeInternal,
-			"a group is required; pass --group <name>")
+		return nil, output.Errorf(output.CodeNeedsInput,
+			"a group is required; pass --group <name>").
+			WithDetail("missing", []string{"--group"})
 	}
 	if err := validatePathSegment("group", opts.Group); err != nil {
-		return nil, output.Wrap(output.CodeInternal, err, "invalid group")
+		return nil, output.Wrap(output.CodeUsage, err, "invalid group")
 	}
 
 	// An already-registered alias is not automatically an error: re-running a clone

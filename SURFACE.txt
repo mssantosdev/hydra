@@ -155,6 +155,7 @@ where
   topic_not_closeable          exit 1
   topic_unknown                exit 1
   unknown_command              exit 1
+  usage                        exit 2
   worktree_dirty               exit 5
   worktree_exists              exit 1
   worktree_name_conflict       exit 1

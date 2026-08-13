@@ -82,7 +82,7 @@ func runRepoRestore(cmd *cobra.Command, _ []string) error {
 		return errNotInProject()
 	}
 	if restoreJobs < 1 {
-		return output.Errorf(output.CodeInternal, "--jobs must be at least 1").
+		return output.Errorf(output.CodeUsage, "--jobs must be at least 1").
 			WithDetail("jobs", restoreJobs)
 	}
 

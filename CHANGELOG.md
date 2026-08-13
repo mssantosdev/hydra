@@ -28,6 +28,22 @@ is permanently bound to different content in the Go checksum database, so it can
   workspace and copied the file in. The source is now checked after following symlinks. A symlink
   that stays inside the workspace still works.
 
+### Added
+
+- **New error code `usage` (exit 2)** for a malformed invocation: a bad flag value, or flags that
+  exclude each other. These reported `internal` — the unclassified catch-all — so an agent could not
+  tell "fix your command line" from "hydra broke". Reclassified: unknown flags and wrong argument
+  counts (with the doubled message fixed: `unknown flag: --x: unknown flag: --x` is now printed
+  once), invalid `--filter` values (a `Known` item since 0.4.0), `--jobs` below 1, unknown
+  `config set` keys and themes, unsupported shells, `--with-completion` with `--without-completion`,
+  `--branches`/`--all` with `--adopt`, invalid `--as`/alias/group names, and `hooks run` with an
+  unknown event. `internal` no longer means "including a bad flag value" anywhere.
+- **Missing arguments name themselves.** `add` with no arguments said "a repo alias and a branch are
+  required" under `repo_unknown` — the code for a NAMED repo that does not exist, when nothing was
+  named. It is `needs_input` now (the code for a suppressed prompt: on a terminal, `add` asks), with
+  `details.missing` listing `<alias>`/`<branch>`; one argument gets the same for `<branch>`.
+  `clone`'s required URL and group follow.
+
 ### Changed
 
 - **An absolute `paths.bare_dir` or group `path:` no longer loads.** Both are documented as
@@ -42,6 +58,22 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Fixed
 
+- **A JSON caller learned less about a git failure than a human did.** Long-running git operations
+  (fetch, pull, stash) streamed stderr to the terminal and returned only `exit status N`, so the
+  envelope said `git fetch origin failed: exit status 128` while the terminal showed
+  `fatal: not a git repository`. git's own last `fatal:`/`error:` line now rides the error. And the
+  text is locale-stable: git invocations run under `LC_ALL=C`, so the same failure no longer reads
+  differently per machine — text, not contract; branch on `error.code`.
+- **`not_in_project` never said where it looked.** It now carries `details.searched_from` and
+  `details.looked_for`, and its `next[]` is argv (`hydra init`, `hydra project ls`) instead of
+  prose. A MALFORMED manifest no longer lands there at all — being told to run `hydra init`, which
+  refuses when a manifest exists, was advice pointing at a command that cannot work. It is
+  `config_invalid` now, carrying `details.path` and `details.line`: yaml.v3 has named the offending
+  line all along, and the group decoder's own errors say "got a list" rather than the enum's
+  "got 2".
+- **`repo remove` on a terminal asserted it "needs an explicit yes", then never asked.** The guard
+  refused only when nobody could be asked and fell through otherwise. It now confirms; the
+  non-interactive contract is unchanged (`needs_input`, exit 7, nothing unregistered).
 - **`post_topic_start` could never fire.** Its guard read `payload.Created`, and the only thing
   that populates that runs further down, so the count was always zero: an event hydra documents
   and `hooks ls` counts, that no manifest could trigger. It now fires once per topic — not once

@@ -95,17 +95,17 @@ func parseFilters(raw []string) (filters, error) {
 		case strings.HasPrefix(value, "branch:"):
 			glob := strings.TrimPrefix(value, "branch:")
 			if glob == "" {
-				return filters{}, output.Errorf(output.CodeInternal,
+				return filters{}, output.Errorf(output.CodeUsage,
 					"--filter branch: needs a pattern, for example branch:feat/*")
 			}
 			// Reject a malformed glob up front; path.Match would return false for every branch.
 			if _, err := path.Match(glob, ""); err != nil {
-				return filters{}, output.Errorf(output.CodeInternal,
+				return filters{}, output.Errorf(output.CodeUsage,
 					"invalid --filter branch pattern %q: %v", glob, err)
 			}
 			out.branches = append(out.branches, glob)
 		default:
-			return filters{}, output.Errorf(output.CodeInternal,
+			return filters{}, output.Errorf(output.CodeUsage,
 				"invalid --filter value %q (want %s)", value, filterValues).
 				WithDetail("filter", value).
 				WithDetail("valid", []string{"dirty", "behind", "branch:<glob>"})

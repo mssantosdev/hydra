@@ -121,7 +121,7 @@ func runPath(cmd *cobra.Command, args []string) error {
 	switch {
 	case pathTopic != "":
 		if len(args) > 0 {
-			return output.Errorf(output.CodeInternal,
+			return output.Errorf(output.CodeUsage,
 				"pass either a worktree or --topic, not both")
 		}
 		wt, err = resolveTopicPathTarget()

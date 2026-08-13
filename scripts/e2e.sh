@@ -173,6 +173,13 @@ check "unknown repo -> repo_unknown" \
   '{ "$HYDRA" add nosuchrepo main --output json 2>&1 || true; } | jq -e ".error.code==\"repo_unknown\"" >/dev/null'
 check "unknown project -> exit 2" \
   '"$HYDRA" --project nope list >/dev/null 2>&1; test $? -eq 2'
+check "bad --filter value -> usage, exit 2" \
+  '{ "$HYDRA" list --filter ahead --output json 2>&1 || true; } | jq -e ".error.code==\"usage\"" >/dev/null &&
+   { "$HYDRA" list --filter ahead --output json >/dev/null 2>&1; test $? -eq 2; }'
+check "unknown flag -> usage with argv guidance, message not doubled" \
+  '{ "$HYDRA" list --no-such-flag --output json 2>&1 || true; } | jq -e ".error.code==\"usage\" and (.next|length>0) and (.error.message|test(\"unknown flag.*unknown flag\")|not)" >/dev/null'
+check "add with no args -> needs_input naming both" \
+  '{ "$HYDRA" add --output json 2>&1 || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|length==2)" >/dev/null'
 check "local-only branch reports upstream null" \
   '"$HYDRA" add api feat/brand-new --output json >/dev/null &&
    "$HYDRA" list --output json | jq -e ".data.worktrees[]|select(.branch==\"feat/brand-new\")|.upstream==null" >/dev/null'
@@ -326,7 +333,7 @@ check "--filter dirty finds the dirtied worktree" \
 check "filters combine as an intersection, not a union" \
   '[ "$("$HYDRA" list --filter dirty --filter "branch:hotfix/*" --output json | jq "[.data.worktrees[]|select(.branch==\"feat/selector\")]|length")" = 0 ]'
 check "an invalid --filter value is refused" \
-  '{ "$HYDRA" list --filter nope --output json 2>/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+  '{ "$HYDRA" list --filter nope --output json 2>/dev/null || true; } | jq -e ".error.code==\"usage\"" >/dev/null'
 check "the invalid-filter error names the valid set" \
   '{ "$HYDRA" list --filter nope --output json 2>/dev/null || true; } | jq -e ".error.details.valid|index(\"dirty\")!=null" >/dev/null'
 # Ambiguity needs a branch name that exists in two repos. The fixture registers one,
@@ -371,7 +378,7 @@ YAML
 check "path --topic prints the single worktree path" \
   '[ "$("$HYDRA" path --topic solo)" = "$PWD/backend/api-feat-selector" ]'
 check "a handle and --topic together are refused" \
-  '{ "$HYDRA" path backend/api --topic solo --output json 2>/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+  '{ "$HYDRA" path backend/api --topic solo --output json 2>/dev/null || true; } | jq -e ".error.code==\"usage\"" >/dev/null'
 
 rm -f backend/api-feat-selector/scratch.txt
 "$HYDRA" remove api feat/selector --yes --output json >/dev/null
@@ -531,7 +538,7 @@ check "a local path clones by default, it is not adopted" \
   '"$HYDRA" repo add "$T/loose-checkout" --as cloned --group imported --branches main --output json >/dev/null 2>&1 &&
    test -d .bare/cloned.git'
 check "--adopt with --branches is refused rather than ignored" \
-  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --group imported --branches main --output json 2>/dev/null || true; } | jq -e ".error.code==\"internal\"" >/dev/null'
+  '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --group imported --branches main --output json 2>/dev/null || true; } | jq -e ".error.code==\"usage\"" >/dev/null'
 check "--adopt without a group asks for one" \
   '{ "$HYDRA" repo add "$T/loose-checkout" --adopt --output json 2>/dev/null || true; } | jq -e ".error.code==\"needs_input\" and (.error.details.missing|index(\"--group\")!=null)" >/dev/null'
 check "repo add with no argument asks for one" \

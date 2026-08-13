@@ -178,10 +178,10 @@ func resolveNewProjectOptions() (*newProjectOptions, error) {
 			WithDetail("missing", []string{"--project-path"})
 	}
 	if err := validatePathSegment("group", opts.Group); err != nil {
-		return nil, output.Errorf(output.CodeInternal, "%v", err)
+		return nil, output.Errorf(output.CodeUsage, "%v", err)
 	}
 	if err := validatePathSegment("alias", opts.Alias); err != nil {
-		return nil, output.Errorf(output.CodeInternal, "%v", err)
+		return nil, output.Errorf(output.CodeUsage, "%v", err)
 	}
 	if strings.TrimSpace(opts.InitialBranch) == "" {
 		return nil, output.Errorf(output.CodeNeedsInput, "a branch name is required").
