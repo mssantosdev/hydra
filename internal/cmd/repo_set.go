@@ -75,7 +75,7 @@ func unknownDeclaredRepo(alias string) *output.Error {
 
 func runRepoSet(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 	alias := strings.TrimSpace(args[0])
 

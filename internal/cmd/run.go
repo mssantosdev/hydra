@@ -123,7 +123,7 @@ type runJSON struct {
 
 func runRun(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	handle, command := splitRunArgs(cmd, args)

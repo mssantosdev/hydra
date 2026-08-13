@@ -112,7 +112,7 @@ func resolveTopicPathTarget() (worktreeContext, error) {
 
 func runPath(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	var wt worktreeContext

@@ -79,7 +79,7 @@ type restoreJSON struct {
 
 func runRepoRestore(cmd *cobra.Command, _ []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 	if restoreJobs < 1 {
 		return output.Errorf(output.CodeInternal, "--jobs must be at least 1").

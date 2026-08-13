@@ -132,7 +132,7 @@ type applyJSON struct {
 
 func runApply(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 	// "-" names stdin and a path names a file; ONE of them is required, enforced by ExactArgs
 	// rather than asserted in prose. A bare `hydra apply` would block on a terminal with nothing

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/testutil"
 )
 
@@ -73,4 +74,30 @@ func TestRootDefaultOutputShowsVersion(t *testing.T) {
 
 	testutil.Contains(t, out.String(), "Version:")
 	testutil.Contains(t, out.String(), "dev")
+}
+
+// "no hydra project loaded" with no details cannot be acted on: a caller cannot tell
+// a wrong working directory from a workspace that was never created.
+func TestNotInProjectSaysWhereItLooked(t *testing.T) {
+	resetCommandState(t)
+
+	err := errNotInProject()
+	if err.Code != output.CodeNotInProject {
+		t.Fatalf("code = %q, want %q", err.Code, output.CodeNotInProject)
+	}
+	for _, key := range []string{"searched_from", "looked_for"} {
+		if _, ok := err.Details[key]; !ok {
+			t.Errorf("details is missing %q: %v", key, err.Details)
+		}
+	}
+	if len(err.Next) == 0 {
+		t.Fatal("no recovery hint; a caller that must know to ask has no affordance")
+	}
+	// `hydra init` REFUSES when a manifest already exists, so advising it for a
+	// malformed or unreachable workspace sends the caller to a command that cannot work.
+	for _, n := range err.Next {
+		if len(n.Argv) > 1 && n.Argv[1] == "init" {
+			t.Errorf("hint advises %v, which refuses when a manifest exists", n.Argv)
+		}
+	}
 }

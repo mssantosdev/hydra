@@ -4,7 +4,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func writeConfig(t *testing.T, dir, body string) string {
@@ -207,4 +210,50 @@ func writeManifest(t *testing.T, root, body string) string {
 		t.Fatalf("write config: %v", err)
 	}
 	return path
+}
+
+// yaml.v3 puts the offending line in its message text. hydra had that number at every
+// "invalid manifest" error and discarded it, so the parser's real output is the fixture
+// here rather than a hand-written string that could drift from what yaml actually emits.
+func TestMalformedManifestCarriesTheLine(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want int
+	}{
+		{
+			name: "syntax error names its line",
+			body: "version: \"3\"\nproject: p\ngroups\n  backend: {}\n",
+			want: 3,
+		},
+		{
+			name: "type error names the field's line",
+			body: "version: \"3\"\nproject: p\ngroups:\n  backend: [not, a, mapping]\n",
+			want: 4,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg Config
+			parseErr := yaml.Unmarshal([]byte(tt.body), &cfg)
+			if parseErr == nil {
+				t.Fatalf("body was expected to fail parsing:\n%s", tt.body)
+			}
+			e := &ErrMalformed{Path: "/ws/.hydra/config.yaml", Err: parseErr}
+			if got := e.Line(); got != tt.want {
+				t.Errorf("Line() = %d, want %d (yaml said %q)", got, tt.want, parseErr)
+			}
+			if !strings.Contains(e.Error(), "/ws/.hydra/config.yaml") {
+				t.Errorf("Error() omits the path: %s", e.Error())
+			}
+		})
+	}
+}
+
+// A manifest that parses must not be reported as malformed.
+func TestMalformedLineIsZeroWhenTheParserNamedNone(t *testing.T) {
+	e := &ErrMalformed{Path: "p", Err: errors.New("something with no line in it")}
+	if got := e.Line(); got != 0 {
+		t.Errorf("Line() = %d, want 0", got)
+	}
 }

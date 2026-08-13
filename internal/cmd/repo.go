@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
@@ -103,7 +104,7 @@ func init() {
 // target different directories, so the caller states which one with --adopt.
 func runRepoAdd(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 	if len(args) == 0 {
 		return output.Errorf(output.CodeNeedsInput,
@@ -158,7 +159,7 @@ type repoListJSON struct {
 
 func runRepoList(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	payload := repoListJSON{}
@@ -218,7 +219,7 @@ type repoRemoveJSON struct {
 // response says what was kept so that is unambiguous.
 func runRepoRemove(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 	if len(args) == 0 {
 		return output.Errorf(output.CodeNeedsInput, "a repository alias is required").
@@ -247,6 +248,18 @@ func runRepoRemove(cmd *cobra.Command, args []string) error {
 				WithDetail("missing", []string{"--yes"}).
 				WithDetail("repo", alias).
 				WithDetail("worktrees", len(worktrees))
+		}
+		// A terminal used to fall straight through here: the branch above refused
+		// only when nobody could be asked, so the interactive case asserted that an
+		// explicit yes was needed and then never asked for one.
+		confirm := false
+		title := fmt.Sprintf("Unregister %s? %d worktree(s) stay on disk",
+			alias, len(worktrees))
+		if err := huh.NewConfirm().Title(title).Value(&confirm).Run(); err != nil {
+			return output.Wrap(output.CodeInternal, err, "cancelled")
+		}
+		if !confirm {
+			return output.Errorf(output.CodeInternal, "cancelled")
 		}
 	}
 

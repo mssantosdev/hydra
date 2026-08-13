@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -131,7 +133,10 @@ func isRepoSet(repos map[string]Repo) bool {
 
 func (g *Group) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("group must be a mapping, got %v", value.Kind)
+		// The node knows its own line and kind; both go in the message, because this
+		// error surfaces verbatim and "got 2" names nothing a reader can act on.
+		return fmt.Errorf("line %d: group must be a mapping, got %s",
+			value.Line, kindName(value.Kind))
 	}
 	// The key set decides which shape to TRY first; the DECODE decides whether it was right, and a
 	// decode that succeeds is not proof: yaml ignores unknown sub-keys, so a version-2 group whose
@@ -165,11 +170,30 @@ func (g *Group) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	if modernErr != nil {
-		return fmt.Errorf("group is neither a set of repositories nor a group with a "+
-			"`repos:` key (as %q it reports: %w)", "group", modernErr)
+		return fmt.Errorf("line %d: group is neither a set of repositories nor a group with a "+
+			"`repos:` key (as %q it reports: %w)", value.Line, "group", modernErr)
 	}
-	return fmt.Errorf("group must map repository aliases to repositories, or carry a `repos:` "+
-		"key: %w", legacyErr)
+	return fmt.Errorf("line %d: group must map repository aliases to repositories, or carry a "+
+		"`repos:` key: %w", value.Line, legacyErr)
+}
+
+// kindName renders a yaml node kind for an error message; the enum's numeric value
+// is meaningless to a manifest author.
+func kindName(k yaml.Kind) string {
+	switch k {
+	case yaml.DocumentNode:
+		return "a document"
+	case yaml.SequenceNode:
+		return "a list"
+	case yaml.MappingNode:
+		return "a mapping"
+	case yaml.ScalarNode:
+		return "a scalar value"
+	case yaml.AliasNode:
+		return "an alias"
+	default:
+		return fmt.Sprintf("kind %d", k)
+	}
 }
 
 // Repo describes a repository registered under a group. The map key that points
@@ -811,6 +835,43 @@ func sortedGroupNames(c *Config) []string {
 	return names
 }
 
+// ErrMalformed is a manifest that EXISTS and cannot be parsed.
+//
+// It is distinct from "no manifest found" because the two need opposite advice: the
+// caller of a missing manifest should run `hydra init`, and telling that to someone
+// whose manifest is corrupt sends them to a command that refuses.
+type ErrMalformed struct {
+	Path string
+	Err  error
+}
+
+func (e *ErrMalformed) Error() string {
+	return fmt.Sprintf("failed to parse config %s: %v", e.Path, e.Err)
+}
+
+func (e *ErrMalformed) Unwrap() error { return e.Err }
+
+// Line reports the manifest line the parser objected to, or 0 when it named none.
+// yaml.v3 carries a line on every node and puts it in its message text; hydra has
+// had that number in hand at every "invalid manifest" error and discarded it.
+//
+// Both yaml.v3 shapes are covered: the syntax form `yaml: line 3: ...` and the
+// TypeError form, whose per-field errors follow a header on later lines. The first
+// line named wins, because that is the one to open the file to.
+func (e *ErrMalformed) Line() int {
+	match := yamlLinePattern.FindStringSubmatch(e.Err.Error())
+	if match == nil {
+		return 0
+	}
+	n, convErr := strconv.Atoi(match[1])
+	if convErr != nil {
+		return 0
+	}
+	return n
+}
+
+var yamlLinePattern = regexp.MustCompile(`line (\d+)`)
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // reading the config path the caller asked for is the whole function
 	if err != nil {
@@ -819,7 +880,7 @@ func Load(path string) (*Config, error) {
 
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config %s: %w", path, err)
+		return nil, &ErrMalformed{Path: path, Err: err}
 	}
 
 	// A version-2 manifest LOADS. Its only difference is that a group maps straight to its

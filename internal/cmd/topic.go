@@ -161,7 +161,7 @@ type topicListJSON struct {
 
 func runTopicList(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	topics, err := topicStore().List()
@@ -193,7 +193,7 @@ func runTopicList(cmd *cobra.Command, args []string) error {
 
 func runTopicShow(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	t, err := requireTopicRecorded(strings.TrimSpace(args[0]))
@@ -307,7 +307,7 @@ type topicMembershipJSON struct {
 
 func runTopicAttach(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	id := strings.TrimSpace(args[0])
@@ -343,7 +343,7 @@ func runTopicAttach(cmd *cobra.Command, args []string) error {
 
 func runTopicDetach(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	t, err := requireTopicRecorded(strings.TrimSpace(args[0]))
@@ -432,7 +432,7 @@ type topicRemoveJSON struct {
 
 func runTopicRemove(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 
 	// 1. Resolve the topic. An unknown id is topic_unknown with the known ids, never

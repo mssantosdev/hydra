@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -107,6 +108,26 @@ const annotationRegistryFanout = "hydra/registry-fanout"
 // projectLoadErr holds why the active project failed to resolve, for the commands that REPORT
 // resolution rather than requiring it.
 var projectLoadErr error
+
+// errNotInProject is the single not_in_project error.
+//
+// "no hydra project loaded" on its own cannot be acted on: it does not say where the
+// search started, so a caller cannot tell a wrong working directory from a workspace
+// that was never created. It also used to advise `hydra init`, which REFUSES when a
+// manifest already exists — advice pointing at a command that cannot work is worse
+// than none, so the hint is `project ls`, which always answers.
+func errNotInProject() *output.Error {
+	err := output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+	if wd, wdErr := os.Getwd(); wdErr == nil {
+		err = err.WithDetail("searched_from", wd)
+	}
+	return err.
+		WithDetail("looked_for", filepath.Join(config.StateDir, config.ManifestName)).
+		WithNext(output.Next{
+			Argv: []string{"hydra", "project", "ls", "--output", "json"},
+			Why:  "list registered workspaces and their paths",
+		})
+}
 
 // reportsProjectResolution names the commands that DESCRIBE the active project rather than
 // requiring one: they attempt the load, tolerate absence, and must still honour --project and
@@ -218,8 +239,27 @@ func classifyConfigError(err error) error {
 			WithDetail("field", unsafe.Field).
 			WithDetail("value", unsafe.Value)
 	}
+	// A manifest that exists and cannot be parsed is not "no workspace here" either.
+	// It used to land on not_in_project, whose advice is `hydra init` — a command that
+	// refuses when a manifest exists, so the caller was sent somewhere that cannot help.
+	var malformed *config.ErrMalformed
+	if errors.As(err, &malformed) {
+		invalid := output.Errorf(output.CodeConfigInvalid, "%s", malformed.Error()).
+			WithDetail("path", malformed.Path)
+		if line := malformed.Line(); line > 0 {
+			invalid = invalid.WithDetail("line", line)
+		}
+		return invalid
+	}
 	return output.Errorf(output.CodeNotInProject,
-		"%v\n\nRun \"hydra init\" to create a workspace, or pass --project <name>.", err)
+		"%v", err).
+		WithNext(output.Next{
+			Argv: []string{"hydra", "init"},
+			Why:  "create a workspace in the current directory",
+		}, output.Next{
+			Argv: []string{"hydra", "project", "ls", "--output", "json"},
+			Why:  "list workspaces already registered, to pass --project instead",
+		})
 }
 
 // absDir resolves the workspace root that owns a manifest. See config.ProjectRoot:

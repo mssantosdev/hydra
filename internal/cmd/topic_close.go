@@ -78,7 +78,7 @@ type topicCloseJSON struct {
 
 func runTopicClose(cmd *cobra.Command, args []string) error {
 	if cfg == nil || projectRoot == "" {
-		return output.Errorf(output.CodeNotInProject, "no hydra project loaded")
+		return errNotInProject()
 	}
 	id := strings.TrimSpace(args[0])
 	store := topicStore()
