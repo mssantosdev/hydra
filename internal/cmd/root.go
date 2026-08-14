@@ -256,8 +256,16 @@ func classifyConfigError(err error) error {
 		}
 		return invalid
 	}
-	return output.Errorf(output.CodeNotInProject,
-		"%v", err).
+	// The SAME details as errNotInProject. One code with two different `details` shapes is a
+	// contract a caller cannot rely on, and this is the common path — "you are not in a
+	// workspace" — so it was the one carrying nothing but prose. The directory is named in the
+	// message either way; a caller should not have to parse it out of a sentence.
+	notInProject := output.Errorf(output.CodeNotInProject, "%v", err)
+	if wd, wdErr := os.Getwd(); wdErr == nil {
+		notInProject = notInProject.WithDetail("searched_from", wd)
+	}
+	return notInProject.
+		WithDetail("looked_for", filepath.Join(config.StateDir, config.ManifestName)).
 		WithNext(output.Next{
 			Argv: []string{"hydra", "init"},
 			Why:  "create a workspace in the current directory",
