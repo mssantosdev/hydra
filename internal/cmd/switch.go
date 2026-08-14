@@ -108,7 +108,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		if target := os.Getenv("HYDRA_SWITCH_OUTPUT_FILE"); target != "" {
 			//nolint:gosec // G306: the switch target file is read back by the shell helper
 			if err := os.WriteFile(target, []byte(wt.Path+"\n"), 0644); err != nil {
-				return output.Wrap(output.CodeInternal, err, "failed to write the switch target file")
+				return output.Wrap(output.CodeIOFailed, err, "failed to write the switch target file")
 			}
 		} else if !jsonMode() {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", switchMarker, wt.Path)
@@ -167,7 +167,7 @@ func resolveSwitchTarget(args []string) (worktreeContext, error) {
 	}
 	selected := items[0].Qualified()
 	if err := huh.NewSelect[string]().Title("Switch to").Options(options...).Value(&selected).Run(); err != nil {
-		return worktreeContext{}, output.Wrap(output.CodeInternal, err, "cancelled")
+		return worktreeContext{}, output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
 	// The picker yields a Qualified() name, which is unique by construction, so this
 	// cannot be ambiguous — it goes through the same resolver anyway so there is one

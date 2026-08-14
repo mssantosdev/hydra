@@ -160,7 +160,7 @@ func (i applyItem) dirNameFor(repo repoContext) (string, error) {
 		return worktreeDirName(repo, i.Branch), nil
 	}
 	if err := validatePathSegment("name", i.Name); err != nil {
-		return "", output.Wrap(output.CodeInternal, err, "invalid worktree name in document")
+		return "", output.Wrap(output.CodeUsage, err, "invalid worktree name in document")
 	}
 	return i.Name, nil
 }
@@ -457,7 +457,7 @@ func readApplyEnvelope(data []byte, from string, limits applyLimits) ([]applyIte
 // split the error table draws between `details.valid` and `details.missing`. Only empty and
 // unreadable input are `needs_input`, which is what apply's EXIT CODES block promises.
 func invalidApplyInput(err error, from string) error {
-	return output.Wrap(output.CodeInternal, err,
+	return output.Wrap(output.CodeUsage, err,
 		"%s is not valid JSON in the shape \"hydra list --output json\" emits", from)
 }
 
@@ -471,7 +471,7 @@ func validateApplyItems(items []applyItem) ([]applyItem, []*output.Diagnostic, e
 		item.Branch = strings.TrimSpace(item.Branch)
 		switch {
 		case item.Repo == "":
-			return nil, nil, output.Errorf(output.CodeInternal,
+			return nil, nil, output.Errorf(output.CodeUsage,
 				"item %d has no repo", i).WithDetail("index", i)
 		case item.Branch == "":
 			// A detached worktree has no branch, so `list` can legitimately emit one.

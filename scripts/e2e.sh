@@ -640,8 +640,11 @@ check "--dirty skip leaves it alone and exits 0" \
 check "--dirty stash pulls and restores the change" \
   '"$HYDRA" sync api --yes --dirty stash --output json 2>/dev/null | jq -e ".data.summary.pulled==1" >/dev/null &&
    test -f backend/api/dirty-file.txt'
-check "an invalid --dirty value is refused" \
-  '"$HYDRA" sync api --yes --dirty nope --output json >/dev/null 2>&1; [ "$?" = 1 ]'
+# A bad flag value is `usage` (exit 2), not a generic failure: an agent must be able to tell
+# "fix your command line" from "hydra broke".
+check "an invalid --dirty value is usage, exit 2" \
+  '{ "$HYDRA" sync api --yes --dirty nope --output json 2>&1 || true; } | jq -e ".error.code==\"usage\"" >/dev/null &&
+   { "$HYDRA" sync api --yes --dirty nope --output json >/dev/null 2>&1; [ "$?" = 2 ]; }'
 rm -f backend/api/dirty-file.txt
 
 # config was read-only without a TTY: an agent could see settings but never write them.

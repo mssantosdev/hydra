@@ -323,8 +323,9 @@ func runTopicAttach(cmd *cobra.Command, args []string) error {
 	}
 	if wt.Branch == "" {
 		// Membership is keyed by branch, so a detached HEAD has nothing to record.
-		return output.Errorf(output.CodeInternal,
-			"%s is detached; membership is recorded per branch", wt.Qualified()).
+		return output.Errorf(output.CodeUsage,
+			"%s is detached; membership is recorded per branch, so name a worktree that has one",
+			wt.Qualified()).
 			WithDetail("worktree", wt.Qualified())
 	}
 
@@ -645,10 +646,10 @@ func confirmTopicRemoval(described topicJSON) error {
 	confirm := false
 	title := fmt.Sprintf("%s %d member(s) of topic %s?", verb, len(described.Members), described.ID)
 	if err := huh.NewConfirm().Title(title).Value(&confirm).Run(); err != nil {
-		return output.Wrap(output.CodeInternal, err, "cancelled")
+		return output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
 	if !confirm {
-		return output.Errorf(output.CodeInternal, "cancelled")
+		return output.Errorf(output.CodeCancelled, "cancelled")
 	}
 	return nil
 }

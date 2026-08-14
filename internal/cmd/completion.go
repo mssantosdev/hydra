@@ -66,7 +66,7 @@ func runCompletion(cmd *cobra.Command, args []string) error {
 
 	_, err := cmd.OutOrStdout().Write(buf.Bytes())
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to write completion script")
+		return output.Wrap(output.CodeIOFailed, err, "failed to write completion script")
 	}
 	return nil
 }

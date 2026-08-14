@@ -266,7 +266,7 @@ func TestApply_EmptyAndInvalidStdin(t *testing.T) {
 	}{
 		{name: "empty", doc: "", code: output.CodeNeedsInput},
 		{name: "whitespace", doc: "   \n ", code: output.CodeNeedsInput},
-		{name: "not json", doc: "not json at all", code: output.CodeInternal},
+		{name: "not json", doc: "not json at all", code: output.CodeUsage},
 		{name: "empty array", doc: "[]", code: output.CodeNeedsInput},
 	}
 

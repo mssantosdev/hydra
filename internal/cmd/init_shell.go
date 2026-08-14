@@ -147,13 +147,13 @@ func promptInstallCompletion(cmd *cobra.Command, shell string) bool {
 
 func writeShellHelperFiles(shell, helperPath, completionPath string, installCompletion bool) error {
 	if err := os.MkdirAll(filepath.Dir(helperPath), 0o750); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to create shell asset directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to create shell asset directory")
 	}
 
 	helperContent := renderShellHelper(shell, completionPath)
 	//nolint:gosec // G306: a shell helper script must be readable by the shell
 	if err := os.WriteFile(helperPath, []byte(helperContent), 0o644); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to write shell helper")
+		return output.Wrap(output.CodeIOFailed, err, "failed to write shell helper")
 	}
 
 	if installCompletion {
@@ -163,7 +163,7 @@ func writeShellHelperFiles(shell, helperPath, completionPath string, installComp
 		}
 		//nolint:gosec // G306: a shell helper script must be readable by the shell
 		if err := os.WriteFile(completionPath, []byte(completionScript), 0o644); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to write completion script")
+			return output.Wrap(output.CodeIOFailed, err, "failed to write completion script")
 		}
 	} else {
 		_ = os.Remove(completionPath)
@@ -208,7 +208,7 @@ func renderInitShellSummary(cmd *cobra.Command, shell, helperPath, completionPat
 func shellAssetPaths(shell string) (string, string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", "", output.Wrap(output.CodeInternal, err, "failed to resolve home directory")
+		return "", "", output.Wrap(output.CodeIOFailed, err, "failed to resolve home directory")
 	}
 	shellDir := filepath.Join(home, ".config", "hydra", "shell")
 	helperName := fmt.Sprintf("hydra-shell.%s", shell)
@@ -220,7 +220,7 @@ func writeLoaderBlock(shell, helperPath string) error {
 	configFile := getShellConfigFile(shell)
 	existing, err := readShellConfig(configFile)
 	if err != nil && !os.IsNotExist(err) {
-		return output.Wrap(output.CodeInternal, err, "failed to read %s", configFile)
+		return output.Wrap(output.CodeIOFailed, err, "failed to read %s", configFile)
 	}
 
 	loader := renderLoaderBlock(shell, helperPath)

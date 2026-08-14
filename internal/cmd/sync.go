@@ -148,7 +148,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	wd, err := os.Getwd()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to resolve the working directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to resolve the working directory")
 	}
 	var targetAlias string
 	if len(args) > 0 {
@@ -561,7 +561,7 @@ func parseDirtyPolicy(value string) (string, error) {
 			return policy, nil
 		}
 	}
-	return "", output.Errorf(output.CodeInternal,
+	return "", output.Errorf(output.CodeUsage,
 		"invalid --dirty value %q (want %s)", value, strings.Join(dirtyPolicies, ", ")).
 		WithDetail("dirty", value).
 		WithDetail("valid", dirtyPolicies)

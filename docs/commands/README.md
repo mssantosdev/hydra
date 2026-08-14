@@ -338,7 +338,9 @@ Need cleanup?
 | `manifest_untrusted` | 2 | the manifest can execute and is unapproved; run `hydra trust` |
 | `busy` | 6 | a git or state lock was held — **the only retryable code** |
 | `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names it |
-| `internal` | 1 | anything unclassified |
+| `io_failed` | 1 | the machine got in the way: a path hydra cannot create, write or read |
+| `cancelled` | 130 | you stopped a prompt; nothing ran and nothing changed |
+| `internal` | 1 | a broken hydra invariant — report it |
 
 In JSON mode, branch on `error.code` — never on message text.
 

@@ -13,8 +13,7 @@ These hold for every command. Rely on them instead of probing.
 2. Branch on `error.code`, never on message wording. Codes are stable; messages are not.
 3. **Creation is convergent**: `add`, `start`, `apply`, `repo add`, `repo restore` twice is a no-op at exit 0, reported as `skipped`. Removing what is already gone is `worktree_unknown`/`topic_unknown`, never a silent success.
 4. Nothing is inferred from a branch name. Topic membership is recorded, never guessed.
-5. A missing value is `needs_input` (exit 7) naming it in `details.missing`/`one_of`; a WRONG or
-   contradictory one is `usage` (exit 2) with the legal set in `details.valid`. Never blocks on a prompt.
+5. Never blocks on a prompt: a missing value is `needs_input`, a wrong one `usage`, an aborted one `cancelled`.
 6. A handle matching several worktrees is an error, never a silent first match.
 7. `hydra commands --output json` publishes the whole surface and the code→exit table. Human guide: https://mssantosdev.github.io/hydra/
 
@@ -40,8 +39,7 @@ on. No `exit` field: the process status carries it.
 `start --topic <id> --repos a,b` (records the topic); a captured set → `list -o json | … | apply -`.
 
 **Which worktrees does it act on?** A bare handle (`api-stage`, `backend/api-stage`) → exactly one;
-`--topic <id>` → members; `--repos`/`--group`/`--all` → those repos; `--filter dirty|behind|branch:<glob>`
-narrows further. Combine freely; they intersect. Aliases: `ls`, `rm`, `view`, `cd`.
+`--topic <id>` → members; `--repos`/`--group`/`--all` → those repos; `--filter dirty|behind|branch:<glob>` narrows further. Combine freely; they intersect. Aliases: `ls`, `rm`, `view`, `cd`.
 
 **Rebuilding a workspace elsewhere?** `repo restore` creates the `branches:` a manifest declares
 (additive, `--jobs N`); `repo set <alias> --branches a,b` declares them later; without a declaration only
@@ -85,36 +83,38 @@ default branches are restored. `apply -` replays a captured set. `sync` needs `-
 | code | exit | raised when |
 |---|---|---|
 | `not_in_project` | 2 | no `.hydra/config.yaml` walking up, no `--project` |
-| `config_invalid` | 2 | a manifest value hydra refuses; `details.line` points at it |
+| `config_invalid` | 2 | a manifest value hydra refuses; see `details.line` |
 | `config_version_unsupported` | 2 | `version` is not `"3"` or `"2"` (v2 upgrades on write) |
 | `state_version_unsupported` | 2 | `state.yaml` written by a newer hydra |
 | `project_unknown` | 2 | `--project` names nothing in the registry |
-| `usage` | 2 | bad flag value or exclusive flags; fix argv, `details.valid` lists legal values |
-| `manifest_untrusted` | 2 | the manifest can execute and is unapproved; `hydra hooks ls`, then `hydra trust` |
+| `usage` | 2 | bad flag value, bad input document, or exclusive flags; see `details.valid` |
+| `manifest_untrusted` | 2 | the manifest can execute, unapproved; `hooks ls` then `trust` |
 | `repo_unknown` | 1 | alias or group not registered; see `details.known` |
 | `bare_missing` | 1 | `.bare/<alias>.git` is gone; run `doctor` |
 | `branch_unknown` | 1 | a base ref or branch name does not resolve |
 | `worktree_exists` | 1 | that branch already has a worktree |
 | `worktree_unknown` | 1 | no worktree by that name |
-| `worktree_name_conflict` | 1 | a name matches no single worktree |
+| `worktree_name_conflict` | 1 | a name matches no one worktree |
 | `topic_unknown` | 1 | id not recorded; `details.known` lists valid ids |
 | `topic_conflict` | 1 | that worktree already belongs to another topic |
 | `topic_not_closeable` | 1 | a child is open or unmerged; see `details.blocked_by` |
 | `branch_provider_failed` | 1 | the `branch_provider` script failed or timed out |
 | `hook_failed` | 1 | a non-`optional` hook failed; the worktree IS created — fix it, then `hooks run <event>` |
-| `git_failed` | 1 | an underlying git invocation failed; `cause` carries git's words |
+| `git_failed` | 1 | a git invocation failed; `cause` has git's words |
 | `project_exists` | 1 | that project name is already registered |
 | `unknown_command` | 1 | no such subcommand; see `details.did_you_mean` |
-| `internal` | 1 | unclassified: a hydra bug, not your input |
+| `io_failed` | 1 | the machine: a path hydra cannot create, write or read |
+| `cancelled` | 130 | you stopped a prompt; nothing changed |
+| `internal` | 1 | a broken hydra invariant — report it |
 | `shell_helper_missing` | 3 | `switch --cd` with no shell helper |
 | `partial_failure` | 4 | some succeeded, some failed — read `data` AND `error` |
-| `worktree_dirty` | 5 | uncommitted changes block a destructive op; commit or `--force`, never blindly |
+| `worktree_dirty` | 5 | uncommitted changes block a destructive op; commit or `--force` |
 | `busy` | 6 | a lock was held — retry with backoff, the ONLY retryable code |
-| `needs_input` | 7 | a value is missing; add the flag in `details.missing`/`one_of`, never prompt |
+| `needs_input` | 7 | a value is missing; add the flag in `details.missing`, never prompt |
 
 ## Anti-patterns
 
 - Rebuilding `<group>/<repo>-<branch>` instead of reading `data[].path` — `--as` may have overridden it. Treating `upstream: null` as a failure; it is a branch with no upstream yet.
-- Deleting after a failure. Re-running `add` is safe and reports `skipped`, but does NOT re-run the hook.
+- Deleting after a failure. Re-running `add` is safe, reports `skipped`, and does NOT re-run the hook.
 - Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged. Ask first.
 - Assuming `hydra run` gets a shell. It does not — pass `-- sh -c '…'` when you need one.

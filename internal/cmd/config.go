@@ -119,7 +119,7 @@ func completeConfigSetArgs(_ *cobra.Command, args []string, _ string) ([]string,
 func runConfigShow(cmd *cobra.Command, args []string) error {
 	cfg, err := global.Load()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to load global config")
+		return output.Wrap(output.CodeIOFailed, err, "failed to load global config")
 	}
 	return emitGlobalConfig(cmd, cfg, false, true)
 }
@@ -140,7 +140,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	cfg, err := global.Load()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to load global config")
+		return output.Wrap(output.CodeIOFailed, err, "failed to load global config")
 	}
 
 	switch key {
@@ -153,11 +153,11 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 				WithDetail("valid", themes.GetNames())
 		}
 		if err := cfg.SetTheme(value); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to set the theme")
+			return output.Wrap(output.CodeIOFailed, err, "failed to set the theme")
 		}
 	case "editor":
 		if err := cfg.SetEditor(value); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to set the editor")
+			return output.Wrap(output.CodeIOFailed, err, "failed to set the editor")
 		}
 	default:
 		return output.Errorf(output.CodeUsage, "unknown setting %q", key).
@@ -248,7 +248,7 @@ type manifestPayload struct {
 func runConfig(cmd *cobra.Command, args []string) error {
 	cfg, err := global.Load()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to load global config")
+		return output.Wrap(output.CodeIOFailed, err, "failed to load global config")
 	}
 
 	if !interactive() {
@@ -294,7 +294,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	)
 
 	if err := form.Run(); err != nil {
-		return output.Errorf(output.CodeInternal, "configuration cancelled")
+		return output.Errorf(output.CodeCancelled, "configuration cancelled")
 	}
 
 	hasChanges := false
@@ -315,7 +315,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 
 	if hasChanges {
 		if err := cfg.Save(); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to save global config")
+			return output.Wrap(output.CodeIOFailed, err, "failed to save global config")
 		}
 	}
 

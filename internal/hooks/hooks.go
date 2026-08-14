@@ -178,7 +178,7 @@ func Run(hs []config.ResolvedHook, ctx Context, cwd string, w io.Writer) (Result
 }
 
 func hookConfigError(hook config.ResolvedHook, ctx Context, cause error, message string) *output.Error {
-	return withHookName(hook, output.Wrap(output.CodeInternal, cause, "%s", message).
+	return withHookName(hook, output.Wrap(output.CodeConfigInvalid, cause, "%s", message).
 		WithDetail("event", ctx.Event).
 		WithDetail("path", hook.Path))
 }

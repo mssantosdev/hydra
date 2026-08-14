@@ -374,7 +374,9 @@ would create a second place that could disagree.
 | `topic_not_closeable` | 1 | a child topic is open or unmerged; `details.blocked_by` names every reason |
 | `project_exists` | 1 | that project name is already registered (the opposite of `project_unknown`) |
 | `unknown_command` | 1 | no such subcommand; `details.did_you_mean`/`available` list real ones |
-| `internal` | 1 | anything unclassified |
+| `io_failed` | 1 | the machine got in the way: a path hydra cannot create, write or read |
+| `cancelled` | 130 | you stopped a prompt; nothing ran and nothing changed |
+| `internal` | 1 | a broken hydra invariant — report it |
 
 ### Manifest trust
 

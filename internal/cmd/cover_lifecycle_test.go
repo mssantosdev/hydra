@@ -665,8 +665,8 @@ func TestLifecycleProject_AddListRmExistsAndUnknown(t *testing.T) {
 	if err == nil {
 		t.Fatal("duplicate project name must fail")
 	}
-	if code := output.Classify(err).Code; code != output.CodeInternal {
-		t.Fatalf("duplicate add code=%s, want internal", code)
+	if code := output.Classify(err).Code; code != output.CodeProjectExists {
+		t.Fatalf("duplicate add code=%s, want project_exists", code)
 	}
 
 	_, err = lifecycleExec(t, "project", "rm", "missing")

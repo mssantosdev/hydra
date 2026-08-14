@@ -137,17 +137,17 @@ func runClone(cmd *cobra.Command, args []string) error {
 	if err := loadProject(); err != nil {
 		wd, wdErr := os.Getwd()
 		if wdErr != nil {
-			return output.Wrap(output.CodeInternal, wdErr, "failed to resolve the working directory")
+			return output.Wrap(output.CodeIOFailed, wdErr, "failed to resolve the working directory")
 		}
 		created, configPath, newCfg, createErr := createProjectRootAt(wd, filepath.Base(wd))
 		if createErr != nil {
-			return output.Wrap(output.CodeInternal, createErr, "failed to create a workspace for the clone")
+			return output.Wrap(output.CodeIOFailed, createErr, "failed to create a workspace for the clone")
 		}
 		cfg = newCfg
 		projectRoot = created
 		projectConfigPath = configPath
 		if err := registry.Register(cfg.Project, projectRoot); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to register project %q", cfg.Project)
+			return output.Wrap(output.CodeIOFailed, err, "failed to register project %q", cfg.Project)
 		}
 	}
 
@@ -217,7 +217,7 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 				WithDetail("missing", []string{"<url|path>"})
 		}
 		if err := huh.NewInput().Title("Repository URL").Value(&opts.URL).Run(); err != nil {
-			return nil, output.Wrap(output.CodeInternal, err, "cancelled")
+			return nil, output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
 		opts.URL = strings.TrimSpace(opts.URL)
 		if opts.URL == "" {
@@ -238,7 +238,7 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 			if err := huh.NewInput().Title("Group").
 				Description("Directory the worktrees live in (e.g. backend)").
 				Value(&opts.Group).Run(); err != nil {
-				return nil, output.Wrap(output.CodeInternal, err, "cancelled")
+				return nil, output.Wrap(output.CodeCancelled, err, "cancelled")
 			}
 		}
 		opts.Group = strings.TrimSpace(opts.Group)
@@ -282,7 +282,7 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 	var warnings []*output.Diagnostic
 
 	if err := os.MkdirAll(filepath.Dir(result.BarePath), 0750); err != nil {
-		return result, nil, output.Wrap(output.CodeInternal, err, "failed to create the bare directory")
+		return result, nil, output.Wrap(output.CodeIOFailed, err, "failed to create the bare directory")
 	}
 
 	// Register the repo BEFORE any network work so an interrupted clone still leaves a
@@ -612,7 +612,7 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 			Value(&selected),
 	))
 	if err := form.Run(); err != nil {
-		return nil, nil, output.Wrap(output.CodeInternal, err, "cancelled")
+		return nil, nil, output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
 	if len(selected) == 0 {
 		return nil, nil, output.Errorf(output.CodeBranchUnknown, "no branches selected")
@@ -659,5 +659,5 @@ func classifyManifestErr(err error) error {
 	if errors.As(err, &busy) {
 		return output.Wrap(output.CodeBusy, err, "%s", busy.Error())
 	}
-	return output.Wrap(output.CodeInternal, err, "failed to save config")
+	return output.Wrap(output.CodeIOFailed, err, "failed to save config")
 }

@@ -115,7 +115,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if err := os.Remove(dir); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to remove empty group %s", group)
+			return output.Wrap(output.CodeIOFailed, err, "failed to remove empty group %s", group)
 		}
 	}
 
@@ -131,11 +131,11 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	} else {
 		reg, err := registry.Load()
 		if err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to load project registry")
+			return output.Wrap(output.CodeIOFailed, err, "failed to load project registry")
 		}
 		result.PrunedProjects = reg.Prune()
 		if err := reg.Save(); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to save project registry")
+			return output.Wrap(output.CodeIOFailed, err, "failed to save project registry")
 		}
 		// A trust entry whose workspace is gone is the same class of dead record, so it is
 		// dropped by the verb that already exists for staleness rather than by a new one.

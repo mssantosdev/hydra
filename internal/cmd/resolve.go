@@ -188,7 +188,7 @@ func resolveTargets(s Session, sel Selector, tracking bool) ([]resolvedWorktree,
 		if sel.Topic != "" {
 			return nil, warnings, repoFailures, indexErr
 		}
-		warnings = append(warnings, output.Warnf(output.CodeInternal, "topic state unreadable: %v", indexErr).
+		warnings = append(warnings, output.Warnf(output.CodeIOFailed, "topic state unreadable: %v", indexErr).
 			WithCause(indexErr.Error()))
 	}
 

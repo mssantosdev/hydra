@@ -173,7 +173,7 @@ func loadProject() error {
 	if projectFlag != "" {
 		reg, err := registry.Load()
 		if err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to read the project registry")
+			return output.Wrap(output.CodeIOFailed, err, "failed to read the project registry")
 		}
 		root, ok := reg.Resolve(projectFlag)
 		if !ok {
@@ -198,7 +198,7 @@ func loadProject() error {
 
 	wd, err := os.Getwd()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to resolve the working directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to resolve the working directory")
 	}
 
 	path, loaded, err := config.FindConfig(wd)
@@ -483,7 +483,7 @@ func projectTargets(all bool) ([]projectTarget, []*output.Diagnostic, error) {
 
 	reg, err := registry.Load()
 	if err != nil {
-		return nil, nil, output.Wrap(output.CodeInternal, err, "failed to read the project registry")
+		return nil, nil, output.Wrap(output.CodeIOFailed, err, "failed to read the project registry")
 	}
 
 	var targets []projectTarget
@@ -492,7 +492,8 @@ func projectTargets(all bool) ([]projectTarget, []*output.Diagnostic, error) {
 		root, _ := reg.Resolve(name)
 		loaded, loadErr := config.Load(config.ManifestPath(root))
 		if loadErr != nil {
-			warnings = append(warnings, output.Warnf(output.CodeInternal, "%s (%s): %v", name, root, loadErr).
+			warnings = append(warnings, output.Warnf(output.Classify(classifyConfigError(loadErr)).Code,
+				"%s (%s): %v", name, root, loadErr).
 				WithSubject("project", name))
 			continue
 		}
@@ -578,7 +579,7 @@ func classifyTopicErr(err error) error {
 			WithDetail("path", topic.LockPath(projectRoot))
 	}
 
-	return output.Wrap(output.CodeInternal, err, "failed to read or update topic state")
+	return output.Wrap(output.CodeIOFailed, err, "failed to read or update topic state")
 }
 
 // versionInfo renders the version string.

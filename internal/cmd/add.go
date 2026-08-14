@@ -256,7 +256,7 @@ func resolveAddTarget(args []string) (string, string, error) {
 		}
 		alias = repos[0].Alias
 		if err := huh.NewSelect[string]().Title("Repo").Options(options...).Value(&alias).Run(); err != nil {
-			return "", "", output.Wrap(output.CodeInternal, err, "cancelled")
+			return "", "", output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
 	}
 
@@ -282,13 +282,13 @@ func resolveAddTarget(args []string) (string, string, error) {
 
 	branch := defaultBranch
 	if err := huh.NewSelect[string]().Title("Branch").Options(options...).Value(&branch).Run(); err != nil {
-		return "", "", output.Wrap(output.CodeInternal, err, "cancelled")
+		return "", "", output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
 
 	if branch == newBranchSentinel {
 		branch = ""
 		if err := huh.NewInput().Title("New branch name").Value(&branch).Run(); err != nil {
-			return "", "", output.Wrap(output.CodeInternal, err, "cancelled")
+			return "", "", output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
 		branch = strings.TrimSpace(branch)
 		if branch == "" {

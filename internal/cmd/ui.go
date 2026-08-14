@@ -139,14 +139,14 @@ func runStatusBoard(cmd *cobra.Command, targets []projectTarget, sel Selector, a
 		tea.WithOutput(os.Stderr), // the register is chrome; stdout stays the answer
 	).Run()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "the browser failed")
+		return output.Wrap(output.CodeIOFailed, err, "the browser failed")
 	}
 
 	// stdout carries only the selection. Quitting prints nothing and still exits 0:
 	// choosing not to choose is not a failure.
 	if sel, ok := browser.Chosen(final); ok {
 		if _, err := fmt.Fprintln(cmd.OutOrStdout(), sel.Path); err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to write the selected path")
+			return output.Wrap(output.CodeIOFailed, err, "failed to write the selected path")
 		}
 	}
 	return nil

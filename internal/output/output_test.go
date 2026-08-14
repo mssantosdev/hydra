@@ -280,7 +280,13 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		CodeUsage: 2,
 		// manifest_untrusted joins the "a human must look at something" exits.
 		CodeManifestUntrusted: 2,
-		CodeInternal:          1,
+		// io_failed is the machine in the way, not hydra being wrong: same exit as any other
+		// terminal failure, but a name the operator can act on.
+		CodeIOFailed: 1,
+		// cancelled follows the shell convention of 128+SIGINT, which is what a script already
+		// reads as "interrupted" without being taught hydra's map.
+		CodeCancelled: 130,
+		CodeInternal:  1,
 	}
 
 	got := ExitCodes()

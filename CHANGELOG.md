@@ -81,6 +81,25 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Added
 
+- **`internal` is no longer the catch-all: 107 sites became 7.** It meant "unclassified", which told a
+  caller nothing while covering three unrelated situations. Two new codes split it by what the reader
+  must DO:
+
+  `io_failed` (exit 1) is the machine getting in the way — a directory that cannot be created, a file
+  that cannot be written, a home directory that will not resolve. The operator fixes it outside hydra.
+  57 sites.
+
+  `cancelled` (exit **130**) is the caller stopping a prompt. Nothing ran and nothing changed, so
+  reporting it as a hydra fault was simply wrong. 130 follows the shell convention of 128+SIGINT,
+  which a script already reads as "interrupted" without being taught hydra's map. 15 sites.
+
+  The rest went to codes that already existed and fit better: a bad `--dirty` or `--output` value and a
+  malformed `apply` document are `usage`; a hook with an unparseable timeout is `config_invalid`; a
+  topic member on a detached worktree is `usage`, since the fix is to name a different worktree. What
+  remains under `internal` is seven genuine broken invariants — a project loaded with no configuration,
+  a worktree that was created but not registered, an unknown hook event past its own guard — each worth
+  reporting as a bug.
+
 - **`make gate-test` enforces a coverage floor.** `COVERAGE_MIN` defaults to 80.0 and the gate fails
   below it, so the figure cannot erode one untested branch at a time. Raise it when the real number
   clears the next step; lowering it to make a change pass defeats the point.
@@ -154,6 +173,11 @@ is permanently bound to different content in the Go checksum database, so it can
   per-repository number derivable.
 
 ### Fixed
+
+- **`hydra project add` reported a taken name as a write failure.** `registry.Add` fails for exactly
+  one reason — the name points at a different root — so the answer is to choose another name, not to
+  look at the disk. It is `project_exists` now, with `next[]` offering `project ls`. The same confusion
+  in the opposite direction was fixed once already in `73635b1`.
 
 - **`doctor` could not see a topic member naming an unregistered repository.** The guard that exists
   to tolerate a transient `git worktree list` failure also skipped members whose repo the manifest

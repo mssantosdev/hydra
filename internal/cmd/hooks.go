@@ -225,7 +225,7 @@ func resolveHooksWorktree(event string) (worktreeContext, string, error) {
 	} else {
 		wd, err := os.Getwd()
 		if err != nil {
-			return worktreeContext{}, "", output.Wrap(output.CodeInternal, err, "failed to get current directory")
+			return worktreeContext{}, "", output.Wrap(output.CodeIOFailed, err, "failed to get current directory")
 		}
 		ctx := resolveCurrentHydraContext(wd, cfg, projectRoot)
 		if ctx == nil {

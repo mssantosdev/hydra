@@ -93,7 +93,7 @@ func init() {
 func runNew(cmd *cobra.Command, args []string) error {
 	wd, err := os.Getwd()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to get working directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to get working directory")
 	}
 
 	opts, err := resolveNewProjectOptions()
@@ -103,11 +103,11 @@ func runNew(cmd *cobra.Command, args []string) error {
 
 	projectRoot, configPath, cfg, err := createProjectRoot(wd, opts.ProjectPath)
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to create project")
+		return output.Wrap(output.CodeIOFailed, err, "failed to create project")
 	}
 
 	if err := registry.Register(cfg.Project, projectRoot); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to register project %q", cfg.Project)
+		return output.Wrap(output.CodeIOFailed, err, "failed to register project %q", cfg.Project)
 	}
 
 	if opts.Mode == "remote" {
@@ -311,7 +311,7 @@ func promptForRemoteRepoOptions(opts *newProjectOptions) error {
 func bootstrapLocalProject(projectRoot, configPath string, cfg *config.Config, opts *newProjectOptions) error {
 	barePath := cfg.BarePath(projectRoot, opts.Alias)
 	if err := os.MkdirAll(filepath.Dir(barePath), 0750); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to create bare directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to create bare directory")
 	}
 
 	// A project with no remote gets a bare repo with NO origin at all. Seeding it
@@ -335,7 +335,7 @@ func bootstrapLocalProject(projectRoot, configPath string, cfg *config.Config, o
 
 	cfg.SetRepo(opts.Group, opts.Alias, config.Repo{DefaultBranch: opts.InitialBranch})
 	if err := cfg.Save(configPath); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to save config")
+		return output.Wrap(output.CodeIOFailed, err, "failed to save config")
 	}
 
 	hctx := hooksContextFor(repo, opts.InitialBranch, targetPath)

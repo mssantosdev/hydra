@@ -257,16 +257,16 @@ func runRepoRemove(cmd *cobra.Command, args []string) error {
 		title := fmt.Sprintf("Unregister %s? %d worktree(s) stay on disk",
 			alias, len(worktrees))
 		if err := huh.NewConfirm().Title(title).Value(&confirm).Run(); err != nil {
-			return output.Wrap(output.CodeInternal, err, "cancelled")
+			return output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
 		if !confirm {
-			return output.Errorf(output.CodeInternal, "cancelled")
+			return output.Errorf(output.CodeCancelled, "cancelled")
 		}
 	}
 
 	cfg.RemoveRepo(ref.Group, alias)
 	if err := cfg.Save(projectConfigPath); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to save the manifest")
+		return output.Wrap(output.CodeIOFailed, err, "failed to save the manifest")
 	}
 
 	payload := repoRemoveJSON{

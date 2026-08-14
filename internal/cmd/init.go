@@ -81,7 +81,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if target == "" {
 		wd, err := os.Getwd()
 		if err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to resolve the working directory")
+			return output.Wrap(output.CodeIOFailed, err, "failed to resolve the working directory")
 		}
 		target = wd
 	}
@@ -95,7 +95,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if errors.As(err, &coded) {
 			return coded
 		}
-		return output.Wrap(output.CodeInternal, err, "failed to initialize the workspace")
+		return output.Wrap(output.CodeIOFailed, err, "failed to initialize the workspace")
 	}
 
 	if err := registry.Register(created.Project, root); err != nil {
@@ -105,7 +105,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// not created. Only the file this call wrote is removed, never the directory, which
 		// may have held something of the caller's.
 		if removeErr := os.Remove(configPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			return output.Wrap(output.CodeInternal, err,
+			return output.Wrap(output.CodeIOFailed, err,
 				"failed to register project %q, and %s was left behind: %v",
 				created.Project, configPath, removeErr)
 		}

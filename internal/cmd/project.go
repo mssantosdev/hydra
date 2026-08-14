@@ -88,7 +88,7 @@ type projectLsPayload struct {
 func runProjectLs(cmd *cobra.Command, args []string) error {
 	reg, err := registry.Load()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to load project registry")
+		return output.Wrap(output.CodeIOFailed, err, "failed to load project registry")
 	}
 
 	var pruned []string
@@ -96,7 +96,7 @@ func runProjectLs(cmd *cobra.Command, args []string) error {
 		pruned = reg.Prune()
 		if len(pruned) > 0 {
 			if err := reg.Save(); err != nil {
-				return output.Wrap(output.CodeInternal, err, "failed to save project registry")
+				return output.Wrap(output.CodeIOFailed, err, "failed to save project registry")
 			}
 		}
 	}
@@ -153,14 +153,14 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	} else {
 		wd, err := os.Getwd()
 		if err != nil {
-			return output.Wrap(output.CodeInternal, err, "failed to get current directory")
+			return output.Wrap(output.CodeIOFailed, err, "failed to get current directory")
 		}
 		root = wd
 	}
 
 	root, err := filepath.Abs(root)
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to resolve workspace path")
+		return output.Wrap(output.CodeIOFailed, err, "failed to resolve workspace path")
 	}
 
 	if _, err := verifyWorkspaceRoot(root); err != nil {
@@ -169,14 +169,24 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 
 	reg, err := registry.Load()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to load project registry")
+		return output.Wrap(output.CodeIOFailed, err, "failed to load project registry")
 	}
 
 	if err := reg.Add(name, root); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to register project")
+		// reg.Add fails for exactly one reason: the name is taken by a DIFFERENT root. That is
+		// project_exists, not a write problem — reporting it as one sent the caller to look at
+		// their disk when the answer is to choose another name. `73635b1` fixed this same
+		// confusion once before, in the opposite direction.
+		return output.Wrap(output.CodeProjectExists, err,
+			"project %q is already registered", name).
+			WithDetail("project", name).
+			WithNext(output.Next{
+				Argv: []string{"hydra", "project", "ls", "--output", "json"},
+				Why:  "see which names are taken and where they point",
+			})
 	}
 	if err := reg.Save(); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to save project registry")
+		return output.Wrap(output.CodeIOFailed, err, "failed to save project registry")
 	}
 
 	payload := map[string]any{
@@ -193,7 +203,7 @@ func runProjectRm(cmd *cobra.Command, args []string) error {
 
 	reg, err := registry.Load()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to load project registry")
+		return output.Wrap(output.CodeIOFailed, err, "failed to load project registry")
 	}
 
 	if _, ok := reg.Resolve(name); !ok {
@@ -201,10 +211,10 @@ func runProjectRm(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := reg.Remove(name); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to remove project")
+		return output.Wrap(output.CodeIOFailed, err, "failed to remove project")
 	}
 	if err := reg.Save(); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to save project registry")
+		return output.Wrap(output.CodeIOFailed, err, "failed to save project registry")
 	}
 
 	payload := map[string]any{"name": name, "removed": true}
@@ -220,7 +230,7 @@ func verifyWorkspaceRoot(root string) (*config.Config, error) {
 			return nil, output.Errorf(output.CodeNotInProject,
 				"no .hydra/config.yaml found at %s", root)
 		}
-		return nil, output.Wrap(output.CodeInternal, err, "failed to stat workspace config")
+		return nil, output.Wrap(output.CodeIOFailed, err, "failed to stat workspace config")
 	}
 
 	loaded, err := config.Load(configPath)
@@ -229,7 +239,7 @@ func verifyWorkspaceRoot(root string) (*config.Config, error) {
 		if errors.As(err, &unsupported) {
 			return nil, output.Wrap(output.CodeConfigVersionUnsupported, unsupported, "%s", unsupported.Error())
 		}
-		return nil, output.Wrap(output.CodeInternal, err, "failed to load workspace config")
+		return nil, output.Wrap(output.CodeIOFailed, err, "failed to load workspace config")
 	}
 	return loaded, nil
 }

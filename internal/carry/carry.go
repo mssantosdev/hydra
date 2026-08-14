@@ -73,7 +73,7 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []*output.Diagnost
 	root, err := os.OpenRoot(plan.WorktreePath)
 	if err != nil {
 		return nil, []*output.Diagnostic{
-			output.Warnf(output.CodeInternal, "carry: cannot open %s", plan.WorktreePath).
+			output.Warnf(output.CodeIOFailed, "carry: cannot open %s", plan.WorktreePath).
 				WithSubject("worktree", plan.WorktreePath).
 				WithCause(err.Error()),
 		}
@@ -122,7 +122,7 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []*output.Diagnost
 			res.Disposition = Missing
 			res.Reason = err.Error()
 			results = append(results, res)
-			warnings = append(warnings, output.Warnf(output.CodeInternal, "carry %s: %v", res.Dest, err).
+			warnings = append(warnings, output.Warnf(output.CodeIOFailed, "carry %s: %v", res.Dest, err).
 				WithSubject("worktree", filepath.Base(plan.WorktreePath)).
 				WithCause(err.Error()))
 			continue

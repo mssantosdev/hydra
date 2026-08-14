@@ -88,7 +88,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 
 	checkoutPath, err := filepath.Abs(args[0])
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to resolve checkout path")
+		return output.Wrap(output.CodeIOFailed, err, "failed to resolve checkout path")
 	}
 	if _, err := os.Stat(filepath.Join(checkoutPath, ".git")); err != nil {
 		return output.Errorf(output.CodeUsage, "%s is not a git checkout", checkoutPath)
@@ -117,7 +117,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 
 	barePath := cfg.BarePath(projectRoot, alias)
 	if err := os.MkdirAll(filepath.Dir(barePath), 0o750); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to create bare directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to create bare directory")
 	}
 	if err := git.InitBareWithRemote(barePath, remoteURL); err != nil {
 		return output.Wrap(output.CodeGitFailed, err, "failed to initialize bare repository")
@@ -136,7 +136,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 	repo := repoContextFor(cfg, projectRoot, config.RepoRef{Group: adoptGroup, Alias: alias, Repo: cfg.Groups[adoptGroup].Repos[alias]})
 	candidates, err := collectAdoptCandidates(checkoutPath, remoteURL, branch)
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to scan sibling checkouts")
+		return output.Wrap(output.CodeIOFailed, err, "failed to scan sibling checkouts")
 	}
 
 	var worktrees []worktreeJSON

@@ -131,7 +131,7 @@ func runPath(cmd *cobra.Command, args []string) error {
 	case len(args) == 0:
 		wd, wdErr := os.Getwd()
 		if wdErr != nil {
-			return output.Wrap(output.CodeInternal, wdErr, "failed to resolve the working directory")
+			return output.Wrap(output.CodeIOFailed, wdErr, "failed to resolve the working directory")
 		}
 		current := resolveCurrentHydraContext(wd, cfg, projectRoot)
 		if current == nil {

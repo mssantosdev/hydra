@@ -668,7 +668,7 @@ func createWorktreeOnly(cfg *config.Config, repo repoContext, targetPath, branch
 	}
 
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0750); err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to create group directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to create group directory")
 	}
 
 	switch kind {

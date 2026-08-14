@@ -265,7 +265,7 @@ func classifyTrustErr(err error) error {
 			WithDetail("path", unsafe.Path).
 			WithDetail("reason", unsafe.Reason)
 	}
-	return output.Wrap(output.CodeInternal, err, "failed to read the trust store")
+	return output.Wrap(output.CodeIOFailed, err, "failed to read the trust store")
 }
 
 func firstNonEmptyString(values ...string) string {

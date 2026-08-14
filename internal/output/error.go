@@ -62,7 +62,19 @@ const (
 	// positional arguments, or flags that exclude each other. It is NOT internal -
 	// nothing broke - and it is not needs_input, which means "a prompt would have
 	// asked for this". Fix the command line and rerun; no state changed.
-	CodeUsage    = "usage"
+	CodeUsage = "usage"
+	// CodeIOFailed is the machine getting in the way: a directory that cannot be created, a
+	// file that cannot be written, a home directory that will not resolve. Distinct from
+	// internal because the two need different responses — this one is a full disk or a
+	// permission, which the operator fixes outside hydra, where `internal` means hydra itself
+	// is wrong and wants reporting.
+	CodeIOFailed = "io_failed"
+	// CodeCancelled is the caller stopping a prompt. Exit 130, following the shell convention
+	// of 128+SIGINT, because that is what a script already understands as "interrupted". It is
+	// not a failure of anything and not retryable: nothing went wrong and nothing changed.
+	CodeCancelled = "cancelled"
+	// CodeInternal is hydra being wrong. Everything with a better name has one, so what
+	// remains here is a broken invariant worth reporting as a bug.
 	CodeInternal = "internal"
 )
 
@@ -73,6 +85,8 @@ var exitCodes = map[string]int{
 	CodeConfigInvalid:            2,
 	CodeProjectUnknown:           2,
 	CodeUsage:                    2,
+	CodeIOFailed:                 1,
+	CodeCancelled:                130,
 	CodeManifestUntrusted:        2,
 	CodeRepoUnknown:              1,
 	CodeBareMissing:              1,

@@ -49,7 +49,7 @@ type whereJSON struct {
 func runWhere(cmd *cobra.Command, _ []string) error {
 	wd, err := os.Getwd()
 	if err != nil {
-		return output.Wrap(output.CodeInternal, err, "failed to resolve the working directory")
+		return output.Wrap(output.CodeIOFailed, err, "failed to resolve the working directory")
 	}
 	payload := whereJSON{Cwd: wd}
 

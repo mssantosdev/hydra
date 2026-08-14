@@ -144,11 +144,13 @@ where
   branch_provider_failed       exit 1
   branch_unknown               exit 1
   busy                         exit 6  retryable
+  cancelled                    exit 130
   config_invalid               exit 2
   config_version_unsupported   exit 2
   git_failed                   exit 1
   hook_failed                  exit 1
   internal                     exit 1
+  io_failed                    exit 1
   manifest_untrusted           exit 2
   needs_input                  exit 7
   not_in_project               exit 2

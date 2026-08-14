@@ -58,7 +58,7 @@ func Resolve(flag string) (Mode, error) {
 	case "json":
 		return ModeJSON, nil
 	}
-	return ModeAuto, Errorf(CodeInternal, "invalid --output value %q (want auto, text, or json)", flag)
+	return ModeAuto, Errorf(CodeUsage, "invalid --output value %q (want auto, text, or json)", flag)
 }
 
 // Effective collapses ModeAuto against the real terminal state of out.
