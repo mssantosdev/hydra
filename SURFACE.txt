@@ -136,7 +136,6 @@ trust
   --accept                           string
   --revoke                           bool
   --show                             bool
-ui (tui)
 where
 
 ## Error codes

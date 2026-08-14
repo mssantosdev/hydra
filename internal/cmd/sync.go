@@ -458,12 +458,12 @@ func applyForceDirty(selected []syncEntry) {
 }
 
 func selectWorktreesToSync(worktrees []syncEntry) []syncEntry {
-	fmt.Println()
-	fmt.Println(styles.Title.Render("Worktrees with Available Updates"))
-	fmt.Println()
+	// The header belongs on the same stream as the prompt it introduces. It used to go to stdout
+	// while the form drew on stderr, so redirecting either one split a single question in half.
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7"))
-	fmt.Printf("  %s  %-15s %-15s %-8s %-12s\n", headerStyle.Render("Select"), headerStyle.Render("Repository"), headerStyle.Render("Branch"), headerStyle.Render("Behind"), headerStyle.Render("Status"))
-	fmt.Println(strings.Repeat("-", 70))
+	promptf("\n%s\n\n", styles.Title.Render("Worktrees with Available Updates"))
+	promptf("  %s  %-15s %-15s %-8s %-12s\n", headerStyle.Render("Select"), headerStyle.Render("Repository"), headerStyle.Render("Branch"), headerStyle.Render("Behind"), headerStyle.Render("Status"))
+	promptf("%s\n", strings.Repeat("-", 70))
 	var defaultSelected []string
 	for _, wt := range worktrees {
 		if !wt.dirty {
@@ -482,7 +482,7 @@ func selectWorktreesToSync(worktrees []syncEntry) []syncEntry {
 	}
 	selected := defaultSelected
 	form := huh.NewForm(huh.NewGroup(huh.NewMultiSelect[string]().Title("Select worktrees to update").Description("Clean worktrees are pre-selected. Dirty worktrees require special handling.").Options(options...).Value(&selected)))
-	if err := form.Run(); err != nil {
+	if err := runForm(form); err != nil {
 		return nil
 	}
 	selectedMap := make(map[string]bool, len(selected))
@@ -543,7 +543,7 @@ func handleDirtyWorktrees(worktrees []syncEntry) ([]syncEntry, error) {
 			huh.NewOption("Discard all changes (reset --hard)", "reset"),
 			huh.NewOption("Skip this worktree", "skip"),
 		).Value(&action)))
-		if err := form.Run(); err != nil {
+		if err := runForm(form); err != nil {
 			// A cancelled prompt means "not this one", which is the safe reading.
 			item := wt
 			item.selected = false

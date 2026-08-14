@@ -293,7 +293,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		),
 	)
 
-	if err := form.Run(); err != nil {
+	if err := runForm(form); err != nil {
 		return output.Errorf(output.CodeCancelled, "configuration cancelled")
 	}
 

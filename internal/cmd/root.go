@@ -374,7 +374,7 @@ func init() {
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.SetHelpTemplate(`{{with .Long}}{{.}}{{else}}{{.Short}}{{end}}
 
-Version: {{.Version}}
+Version: {{.Root.Version}}
 
 Usage:
   {{.UseLine}}
@@ -409,9 +409,12 @@ func jsonMode() bool {
 }
 
 // interactive reports whether prompts may be shown.
-func interactive() bool {
-	return output.Interactive(outMode)
-}
+//
+// It goes through promptPolicy so a test can reach the branches behind a confirm or a select.
+// output.Interactive requires real terminals on stdin AND stdout, which no test has, so every
+// path that asks a question — including the one deciding what happens when you answer "no" —
+// was unreachable and therefore unverified.
+func interactive() bool { return promptPolicy() }
 
 // explicitJSON reports whether JSON was actually asked for, rather than inferred
 // from stdout not being a terminal.

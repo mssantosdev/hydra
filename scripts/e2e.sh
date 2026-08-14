@@ -971,11 +971,12 @@ check "auto output with no tty is JSON, not needs_input" \
   'jq -e ".schema==3" "$T/st2.json" >/dev/null'
 check "auto output with no tty exits 0" '[ "'"$st2_exit"'" = "0" ]'
 
-# `ui` is a hidden alias: an alias must behave exactly like its target, so it pipes too.
+# The board has exactly one name. `hydra ui` was a second one that did nothing its target
+# did not already do, so an agent reading the surface had to learn two spellings of one thing.
 { "$HYDRA" ui --output json >"$T/ui.json" 2>/dev/null; } && ui_exit=0 || ui_exit=$?
-check "ui pipes the same envelope as status" \
-  'jq -e ".outcome==\"success\"" "$T/ui.json" >/dev/null'
-check "ui piped exits 0 like its target" '[ "'"$ui_exit"'" = "0" ]'
+check "the retired ui alias is gone" \
+  'jq -e ".error.code==\"unknown_command\"" "$T/ui.json" >/dev/null'
+check "the retired alias exits 1, not as a crash" '[ "'"$ui_exit"'" = "1" ]'
 
 echo
 # ------------------------------------------------ topic hierarchy

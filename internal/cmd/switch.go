@@ -165,8 +165,8 @@ func resolveSwitchTarget(args []string) (worktreeContext, error) {
 		options = append(options, huh.NewOption(
 			fmt.Sprintf("%s (%s)", item.Qualified(), item.BranchLabel()), item.Qualified()))
 	}
-	selected := items[0].Qualified()
-	if err := huh.NewSelect[string]().Title("Switch to").Options(options...).Value(&selected).Run(); err != nil {
+	selected, err := runSelect("Switch to", options, items[0].Qualified())
+	if err != nil {
 		return worktreeContext{}, output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
 	// The picker yields a Qualified() name, which is unique by construction, so this

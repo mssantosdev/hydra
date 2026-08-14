@@ -133,9 +133,11 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	if !removeYes && interactive() {
 		confirm := false
 		title := fmt.Sprintf("Remove %s (%s)?", wt.Qualified(), wt.BranchLabel())
-		if err := huh.NewConfirm().Title(title).Value(&confirm).Run(); err != nil {
+		answer, err := runConfirm(title)
+		if err != nil {
 			return output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
+		confirm = answer
 		if !confirm {
 			return output.Errorf(output.CodeCancelled, "cancelled")
 		}
@@ -298,8 +300,8 @@ func resolveRemoveTarget(args []string) (worktreeContext, error) {
 		options = append(options, huh.NewOption(
 			fmt.Sprintf("%s (%s)", item.Qualified(), item.BranchLabel()), item.Qualified()))
 	}
-	selected := items[0].Qualified()
-	if err := huh.NewSelect[string]().Title("Worktree to remove").Options(options...).Value(&selected).Run(); err != nil {
+	selected, err := runSelect("Worktree to remove", options, items[0].Qualified())
+	if err != nil {
 		return worktreeContext{}, output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
 	return resolveOneWorktree(items, selected)

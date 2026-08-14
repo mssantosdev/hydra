@@ -76,7 +76,6 @@ default branches are restored. `apply -` replays a captured set. `sync` needs `-
 | `skill` | emit this skill | `--install` |
 | `init-shell` | install the helper `switch` needs | `--install` |
 | `completion` | shell completion script | — |
-| `ui` | hidden alias of `status` | — |
 
 ## Error codes
 

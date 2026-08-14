@@ -81,6 +81,46 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Added
 
+- **Prompts go through one funnel** (`internal/cmd/prompt.go`). Every `huh` form reads from and
+  draws to a single injectable pair of streams instead of the process ones. Two consequences: a
+  prompt can never paint into stdout, which carries the JSON envelope; and the branches behind a
+  question — including what happens when you answer "no" — are reachable from a test for the
+  first time.
+
+### Changed
+
+- **`hydra ui` is removed.** It was a hidden alias of `status` that did nothing its target did
+  not, so the surface had two spellings of one thing and a code comment claiming behaviour
+  (`needs_input` without a terminal) that never existed — `uiCmd.RunE` was `runStatus`. `hydra ui`
+  now exits 1 with `unknown_command`.
+- **`TERM=dumb` is no longer interactive.** `huh` switches to accessible mode there, and accessible
+  mode cannot report an abort: Ctrl-C and a closed stdin both come back as "the defaults were
+  accepted". Measured on `hydra sync`'s selector — Ctrl-C left the pre-selected worktree marked for
+  pulling. Since `sync` pulls and stashes, a swallowed abort is consent nobody gave, so hydra now
+  falls through to the non-interactive path and refuses with `needs_input` naming the flag.
+- **Go toolchain pinned to 1.26.6** (`go.mod` `toolchain`, `mise.toml`). GO-2026-4970 /
+  CVE-2026-39822 is a root escape in `os` through a symlink plus a trailing slash, and `os.Root` is
+  the containment control behind `carry`. The pin means `go install` cannot produce a binary whose
+  guarantee has the hole.
+
+### Fixed
+
+- **`carry` reported `Placed` for a file it never wrote.** Two independent answers to "does the
+  destination exist" disagreed because only one cleaned the path: `Lstat("sub/")` failed on the
+  trailing slash, then `OpenFile("sub")` hit `EEXIST`, which `copyFile` swallowed into `nil`. The
+  path is now cleaned once before both checks, and an existing destination is `Skipped` — a count
+  of carried files no longer includes files nobody carried.
+- **Every subcommand's `--help` advertised an empty version.** The template read `{{.Version}}`,
+  which is set only on the root command, so `hydra add --help` printed `Version:` and nothing.
+- **`sync`'s selector split one question across two streams** — its header table went to stdout
+  while the prompt drew on stderr, so redirecting either one showed half of it.
+- **A mistyped answer could crash the process.** In accessible mode `huh` panics with an index out
+  of range on input it cannot parse; the funnel recovers and returns an ordinary cancellation.
+- **`add`'s branch prompt lost its cursor position** during the funnel refactor and is restored:
+  it opens on the repo's default branch, not on "+ new branch…", so the fastest keystroke picks
+  the obvious branch instead of creating one.
+
+
 - **`internal` is no longer the catch-all: 107 sites became 7.** It meant "unclassified", which told a
   caller nothing while covering three unrelated situations. Two new codes split it by what the reader
   must DO:

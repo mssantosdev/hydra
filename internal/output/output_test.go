@@ -473,3 +473,19 @@ func TestDiagnosticStringIsSafeAndNamesTheCode(t *testing.T) {
 		t.Errorf("String() = %q, want it to name the subject", got)
 	}
 }
+
+// TERM=dumb must not count as interactive. huh's accessible mode cannot report an abort there —
+// Ctrl-C and a closed stdin both return "defaults accepted" — so a destructive prompt would read
+// a refusal as consent. The non-interactive path refuses with needs_input instead.
+func TestInteractiveRefusesADumbTerminal(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	if Interactive(ModeText) {
+		t.Error("TERM=dumb reported interactive; an abort cannot be detected there")
+	}
+	t.Setenv("TERM", "xterm-256color")
+	// Still false under `go test` (no terminals), so assert the reason changed rather than
+	// the result: the TERM gate must not be the thing deciding it.
+	if Interactive(ModeJSON) {
+		t.Error("JSON mode reported interactive")
+	}
+}

@@ -221,7 +221,7 @@ func promptForNewProjectOptions() (*newProjectOptions, error) {
 				}),
 		),
 	)
-	if err := projectForm.Run(); err != nil {
+	if err := runForm(projectForm); err != nil {
 		return nil, err
 	}
 
@@ -237,7 +237,7 @@ func promptForNewProjectOptions() (*newProjectOptions, error) {
 				Value(&opts.Mode),
 		),
 	)
-	if err := modeForm.Run(); err != nil {
+	if err := runForm(modeForm); err != nil {
 		return nil, err
 	}
 
@@ -286,7 +286,7 @@ func promptForNewRepoMetadata(opts *newProjectOptions) error {
 				}),
 		),
 	)
-	return metadataForm.Run()
+	return runForm(metadataForm)
 }
 
 func promptForRemoteRepoOptions(opts *newProjectOptions) error {
@@ -305,7 +305,7 @@ func promptForRemoteRepoOptions(opts *newProjectOptions) error {
 				}),
 		),
 	)
-	return form.Run()
+	return runForm(form)
 }
 
 func bootstrapLocalProject(projectRoot, configPath string, cfg *config.Config, opts *newProjectOptions) error {

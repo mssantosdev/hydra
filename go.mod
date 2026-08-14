@@ -2,6 +2,8 @@ module github.com/mssantosdev/hydra
 
 go 1.26.0
 
+toolchain go1.26.6
+
 require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbletea v1.3.10

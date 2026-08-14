@@ -81,8 +81,17 @@ func Color(out *os.File) bool {
 }
 
 // Interactive reports whether prompts may be shown: stdin and stdout must both
-// be terminals, and the effective mode must be text.
+// be terminals, the effective mode must be text, and TERM must not be "dumb".
+//
+// TERM=dumb is excluded because it changes what an answer MEANS. huh switches to accessible
+// mode there, and accessible mode cannot report an abort: Ctrl-C and a closed stdin both come
+// back as "the defaults were accepted". `hydra sync` pulls and stashes, so a swallowed abort is
+// consent nobody gave. Falling through to the non-interactive path is strictly safer — it
+// refuses with needs_input naming the flag to pass instead of acting on a guess.
 func Interactive(m Mode) bool {
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
 	return Effective(m, os.Stdout) == ModeText && isTTY(os.Stdin) && isTTY(os.Stdout)
 }
 

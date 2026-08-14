@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -256,9 +255,11 @@ func runRepoRemove(cmd *cobra.Command, args []string) error {
 		confirm := false
 		title := fmt.Sprintf("Unregister %s? %d worktree(s) stay on disk",
 			alias, len(worktrees))
-		if err := huh.NewConfirm().Title(title).Value(&confirm).Run(); err != nil {
+		answer, err := runConfirm(title)
+		if err != nil {
 			return output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
+		confirm = answer
 		if !confirm {
 			return output.Errorf(output.CodeCancelled, "cancelled")
 		}

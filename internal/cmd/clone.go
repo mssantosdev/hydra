@@ -216,9 +216,11 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 				"a repository URL is required; pass it as the first argument").
 				WithDetail("missing", []string{"<url|path>"})
 		}
-		if err := huh.NewInput().Title("Repository URL").Value(&opts.URL).Run(); err != nil {
+		typed, err := runInput("Repository URL")
+		if err != nil {
 			return nil, output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
+		opts.URL = typed
 		opts.URL = strings.TrimSpace(opts.URL)
 		if opts.URL == "" {
 			return nil, output.Errorf(output.CodeNeedsInput, "a repository URL is required").
@@ -611,7 +613,7 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 			Height(15).
 			Value(&selected),
 	))
-	if err := form.Run(); err != nil {
+	if err := runForm(form); err != nil {
 		return nil, nil, output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
 	if len(selected) == 0 {

@@ -254,10 +254,11 @@ func resolveAddTarget(args []string) (string, string, error) {
 		for _, ref := range repos {
 			options = append(options, huh.NewOption(ref.Group+"/"+ref.Alias, ref.Alias))
 		}
-		alias = repos[0].Alias
-		if err := huh.NewSelect[string]().Title("Repo").Options(options...).Value(&alias).Run(); err != nil {
+		chosen, err := runSelect("Repo", options, repos[0].Alias)
+		if err != nil {
 			return "", "", output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
+		alias = chosen
 	}
 
 	repo, err := resolveRepoByAlias(cfg, projectRoot, alias)
@@ -280,17 +281,18 @@ func resolveAddTarget(args []string) (string, string, error) {
 		options = append(options, huh.NewOption(choice.DisplayName, choice.Name))
 	}
 
-	branch := defaultBranch
-	if err := huh.NewSelect[string]().Title("Branch").Options(options...).Value(&branch).Run(); err != nil {
+	chosenBranch, err := runSelect("Branch", options, defaultBranch)
+	if err != nil {
 		return "", "", output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
+	branch := chosenBranch
 
 	if branch == newBranchSentinel {
-		branch = ""
-		if err := huh.NewInput().Title("New branch name").Value(&branch).Run(); err != nil {
+		typed, err := runInput("New branch name")
+		if err != nil {
 			return "", "", output.Wrap(output.CodeCancelled, err, "cancelled")
 		}
-		branch = strings.TrimSpace(branch)
+		branch = strings.TrimSpace(typed)
 		if branch == "" {
 			return "", "", output.Errorf(output.CodeBranchUnknown, "a branch name is required")
 		}

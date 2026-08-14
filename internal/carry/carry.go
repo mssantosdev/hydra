@@ -97,7 +97,11 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []*output.Diagnost
 		// Relative to the root. The `..` and absolute cases are already refused when the
 		// manifest is parsed; this second check turns what would be an opaque syscall error
 		// into a reason a reader can act on.
-		rel := filepath.FromSlash(entry.Dest())
+		// Cleaned ONCE, here, so every later check sees the same path. The Lstat below and
+		// the OpenFile in copyFile are two independent answers to "does it exist", and an
+		// uncleaned `to: "sub/"` made them disagree: Lstat failed on the trailing slash while
+		// OpenFile found the file, which was then reported as a write that never happened.
+		rel := filepath.Clean(filepath.FromSlash(entry.Dest()))
 		if !relWithin(rel) {
 			res.Disposition = Missing
 			res.Reason = "destination escapes the worktree"
@@ -119,6 +123,14 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []*output.Diagnost
 		}
 
 		if err := place(root, src, rel, res.Mode); err != nil {
+			// The Lstat above is a check, not a lock: something can appear between it and
+			// the write. Reporting that as Placed would claim a write that never happened.
+			if errors.Is(err, errAlreadyPresent) {
+				res.Disposition = Skipped
+				res.Reason = "already present"
+				results = append(results, res)
+				continue
+			}
 			res.Disposition = Missing
 			res.Reason = err.Error()
 			results = append(results, res)
@@ -139,6 +151,11 @@ func mode(e config.CarryEntry) string {
 	}
 	return config.CarryCopy
 }
+
+// errAlreadyPresent means the destination appeared between the Lstat check and the write. It is
+// not a failure and it is not a placement: the caller reports it as Skipped, so a count of
+// carried files never includes one that was already there.
+var errAlreadyPresent = errors.New("already present")
 
 // source resolves an entry to an absolute path, or returns why it could not.
 func source(e config.CarryEntry, plan Plan) (string, string) {
@@ -174,7 +191,14 @@ func source(e config.CarryEntry, plan Plan) (string, string) {
 // place writes one entry. dest is relative to root, so every operation is confined by the
 // kernel: os.Root resolves each component itself and refuses anything leaving the root, which
 // is what closes the symlink TOCTOU a filepath.Join plus a string check leaves open.
+//
+// dest is cleaned FIRST, and that is a security step rather than tidiness. CVE-2026-39822 was a
+// root escape in os through a symlink plus a TRAILING SLASH: the guarantee this function leans on
+// had a hole reachable from a manifest-authored `to:` value. go.mod pins a patched toolchain, but
+// a control that only holds when the builder's Go is current is not a control — cleaning here
+// means the escape has no spelling to arrive in.
 func place(root *os.Root, src, dest, m string) error {
+	dest = filepath.Clean(dest)
 	if dir := filepath.Dir(dest); dir != "." {
 		if err := root.MkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("failed to create %s: %w", dir, err)
@@ -213,7 +237,7 @@ func copyFile(root *os.Root, src, dest string, perm os.FileMode) error {
 	out, err := root.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm.Perm())
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return nil
+			return errAlreadyPresent
 		}
 		return err
 	}

@@ -12,30 +12,6 @@ import (
 	"github.com/mssantosdev/hydra/internal/ui/browser"
 )
 
-// uiCmd is a hidden alias of status. Bare `hydra status` on a terminal opens the
-// interactive register; `hydra ui` remains for scripts and muscle memory.
-var uiCmd = &cobra.Command{
-	Use:     "ui",
-	Aliases: []string{"tui"},
-	Hidden:  true,
-	Short:   "Hidden alias of hydra status",
-	Long: `Hidden alias of hydra status.
-
-DESCRIPTION
-  Delegates to "hydra status". On a terminal with default output, status opens the
-  same full-screen register this command used to own; with --output text or --output
-  json it renders the non-interactive status view instead.
-
-SEE ALSO
-  hydra status   - the supported entry point`,
-	Args: cobra.NoArgs,
-	RunE: runStatus,
-}
-
-func init() {
-	rootCmd.AddCommand(uiCmd)
-}
-
 // explicitOutputMode reports whether --output was set to text or json (including via
 // HYDRA_OUTPUT), as opposed to auto.
 func explicitOutputMode() bool {
@@ -127,8 +103,14 @@ func againstInfoForBoard(against *againstJSON) *browser.AgainstInfo {
 	}
 }
 
-// runStatusBoard opens the full-screen register. The register renders to stderr;
-// stdout carries only a selected path, so `cd "$(hydra status)"` works.
+// runStatusBoard opens the full-screen register. The register renders to stderr and stdout
+// carries only the selected path.
+//
+// That does NOT make `cd "$(hydra status)"` work, and it never did: command substitution makes
+// stdout a pipe, `--output auto` then resolves to JSON, and the board is skipped entirely — the
+// caller captures an envelope. The split streams are for a human watching the register while a
+// wrapper reads the path, not for capturing the board's own invocation. A script wanting a path
+// asks the non-interactive surface for it: `hydra list --output json` carries `.path` per worktree.
 func runStatusBoard(cmd *cobra.Command, targets []projectTarget, sel Selector, all bool) error {
 	load := newBoardLoader(targets, sel)
 	model := browser.New(boardProjectLabel(targets, all), load, browser.State{

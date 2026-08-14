@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/topic"
@@ -645,9 +644,11 @@ func confirmTopicRemoval(described topicJSON) error {
 
 	confirm := false
 	title := fmt.Sprintf("%s %d member(s) of topic %s?", verb, len(described.Members), described.ID)
-	if err := huh.NewConfirm().Title(title).Value(&confirm).Run(); err != nil {
+	answer, err := runConfirm(title)
+	if err != nil {
 		return output.Wrap(output.CodeCancelled, err, "cancelled")
 	}
+	confirm = answer
 	if !confirm {
 		return output.Errorf(output.CodeCancelled, "cancelled")
 	}
