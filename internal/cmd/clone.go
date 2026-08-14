@@ -292,10 +292,11 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 		alreadyRegistered = true
 		if existing.Repo.Remote != "" && opts.URL != "" && existing.Repo.Remote != opts.URL {
 			return result, nil, output.Errorf(output.CodeWorktreeExists,
-				"repo alias %q is already registered with a different remote (%s)", opts.Alias, existing.Repo.Remote).
+				"repo alias %q is already registered with a different remote (%s)", opts.Alias,
+				git.RedactURL(existing.Repo.Remote)).
 				WithDetail("alias", opts.Alias).
-				WithDetail("registered_remote", existing.Repo.Remote).
-				WithDetail("requested_remote", opts.URL)
+				WithDetail("registered_remote", git.RedactURL(existing.Repo.Remote)).
+				WithDetail("requested_remote", git.RedactURL(opts.URL))
 		}
 	} else {
 		// Locked read-modify-write via Update: concurrent repo add calls merge inside the

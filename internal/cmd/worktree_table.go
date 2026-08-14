@@ -60,7 +60,7 @@ func worktreeTable(width int, items []worktreeJSON, opts worktreeTableOpts) stri
 		}
 		status := lipgloss.NewStyle().Foreground(styles.Green).Render("  ✓ clean  ")
 		if item.Dirty {
-			status = lipgloss.NewStyle().Foreground(styles.Yellow).Render(fmt.Sprintf(" ~ %d chg  ", item.Changes))
+			status = lipgloss.NewStyle().Foreground(styles.Yellow).Render(fmt.Sprintf(" ~ %d chg  ", item.DirtyFiles))
 		}
 		row = append(row, status)
 		rows = append(rows, row)

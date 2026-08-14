@@ -14,6 +14,15 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Security
 
+- **`hydra repo list` printed a credential-bearing remote at exit 0.** CI writes tokens straight into
+  a remote — `https://x-access-token:ghp_…@github.com/o/r.git` is what GitHub Actions injects and
+  Azure DevOps does the equivalent — and publishing remotes is the POINT of that command, so the fix
+  is not to stop printing them but to stop printing the secret. Every echo of a remote is now
+  redacted, and so is git's OWN stderr: `git ls-remote` failing on a tokenised URL puts that token in
+  its own output, which hydra captured and reported, so redacting the manifest field alone would
+  still have leaked it on the failure path. The scp-like form is left intact — in `git@host:path` the
+  user is a convention, not a credential, and redacting it would make the output useless.
+
 - **Manifest hooks were unauthenticated code execution; they are now gated.** `.hydra/config.yaml` is
   designed to be shared — it is committed, `repo restore` rebuilds a workspace from it, and the level
   model assumes a team edits it together — so it arrives on a machine the way any source file does: you
@@ -123,6 +132,11 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Changed
 
+- **`worktreeJSON.changes` is now `dirty_files`.** BREAKING for any consumer reading that key. It is a
+  COUNT of uncommitted files, and `changes` read as "the changes" while sitting one field away from a
+  `topic` identity — an envelope where `changes` means a number and a neighbouring noun means a name
+  is the kind of API nobody remembers correctly. No documentation referenced the old key.
+
 - **`repo add --branches` skips a name origin does not have instead of refusing the whole clone.** One
   stale entry in a list of five stopped the other four from being created, which is the wrong trade for
   a list a human typed or a manifest carried. The skip is a `warning`, so the outcome degrades to
@@ -140,6 +154,19 @@ is permanently bound to different content in the Go checksum database, so it can
   per-repository number derivable.
 
 ### Fixed
+
+- **`doctor` could not see a topic member naming an unregistered repository.** The guard that exists
+  to tolerate a transient `git worktree list` failure also skipped members whose repo the manifest
+  does not have at all, so the one drift doctor could never recover from was the one it stayed silent
+  about. It is now `topic_unknown_repo`, distinct from `topic_dangling_member` because the two need
+  opposite advice: recreate the worktree, versus this repository does not exist here. `--fix` detaches
+  it — which required exempting it from the repository lookup every git-level fix needs, since the
+  repo's ABSENCE is precisely what it reports.
+- **`hydra add --as "ok\nevil"` was accepted and silently truncated.** `TrimSpace` only strips the
+  ends, so an embedded control character passed every check and became a directory name carrying a
+  newline: anything reading hydra's output line by line then sees two entries where there is one, and
+  the name a caller must pass back to address the worktree is unquotable in a shell. Control
+  characters in a group, alias or `--as` value are now `usage` (exit 2).
 
 - **`hydra apply` failed every item after the first in a repo.** The worktree cache recorded a nil
   error under the repo's key, which made the key present, so the next lookup took the error path and

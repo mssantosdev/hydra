@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/mssantosdev/hydra/internal/config"
 	"github.com/mssantosdev/hydra/internal/output"
@@ -34,6 +35,15 @@ func validatePathSegment(kind, value string) error {
 	}
 	if strings.ContainsRune(value, os.PathSeparator) || strings.Contains(value, "\\") {
 		return fmt.Errorf("%s cannot contain path separators", kind)
+	}
+	// TrimSpace only strips the ENDS, so "ok\nevil" arrived here intact: it has no path
+	// separator, passed every check, and became a directory name carrying a newline. Anything
+	// that reads hydra's output line by line then sees two entries where there is one, and the
+	// name a caller must pass back to address the worktree is unquotable in a shell.
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("%s cannot contain control characters", kind)
+		}
 	}
 	return nil
 }

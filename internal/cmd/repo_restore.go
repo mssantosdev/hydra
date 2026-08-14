@@ -10,6 +10,7 @@ import (
 	"github.com/mssantosdev/hydra/internal/fanout"
 
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
@@ -205,7 +206,7 @@ func declaredRepos(c *config.Config) []declaredRepo {
 			out = append(out, declaredRepo{
 				Group:    group,
 				Alias:    alias,
-				Remote:   repo.Remote,
+				Remote:   git.RedactURL(repo.Remote),
 				Branch:   branch,
 				Branches: repo.Branches,
 			})
@@ -292,7 +293,7 @@ func restoreOne(ref declaredRepo) (restoreRepoJSON, fanout.Disposition, error) {
 	entry := restoreRepoJSON{
 		Group:  ref.Group,
 		Repo:   ref.Alias,
-		Remote: ref.Remote,
+		Remote: git.RedactURL(ref.Remote),
 		Branch: ref.Branch,
 	}
 

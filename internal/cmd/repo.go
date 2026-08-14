@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
@@ -167,7 +168,7 @@ func runRepoList(cmd *cobra.Command, args []string) error {
 		entry := repoEntryJSON{
 			Group:         repo.Group,
 			Alias:         repo.Alias,
-			Remote:        repo.Remote,
+			Remote:        git.RedactURL(repo.Remote),
 			DefaultBranch: repo.DefaultBranch,
 			BarePath:      repo.BareRepo,
 		}

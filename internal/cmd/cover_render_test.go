@@ -154,7 +154,7 @@ func TestRenderStatusTextReportsEachProject(t *testing.T) {
 func TestBoardRowCarriesTheWorktreeFacts(t *testing.T) {
 	item := worktreeJSON{
 		Group: "backend", Repo: "api", Name: "api-stage", Branch: "stage",
-		Path: "/ws/backend/api-stage", Dirty: true, Changes: 2, Behind: 1,
+		Path: "/ws/backend/api-stage", Dirty: true, DirtyFiles: 2, Behind: 1,
 		Upstream: new("origin/stage"), Topic: new("2072958"),
 	}
 	row := worktreeItemToRow("alpha", item, new("2026-01-01T00:00:00Z"))

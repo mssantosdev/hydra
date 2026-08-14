@@ -99,7 +99,11 @@ type worktreeJSON struct {
 	// Null means the remote has never been fetched in this workspace.
 	UpstreamAsOf *string `json:"upstream_as_of"`
 	Dirty        bool    `json:"dirty"`
-	Changes      int     `json:"changes"`
+	// DirtyFiles is the COUNT of uncommitted files, not a list of them. It was called
+	// `changes`, which read as "the changes" and sat one field away from a `topic` id — an
+	// envelope where `changes` means a number and a noun nearby means an identity is exactly
+	// the unmemorable API this renames away from.
+	DirtyFiles int `json:"dirty_files"`
 	// DefaultBranch is the repository's default, and OnDefaultBranch says whether this
 	// worktree is on it. Together they explain the directory name: the worktree on the
 	// default branch gets the bare alias, every other gets `alias-<branch-slug>`. Two
@@ -170,7 +174,7 @@ func (w worktreeContext) withTracking() (worktreeJSON, error) {
 	item.Ahead = status.CommitsAhead
 	item.Behind = status.CommitsBehind
 	item.Dirty = status.HasChanges
-	item.Changes = status.ChangeCount
+	item.DirtyFiles = status.ChangeCount
 	return item, nil
 }
 

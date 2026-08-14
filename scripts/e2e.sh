@@ -353,6 +353,11 @@ check "--filter dirty excludes the clean worktree" \
 echo scratch > backend/api-feat-selector/scratch.txt
 check "--filter dirty finds the dirtied worktree" \
   '"$HYDRA" list --filter dirty --output json | jq -e "[.data.worktrees[]|select(.branch==\"feat/selector\")]|length==1" >/dev/null'
+# The count of uncommitted files is `dirty_files`, not `changes`: a number called "changes"
+# sitting beside a topic identity is the API nobody remembers correctly.
+check "a dirty worktree reports dirty_files, not changes" \
+  '"$HYDRA" list --filter dirty --output json |
+     jq -e "[.data.worktrees[]|select(.branch==\"feat/selector\")][0] | has(\"dirty_files\") and (has(\"changes\")|not) and .dirty_files>0" >/dev/null'
 # Filters intersect: dirty AND a non-matching branch glob yields nothing, even
 # though each alone matches feat/selector.
 check "filters combine as an intersection, not a union" \
@@ -984,5 +989,36 @@ check "and names the member that is behind"    '{ "$HYDRA" topic close epic-logi
 ( cd backend/api-epic-login && git -c user.email=t@t -c user.name=T merge -q --no-edit feat/social )
 check "closes once the work has landed"        '"$HYDRA" topic close epic-login --output json | jq -e ".data.closed==true"'
 check "reopen is available"                    '"$HYDRA" topic close epic-login --reopen --output json | jq -e ".data.closed==false"'
+
+# ------------------------------------------------ 20. secrets never reach the envelope
+echo "== 20. a credential in a remote is never echoed =="
+cp "$T/ws/.hydra/config.yaml" "$T/manifest.bak"
+sed -i "s#remote: .*#remote: https://x-access-token:ghp_E2ESECRET@127.0.0.1:1/o/r.git#" "$T/ws/.hydra/config.yaml"
+( cd "$T/ws" && "$HYDRA" repo list --output json > "$T/redact.json" 2>&1 || true )
+check "repo list redacts the token" \
+  '[ "$(grep -c ghp_E2ESECRET "$T/redact.json")" = 0 ]'
+check "the redaction is visible and the URL still readable" \
+  'grep -q REDACTED "$T/redact.json" && grep -q "127.0.0.1" "$T/redact.json"'
+( cd "$T/ws" && "$HYDRA" repo branches api --output json > "$T/redact2.txt" 2>&1 || true )
+check "a failing git call redacts the token in its own message" \
+  '[ "$(grep -c ghp_E2ESECRET "$T/redact2.txt")" = 0 ]'
+cp "$T/manifest.bak" "$T/ws/.hydra/config.yaml"
+
+# ------------------------------------------------ 21. doctor sees membership with no repo
+echo "== 21. doctor detects a topic member naming an unregistered repo =="
+printf 'version: "1"\ntopics:\n  ghost:\n    members:\n      - repo: nosuchrepo\n        branch: main\n' > "$T/ws/.hydra/state.yaml"
+check "topic_unknown_repo is reported, not skipped" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --output json || true; } |
+     jq -e "[.data.checks[]|select(.id==\"topic_unknown_repo\" and .status==\"fail\")]|length==1" >/dev/null)'
+check "--fix detaches it, and it stays fixed" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --fix --output json || true; } >/dev/null &&
+    { "$HYDRA" doctor --output json || true; } |
+      jq -e "[.data.checks[]|select(.id==\"topic_unknown_repo\")]|length==0" >/dev/null)'
+
+# ------------------------------------------------ 22. a control character is refused
+echo "== 22. a name with a control character is refused =="
+check "add --as with an embedded newline is usage, not a truncated name" \
+  '(cd "$T/ws" && { "$HYDRA" add api feat/ctl --as "$(printf "ok\nevil")" --output json 2>&1 || true; } |
+     jq -e ".error.code==\"usage\"" >/dev/null && [ ! -d "$T/ws/backend/ok" ])'
 
 echo "ALL $pass ASSERTIONS PASSED"

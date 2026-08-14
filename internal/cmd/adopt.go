@@ -180,7 +180,7 @@ func runAdopt(cmd *cobra.Command, args []string) error {
 		Root:      projectRoot,
 		Group:     adoptGroup,
 		Repo:      alias,
-		Remote:    remoteURL,
+		Remote:    git.RedactURL(remoteURL),
 		BarePath:  barePath,
 		Worktrees: worktrees,
 	}

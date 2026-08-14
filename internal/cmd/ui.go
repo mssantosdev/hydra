@@ -109,7 +109,7 @@ func worktreeItemToRow(project string, item worktreeJSON, asOf *string) browser.
 		Ahead:    item.Ahead,
 		Behind:   item.Behind,
 		Dirty:    item.Dirty,
-		Changes:  item.Changes,
+		Changes:  item.DirtyFiles,
 		Detached: item.Detached,
 		Against:  againstInfoForBoard(item.Against),
 	}

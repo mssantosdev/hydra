@@ -343,12 +343,19 @@ func runGit(args ...string) error {
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
-			return fmt.Errorf("git %s failed: %w", strings.Join(args, " "), err)
+			return fmt.Errorf("git %s failed: %w", redactedArgs(args), err)
 		}
-		return fmt.Errorf("git %s failed: %s", strings.Join(args, " "), msg)
+		return fmt.Errorf("git %s failed: %s", redactedArgs(args), RedactText(msg))
 	}
 	return nil
 }
+
+// redactedArgs renders an argv for an error message with credentials removed.
+//
+// A remote URL is one of the arguments — `git ls-remote https://token@host/...` — and git echoes
+// it back in its own stderr as well, so BOTH halves of every git failure message are scrubbed
+// here rather than at each of the callers that report one.
+func redactedArgs(args []string) string { return RedactText(strings.Join(args, " ")) }
 
 // runGitStreaming runs git with stderr attached to the process stderr, for
 // long-running operations whose progress the user should see. stdout is
@@ -365,9 +372,9 @@ func runGitStreaming(args ...string) error {
 	cmd.Stderr = io.MultiWriter(os.Stderr, tail)
 	if err := cmd.Run(); err != nil {
 		if msg := tail.diagnosis(); msg != "" {
-			return fmt.Errorf("git %s failed: %s", strings.Join(args, " "), msg)
+			return fmt.Errorf("git %s failed: %s", redactedArgs(args), RedactText(msg))
 		}
-		return fmt.Errorf("git %s failed: %w", strings.Join(args, " "), err)
+		return fmt.Errorf("git %s failed: %w", redactedArgs(args), err)
 	}
 	return nil
 }
@@ -418,9 +425,9 @@ func runGitOutput(args ...string) (string, error) {
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
-			return "", fmt.Errorf("git %s failed: %w", strings.Join(args, " "), err)
+			return "", fmt.Errorf("git %s failed: %w", redactedArgs(args), err)
 		}
-		return "", fmt.Errorf("git %s failed: %s", strings.Join(args, " "), msg)
+		return "", fmt.Errorf("git %s failed: %s", redactedArgs(args), RedactText(msg))
 	}
 	return string(out), nil
 }

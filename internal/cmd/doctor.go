@@ -40,6 +40,12 @@ const (
 	// hydra's back, or a hand-edited state file. One check, because they all reduce
 	// to the same observable fact — a recorded member with no worktree on disk.
 	checkTopicDanglingMember = "topic_dangling_member"
+	// checkTopicUnknownRepo is membership naming a repository the manifest does not have —
+	// a hand-edited state file, or a `repo remove` that left a topic behind. Distinct from
+	// topic_dangling_member, where the repo IS registered and only the worktree is gone,
+	// because the two need different messages: one says "recreate the worktree", the other
+	// says "this repo does not exist here at all".
+	checkTopicUnknownRepo = "topic_unknown_repo"
 )
 
 var (
@@ -372,7 +378,14 @@ func diagnoseTopicMembers(cfg *config.Config, projectRoot string) []doctorCheck 
 	// transient git failure would report every member of that repo as dangling.
 	live := make(map[string]struct{})
 	listed := make(map[string]bool)
+	// registered is built from the MANIFEST, not from a successful listing. The two are
+	// different facts and conflating them hid a real drift: a member naming a repo the manifest
+	// does not have was skipped by the same guard that exists to tolerate a transient git
+	// failure, so the one case doctor could never recover from was the one it stayed silent
+	// about.
+	registered := make(map[string]bool)
 	for _, repo := range allRepoContexts(cfg, projectRoot) {
+		registered[repo.Alias] = true
 		worktrees, err := listRepoWorktrees(repo)
 		if err != nil {
 			continue
@@ -388,6 +401,19 @@ func diagnoseTopicMembers(cfg *config.Config, projectRoot string) []doctorCheck 
 	var checks []doctorCheck
 	for _, t := range topics {
 		for _, m := range t.Members {
+			if !registered[m.Repo] {
+				checks = append(checks, doctorCheck{
+					ID: checkTopicUnknownRepo, Status: "fail", Fixable: true,
+					Message: fmt.Sprintf(
+						"topic %q records %s on branch %q, but no repository %q is registered; --fix detaches it",
+						t.ID, m.Repo, m.Branch, m.Repo),
+					Repo:     m.Repo,
+					Topic:    t.ID,
+					Branch:   m.Branch,
+					Worktree: m.Repo + "@" + m.Branch,
+				})
+				continue
+			}
 			if !listed[m.Repo] {
 				continue
 			}
@@ -659,8 +685,13 @@ func applyDoctorFixes(report *doctorReport, cfg *config.Config, projectRoot stri
 		if !check.Fixable || check.Status != "fail" {
 			continue
 		}
-		repo, ok := reposByAlias[check.Repo]
-		if check.Repo != "" && !ok {
+		repo, hasRepo := reposByAlias[check.Repo]
+		// Every git-level fix needs a resolved repository, so a check naming one that is not
+		// registered is normally skipped. topic_unknown_repo is the exception by definition:
+		// the repo's ABSENCE is what it reports, and its fix only touches topic state — so
+		// applying this guard to it meant the one drift doctor had just learned to detect was
+		// also the one it could never repair.
+		if check.Repo != "" && !hasRepo && check.ID != checkTopicUnknownRepo {
 			continue
 		}
 
@@ -713,7 +744,7 @@ func applyDoctorFixes(report *doctorReport, cfg *config.Config, projectRoot stri
 			}
 			markDoctorFixed(check, recreate)
 
-		case checkTopicDanglingMember:
+		case checkTopicDanglingMember, checkTopicUnknownRepo:
 			// Detach only this member. Removing the whole topic would destroy
 			// membership for worktrees that are still present and healthy.
 			if err := topic.Open(projectRoot).Detach(check.Topic, check.Repo, check.Branch); err != nil {

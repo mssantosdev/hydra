@@ -58,12 +58,14 @@ func runRepoBranches(cmd *cobra.Command, args []string) error {
 
 	found, err := git.FetchRemoteBranches(remote)
 	if err != nil {
+		// The URL is echoed on the failure path too, and that is where a CI token most often
+		// sits: `git ls-remote` failing is exactly when someone pastes the error into a ticket.
 		return output.Wrap(output.CodeGitFailed, err,
-			"failed to list branches on %q", remote).
-			WithDetail("remote", remote)
+			"failed to list branches on %q", git.RedactURL(remote)).
+			WithDetail("remote", git.RedactURL(remote))
 	}
 
-	payload := repoBranchesJSON{Remote: remote, Source: "remote", Branches: []string{}}
+	payload := repoBranchesJSON{Remote: git.RedactURL(remote), Source: "remote", Branches: []string{}}
 	for _, b := range found {
 		payload.Branches = append(payload.Branches, b.Name)
 		if b.IsDefault && payload.Default == "" {
