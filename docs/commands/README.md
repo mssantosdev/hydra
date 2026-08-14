@@ -335,6 +335,7 @@ Need cleanup?
 | `project_exists` | 1 | that project name is already registered |
 | `unknown_command` | 1 | no such subcommand; `details.did_you_mean` lists real ones |
 | `usage` | 2 | a bad flag value, or flags that exclude each other |
+| `manifest_untrusted` | 2 | the manifest can execute and is unapproved; run `hydra trust` |
 | `busy` | 6 | a git or state lock was held — **the only retryable code** |
 | `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names it |
 | `internal` | 1 | anything unclassified |

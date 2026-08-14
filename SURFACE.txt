@@ -132,6 +132,10 @@ topic remove (rm)
   --with-worktrees                   bool
   --yes                              bool
 topic show (view)
+trust
+  --accept                           string
+  --revoke                           bool
+  --show                             bool
 ui (tui)
 where
 
@@ -145,6 +149,7 @@ where
   git_failed                   exit 1
   hook_failed                  exit 1
   internal                     exit 1
+  manifest_untrusted           exit 2
   needs_input                  exit 7
   not_in_project               exit 2
   partial_failure              exit 4

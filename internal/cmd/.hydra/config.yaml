@@ -1,0 +1,5 @@
+version: "3"
+project: cmd
+paths:
+    bare_dir: .bare
+groups: {}

@@ -277,8 +277,10 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		// usage is a malformed invocation: exit 2 like the other "fix your
 		// input, no state changed" codes, not needs_input's 7 - that one means
 		// a prompt was replaced, this one means the flags contradict.
-		CodeUsage:    2,
-		CodeInternal: 1,
+		CodeUsage: 2,
+		// manifest_untrusted joins the "a human must look at something" exits.
+		CodeManifestUntrusted: 2,
+		CodeInternal:          1,
 	}
 
 	got := ExitCodes()
@@ -428,5 +430,40 @@ func TestDiagnosticJSONOmitsWhatIsAbsent(t *testing.T) {
 	}
 	if got["retryable"] != true {
 		t.Errorf("busy must be retryable: %s", blob)
+	}
+}
+
+// Mode.String is the value that appears in help text and completion, so a wrong or empty
+// rendering is user-visible.
+func TestModeStringRoundTripsEveryMode(t *testing.T) {
+	for _, tt := range []struct {
+		mode Mode
+		want string
+	}{
+		{ModeText, "text"},
+		{ModeJSON, "json"},
+		{ModeAuto, "auto"},
+	} {
+		if got := tt.mode.String(); got != tt.want {
+			t.Errorf("Mode(%d).String() = %q, want %q", tt.mode, got, tt.want)
+		}
+	}
+}
+
+// Diagnostic.String is what a %s of a diagnostic prints — in a log line, a test failure, or a
+// warning list. A nil one must not panic, because a nil diagnostic is an ordinary state.
+func TestDiagnosticStringIsSafeAndNamesTheCode(t *testing.T) {
+	var nilDiag *Diagnostic
+	if got := nilDiag.String(); got != "" {
+		t.Errorf("a nil diagnostic rendered %q, want empty", got)
+	}
+	// It renders the MESSAGE, not the code: this is the human form, and the code is carried
+	// separately in the envelope where a caller branches on it.
+	d := Warnf(CodeBareMissing, "the bare repo for api is gone")
+	if got := d.String(); got != d.Message {
+		t.Errorf("String() = %q, want the message %q", got, d.Message)
+	}
+	if got := d.String(); !strings.Contains(got, "api") {
+		t.Errorf("String() = %q, want it to name the subject", got)
 	}
 }

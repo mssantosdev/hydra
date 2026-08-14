@@ -393,6 +393,17 @@ func reposForSelector(selector Selector) ([]repoContext, error) {
 func resolveStartBranch(positional, topicID string, existing topic.Topic, repos []repoContext) (string, branchresolve.Source, error) {
 	request := startBranchRequest(positional, topicID, existing, repos)
 
+	// The SECOND trust gate. A runnable branch_provider executes a manifest-named script and
+	// does not pass through runHookEventForProject, so gating the hook funnel alone would
+	// leave a hole the width of one field. Checked only when this request could actually
+	// reach the provider — an explicit branch, a topic to extend or a pattern all answer
+	// without executing anything, and refusing those would gate work that runs no code.
+	if request.Provider != "" {
+		if err := requireTrustedManifest(cfg, projectRoot); err != nil {
+			return "", "", err
+		}
+	}
+
 	resolution, err := branchresolve.ResolveUnlessConverged(context.Background(), request, func(branch string) bool {
 		return startReposConverged(repos, branch)
 	})

@@ -37,19 +37,17 @@ on. No `exit` field: the process status carries it.
 ## Decisions
 
 **Which command creates worktrees?** One repo one branch → `add`; several repos one unit of work →
-`start --topic <id> --repos a,b` (also records the topic); a captured set → `list -o json | … | apply -`,
-which consumes exactly what `list` emits. Aliases: `ls`, `rm`, `view`, `cd`.
+`start --topic <id> --repos a,b` (records the topic); a captured set → `list -o json | … | apply -`.
 
 **Which worktrees does it act on?** A bare handle (`api-stage`, `backend/api-stage`) → exactly one;
-`--topic <id>` → recorded members; `--repos`/`--group`/`--all` → those repos; `--filter
-dirty|behind|branch:<glob>` narrows further. Combine freely; they intersect.
+`--topic <id>` → members; `--repos`/`--group`/`--all` → those repos; `--filter dirty|behind|branch:<glob>`
+narrows further. Combine freely; they intersect. Aliases: `ls`, `rm`, `view`, `cd`.
 
-**Rebuilding a workspace elsewhere?** A manifest declaring `branches:` per repo is enough: `repo restore`
-creates that set (additive, `--jobs N`); `repo set <alias> --branches a,b` declares it later. Without a
-declaration only default branches are restored. `apply -` replays a captured set. For `sync`, uncommitted
-work needs `--dirty stash|reset|skip`. Repos and worktrees stay separate.
+**Rebuilding a workspace elsewhere?** `repo restore` creates the `branches:` a manifest declares
+(additive, `--jobs N`); `repo set <alias> --branches a,b` declares them later; without a declaration only
+default branches are restored. `apply -` replays a captured set. `sync` needs `--dirty stash|reset|skip`.
 
-**Workspace looks wrong?** `doctor --output json` first; `checks[].fixable` says whether `doctor --fix` repairs it.
+**Workspace looks wrong?** `doctor --output json` first; `checks[].fixable` says whether `doctor --fix` repairs it. **`manifest_untrusted`?** Read `hydra hooks ls`, then `hydra trust` — in CI, `--accept sha256:…` pinned in CI config, never in the repo.
 
 ## Commands
 
@@ -75,6 +73,7 @@ work needs `--dirty stash|reset|skip`. Repos and worktrees stay separate.
 | `project` | global registry: `list`, `add`, `rm` | `--prune` |
 | `hooks` | `ls`, `run <event>` | `--worktree` |
 | `config` | `show`, `set theme\|editor <value>` | — |
+| `trust` | approve this manifest to execute hooks/providers | `--show`, `--revoke`, `--accept` |
 | `commands` | the whole surface, and the error table | — |
 | `skill` | emit this skill | `--install` |
 | `init-shell` | install the helper `switch` needs | `--install` |
@@ -85,29 +84,30 @@ work needs `--dirty stash|reset|skip`. Repos and worktrees stay separate.
 
 | code | exit | raised when |
 |---|---|---|
-| `not_in_project` | 2 | no `.hydra/config.yaml` walking up, and no `--project` |
+| `not_in_project` | 2 | no `.hydra/config.yaml` walking up, no `--project` |
 | `config_invalid` | 2 | a manifest value hydra refuses; `details.line` points at it |
-| `config_version_unsupported` | 2 | manifest `version` is not `"3"` or `"2"` (v2 upgrades on write) |
-| `state_version_unsupported` | 2 | `.hydra/state.yaml` written by a newer hydra |
+| `config_version_unsupported` | 2 | `version` is not `"3"` or `"2"` (v2 upgrades on write) |
+| `state_version_unsupported` | 2 | `state.yaml` written by a newer hydra |
 | `project_unknown` | 2 | `--project` names nothing in the registry |
 | `usage` | 2 | bad flag value or exclusive flags; fix argv, `details.valid` lists legal values |
-| `repo_unknown` | 1 | repo alias or group not registered; `details.known` lists them |
+| `manifest_untrusted` | 2 | the manifest can execute and is unapproved; `hydra hooks ls`, then `hydra trust` |
+| `repo_unknown` | 1 | alias or group not registered; see `details.known` |
 | `bare_missing` | 1 | `.bare/<alias>.git` is gone; run `doctor` |
 | `branch_unknown` | 1 | a base ref or branch name does not resolve |
 | `worktree_exists` | 1 | that branch already has a worktree |
 | `worktree_unknown` | 1 | no worktree by that name |
-| `worktree_name_conflict` | 1 | a name does not identify exactly one worktree |
+| `worktree_name_conflict` | 1 | a name matches no single worktree |
 | `topic_unknown` | 1 | id not recorded; `details.known` lists valid ids |
 | `topic_conflict` | 1 | that worktree already belongs to another topic |
-| `topic_not_closeable` | 1 | a child is open or unmerged; `details.blocked_by` names every reason |
-| `branch_provider_failed` | 1 | the manifest's `branch_provider` script failed or timed out |
+| `topic_not_closeable` | 1 | a child is open or unmerged; see `details.blocked_by` |
+| `branch_provider_failed` | 1 | the `branch_provider` script failed or timed out |
 | `hook_failed` | 1 | a non-`optional` hook failed; the worktree IS created — fix it, then `hooks run <event>` |
 | `git_failed` | 1 | an underlying git invocation failed; `cause` carries git's words |
 | `project_exists` | 1 | that project name is already registered |
-| `unknown_command` | 1 | no such subcommand; `details.did_you_mean` lists real ones |
+| `unknown_command` | 1 | no such subcommand; see `details.did_you_mean` |
 | `internal` | 1 | unclassified: a hydra bug, not your input |
 | `shell_helper_missing` | 3 | `switch --cd` with no shell helper |
-| `partial_failure` | 4 | some items succeeded, some failed — read `data` AND `error` |
+| `partial_failure` | 4 | some succeeded, some failed — read `data` AND `error` |
 | `worktree_dirty` | 5 | uncommitted changes block a destructive op; commit or `--force`, never blindly |
 | `busy` | 6 | a lock was held — retry with backoff, the ONLY retryable code |
 | `needs_input` | 7 | a value is missing; add the flag in `details.missing`/`one_of`, never prompt |

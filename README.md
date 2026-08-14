@@ -370,10 +370,52 @@ would create a second place that could disagree.
 | `busy` | 6 | a git or state lock was held — **the only retryable code** |
 | `needs_input` | 7 | a value is missing and output is machine-readable; `details.missing` names the flag |
 | `usage` | 2 | a bad flag value, or flags that exclude each other |
+| `manifest_untrusted` | 2 | the manifest can execute commands and is not approved, or its executable content changed |
 | `topic_not_closeable` | 1 | a child topic is open or unmerged; `details.blocked_by` names every reason |
 | `project_exists` | 1 | that project name is already registered (the opposite of `project_unknown`) |
 | `unknown_command` | 1 | no such subcommand; `details.did_you_mean`/`available` list real ones |
 | `internal` | 1 | anything unclassified |
+
+### Manifest trust
+
+`.hydra/config.yaml` is meant to be shared — it is committed, `repo restore` rebuilds a workspace
+from it, and a team edits it together. So it arrives the way any source file does: you pull a branch.
+Its `hooks` and any `branch_provider` with a `run:` are shell commands hydra executes as you.
+
+Trust is **absent by default**. Until a workspace is approved, every command that would execute
+manifest content refuses with `manifest_untrusted` (exit 2):
+
+```bash
+hydra hooks ls          # see what this manifest would run
+hydra trust             # approve it
+hydra trust --show      # what is approved, and what changed since
+hydra trust --revoke    # forget this workspace
+```
+
+Read-only commands always work — `list`, `status`, `doctor`, `where`, `path`, `config show`,
+`hooks ls` — because inspecting a workspace is how you decide whether to trust it.
+
+Approval covers the **executable surface only**. Adding a repository, editing `base_branch`,
+reformatting or adding a comment costs nothing. Changing, adding, reordering or removing a hook, or a
+runnable `branch_provider`, invalidates it — and hydra then names which manifest paths changed, never
+their contents, because a hook line is where a credential ends up.
+
+A manifest with no hooks and no runnable `branch_provider` never needs this: there is nothing to
+approve, and the gate is skipped entirely.
+
+**In CI**, pin the fingerprint instead of approving interactively:
+
+```bash
+hydra trust --accept sha256:<expected>     # or HYDRA_TRUST_ACCEPT=sha256:<expected>
+```
+
+Keep the expected value in your CI configuration, **not** in the repository being checked out —
+otherwise a branch can approve itself. Get it once with `hydra trust --show`, review the hooks, commit
+it. When someone changes a hook, CI fails until a human re-reviews and updates the pin.
+
+The record lives in `$HYDRA_CONFIG_DIR/trust.yaml`, keyed by absolute workspace path, mode `0600`.
+hydra refuses to honour it if it is group- or world-writable or a symlink — a forgeable gate is not a
+gate. Moving a workspace loses its trust, as it does with direnv.
 
 ### Agent onboarding
 

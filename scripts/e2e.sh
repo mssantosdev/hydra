@@ -209,14 +209,39 @@ check "worktree directory gone"  'test ! -d backend/api-stage'
 check "branch really deleted" \
   '! git -C .bare/api.git show-ref --verify --quiet refs/heads/stage'
 
-# ------------------------------------------------ 8. hooks (step 7)
-echo "== 8. hooks run with the documented environment =="
+# ------------------------------------------------ 8. trust gate + hooks (step 7)
+echo "== 8. the trust gate, then hooks run with the documented environment =="
 cat >> .hydra/config.yaml <<'YAML'
 hooks:
   post_add:
-    - run: 'printf "%s|%s|%s" "$HYDRA_BRANCH" "$HYDRA_REPO" "$HYDRA_GROUP" > .hydra-hook-ran'
+    - name: record the environment
+      run: 'printf "%s|%s|%s" "$HYDRA_BRANCH" "$HYDRA_REPO" "$HYDRA_GROUP" > .hydra-hook-ran'
 YAML
-"$HYDRA" add api stage --output json >/dev/null
+# The manifest now executes something, so it is inert until approved. This is the whole gate:
+# pulling a branch that adds a hook must not run it.
+#
+# One invocation, captured: the refusal still CREATES the worktree (the gate stops execution,
+# not the git work), so a second `add stage` would converge and never reach the gate at all.
+{ "$HYDRA" add api stage --output json 2>&1 || true; } > "$T/untrusted.json"
+check "an unapproved manifest refuses, and does NOT run the hook" \
+  'jq -e ".error.code==\"manifest_untrusted\" and .error.details.reason==\"never_trusted\"" "$T/untrusted.json" >/dev/null &&
+   test ! -e backend/api-stage/.hydra-hook-ran'
+check "the refusal hands back its recovery as argv" \
+  'jq -e "[.next[].argv|join(\" \")]|any(.==\"hydra trust\")" "$T/untrusted.json" >/dev/null'
+check "refusing exits 2" \
+  '"$HYDRA" add api feat/gated --output json >/dev/null 2>&1; test $? -eq 2'
+check "inspection still works while untrusted" \
+  '"$HYDRA" list --output json >/dev/null && "$HYDRA" hooks ls --output json >/dev/null &&
+   "$HYDRA" trust --show --output json | jq -e ".data.trusted==false and .data.executable==1" >/dev/null'
+check "a wrong --accept pin refuses and stores nothing" \
+  '{ "$HYDRA" trust --accept sha256:0000 --output json 2>&1 || true; } |
+     jq -e ".error.details.reason==\"fingerprint_mismatch\"" >/dev/null &&
+   "$HYDRA" trust --show --output json | jq -e ".data.trusted==false" >/dev/null'
+check "hydra trust approves it" \
+  '"$HYDRA" trust --output json | jq -e ".data.trusted==true" >/dev/null'
+# The worktree from the refused attempt already exists, so run the hook through the command
+# that exists for exactly this: finishing what a refusal left undone.
+"$HYDRA" hooks run post_add --worktree api-stage --output json >/dev/null
 check "post_add ran in the worktree with injected env" \
   '[ "$(cat backend/api-stage/.hydra-hook-ran)" = "stage|api|backend" ]'
 check "--no-hooks skips hooks" \
@@ -835,6 +860,9 @@ echo "== 16. the aggregate verdict is derived, not asserted =="
 mkdir -p "$T/hookws" && (cd "$T/hookws" && "$HYDRA" init --project-name hookws >/dev/null 2>&1)
 (cd "$T/hookws" && "$HYDRA" repo add "$T/upstream" --as api --group g --branches main >/dev/null 2>&1)
 printf 'hooks:\n    post_add:\n        - run: /bin/false\n' >> "$T/hookws/.hydra/config.yaml"
+# This fixture's subject is the failing-hook verdict, not the gate, so approve it AFTER the
+# hook exists — approving first would record an empty surface and then go stale.
+(cd "$T/hookws" && "$HYDRA" trust --output json >/dev/null)
 check "a failing hook cannot be reported as a clean success" \
   '(cd "$T/hookws" && { "$HYDRA" add api feat/hooked --output json || true; } 2>/dev/null |
     jq -e ".outcome!=\"success\" and .error.code==\"hook_failed\"" >/dev/null)'

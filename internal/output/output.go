@@ -188,6 +188,13 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 			break
 		}
 	}
+	// A partial's error carries its own recovery, and it was being dropped: EmitError lifts
+	// an error's next[] onto the envelope, EmitJSON did not, so exactly the guidance a
+	// half-completed command needs to hand back never reached the caller. Guidance a caller
+	// has to know to ask for is not an affordance.
+	if len(r.Next) == 0 && r.Err != nil {
+		r.Next = r.Err.Next
+	}
 	recordVerdict(r.Outcome, r.Err)
 
 	return encode(w, envelope{

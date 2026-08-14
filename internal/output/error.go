@@ -54,6 +54,10 @@ const (
 	// the collision was the point.
 	CodeProjectExists  = "project_exists"
 	CodeUnknownCommand = "unknown_command"
+	// CodeManifestUntrusted means the workspace's manifest can execute something and nobody
+	// has approved it, or its executable content changed since approval. Exit 2: a human must
+	// look at a diff — no flag and no retry substitutes for that, which is the whole point.
+	CodeManifestUntrusted = "manifest_untrusted"
 	// CodeUsage is a malformed or contradictory invocation: a bad flag value, missing
 	// positional arguments, or flags that exclude each other. It is NOT internal -
 	// nothing broke - and it is not needs_input, which means "a prompt would have
@@ -69,6 +73,7 @@ var exitCodes = map[string]int{
 	CodeConfigInvalid:            2,
 	CodeProjectUnknown:           2,
 	CodeUsage:                    2,
+	CodeManifestUntrusted:        2,
 	CodeRepoUnknown:              1,
 	CodeBareMissing:              1,
 	CodeBranchUnknown:            1,

@@ -28,37 +28,6 @@ func TestBranchNameFromRef(t *testing.T) {
 	}
 }
 
-// newUpstream builds a real repository to act as origin, with an initial commit
-// on `main` plus a `stage` branch.
-func newUpstream(t *testing.T) string {
-	t.Helper()
-
-	dir := t.TempDir()
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = resolved
-	}
-	upstream := filepath.Join(dir, "upstream")
-	if err := os.MkdirAll(upstream, 0755); err != nil {
-		t.Fatalf("mkdir upstream: %v", err)
-	}
-
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", upstream}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@t",
-			"GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@t")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-	}
-
-	run("init", "-b", "main")
-	run("commit", "--allow-empty", "-m", "init")
-	run("branch", "stage", "main")
-	return upstream
-}
-
 // TestInitBareWithRemoteConfiguresTracking is the regression guard for the
 // original bug: `git clone --bare` wrote no fetch refspec and no
 // refs/remotes/origin/*, so no worktree could ever get an upstream.

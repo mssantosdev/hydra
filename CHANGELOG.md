@@ -14,6 +14,48 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Security
 
+- **Manifest hooks were unauthenticated code execution; they are now gated.** `.hydra/config.yaml` is
+  designed to be shared — it is committed, `repo restore` rebuilds a workspace from it, and the level
+  model assumes a team edits it together — so it arrives on a machine the way any source file does: you
+  pull a branch. Its `hooks` and any `branch_provider` with a `run:` are shell commands hydra executed
+  as you, with your credentials, with no prompt and no record that the executable content had changed.
+  git refuses to share hooks at all; direnv shares `.envrc` and gates it on approval of its content.
+
+  Trust is now ABSENT BY DEFAULT. A workspace whose manifest can execute anything refuses with
+  `manifest_untrusted` (exit 2) until `hydra trust` approves it. `hydra trust --show` prints what is
+  approved and what changed; `--revoke` forgets it. Read-only commands stay open — inspecting a
+  workspace is how you decide whether to trust it.
+
+  The gate lives at `runHookEventForProject`, the ONE function every hook execution funnels through,
+  plus a second check where a runnable `branch_provider` is invoked. A hand-maintained list of gated
+  commands was drafted and rejected: it named `clone`, which is not a registered command, and omitted
+  `repo add`, which is what actually reaches `post_clone` — so `hydra repo add` on an untrusted
+  workspace would have executed a hostile hook through the hole in a list that had been "verified".
+
+  Approval covers the executable surface only, derived from one exported list in `internal/config`, so
+  adding a repository or editing `base_branch` costs nothing while editing, adding, reordering or
+  removing a hook invalidates it. A refusal names the manifest PATHS that changed and never their
+  values: a hook line is where a credential ends up and the envelope is a logging surface. A manifest
+  with nothing executable skips the gate entirely, so a workspace that never configures a hook never
+  meets this feature.
+
+  For CI, `hydra trust --accept sha256:<expected>` or `HYDRA_TRUST_ACCEPT` approves only on a match and
+  writes nothing otherwise. The expected value belongs in CI configuration, not in the repository being
+  checked out, so a hostile branch cannot approve itself by editing its own pinned hash.
+
+  The store is `$HYDRA_CONFIG_DIR/trust.yaml`: plaintext so it can be read and diffed, written
+  atomically at `0600`, keyed by absolute workspace path. hydra refuses to honour it if it is group- or
+  world-writable or reached through a symlink — anything that can write the config directory could
+  otherwise forge an approval and bypass the containment work this sits on top of. `hydra prune` drops
+  entries whose workspace is gone.
+
+  **This is a breaking change for any workspace that already has hooks**: upgrade, run `hydra sync`,
+  and it refuses until trusted. That is the point. Auto-trusting existing workspaces on first run was
+  considered and rejected — it would make the gate retroactively meaningless on exactly the machines
+  most likely to have already pulled something hostile. `hydra init` does not pre-approve either: a
+  fresh manifest has nothing executable, so there would be nothing to approve.
+
+
 - **A shared manifest could place files outside the workspace.** `paths.bare_dir` and each group's
   `path:` are documented as project-relative, and both are joined to the project root to decide
   where hydra creates, checks out and REMOVES directories. `filepath.Join` resolves `..` rather
@@ -29,6 +71,10 @@ is permanently bound to different content in the Go checksum database, so it can
   that stays inside the workspace still works.
 
 ### Added
+
+- **`make gate-test` enforces a coverage floor.** `COVERAGE_MIN` defaults to 80.0 and the gate fails
+  below it, so the figure cannot erode one untested branch at a time. Raise it when the real number
+  clears the next step; lowering it to make a change pass defeats the point.
 
 - **One diagnostic shape, in all three places something can go wrong.** `error` was a structured
   object, `warnings` was `[]string` with no code to branch on, and a failed item inside `data` was a
@@ -76,6 +122,12 @@ is permanently bound to different content in the Go checksum database, so it can
   `clone`'s required URL and group follow.
 
 ### Changed
+
+- **`repo add --branches` skips a name origin does not have instead of refusing the whole clone.** One
+  stale entry in a list of five stopped the other four from being created, which is the wrong trade for
+  a list a human typed or a manifest carried. The skip is a `warning`, so the outcome degrades to
+  `partial` (exit 4) and names the branch — visible, not silent. `repo set --branches` still refuses:
+  there you are DECLARING the set, and a typo should be caught rather than quietly dropped.
 
 - **An absolute `paths.bare_dir` or group `path:` no longer loads.** Both are documented as
   project-relative, and an absolute value is by definition outside the workspace, so it is refused

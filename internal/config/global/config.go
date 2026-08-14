@@ -43,14 +43,8 @@ func DefaultGlobalConfig() *GlobalConfig {
 	}
 }
 
-// GetConfigDir returns the platform-specific config directory.
-// HYDRA_CONFIG_DIR overrides it, which is how tests and sandboxed runs avoid
-// touching the real user config.
-func GetConfigDir() string {
-	if dir := os.Getenv("HYDRA_CONFIG_DIR"); dir != "" {
-		return dir
-	}
-	switch runtime.GOOS {
+func platformConfigDir(goos string) string {
+	switch goos {
 	case "darwin":
 		// macOS: ~/Library/Application Support/hydra/
 		home, _ := os.UserHomeDir()
@@ -68,6 +62,16 @@ func GetConfigDir() string {
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, ".config", "hydra")
 	}
+}
+
+// GetConfigDir returns the platform-specific config directory.
+// HYDRA_CONFIG_DIR overrides it, which is how tests and sandboxed runs avoid
+// touching the real user config.
+func GetConfigDir() string {
+	if dir := os.Getenv("HYDRA_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	return platformConfigDir(runtime.GOOS)
 }
 
 // GetConfigPath returns the full path to the global config file

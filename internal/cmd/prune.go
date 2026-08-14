@@ -5,9 +5,11 @@ import (
 	"os"
 
 	"github.com/mssantosdev/hydra/internal/config"
+	"github.com/mssantosdev/hydra/internal/config/global"
 	"github.com/mssantosdev/hydra/internal/config/registry"
 	"github.com/mssantosdev/hydra/internal/git"
 	"github.com/mssantosdev/hydra/internal/output"
+	"github.com/mssantosdev/hydra/internal/trust"
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
@@ -56,7 +58,9 @@ type pruneJSON struct {
 	PrunedWorktrees []string `json:"pruned_worktrees"`
 	RemovedGroups   []string `json:"removed_groups"`
 	PrunedProjects  []string `json:"pruned_projects"`
-	DryRun          bool     `json:"dry_run"`
+	// PrunedTrust names workspaces whose trust record outlived the workspace itself.
+	PrunedTrust []string `json:"pruned_trust,omitempty"`
+	DryRun      bool     `json:"dry_run"`
 }
 
 func init() {
@@ -133,6 +137,13 @@ func runPrune(cmd *cobra.Command, args []string) error {
 		if err := reg.Save(); err != nil {
 			return output.Wrap(output.CodeInternal, err, "failed to save project registry")
 		}
+		// A trust entry whose workspace is gone is the same class of dead record, so it is
+		// dropped by the verb that already exists for staleness rather than by a new one.
+		pruned, trustErr := trust.Prune(global.GetConfigDir())
+		if trustErr != nil {
+			return classifyTrustErr(trustErr)
+		}
+		result.PrunedTrust = pruned
 	}
 
 	return emit(cmd, prunePayloadSummary(result), result, nil, func() { printPruneText(result) })

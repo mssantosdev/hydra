@@ -123,7 +123,7 @@ func runRepoSet(cmd *cobra.Command, args []string) error {
 		// The form must open showing what it is about to replace, not the default branch.
 		Preselect: ref.Repo.Branches,
 	}
-	branches, err := resolveCloneBranches(opts, repo, ref.Repo.DefaultBranch)
+	branches, _, err := resolveCloneBranches(opts, repo, ref.Repo.DefaultBranch)
 	if err != nil {
 		return err
 	}

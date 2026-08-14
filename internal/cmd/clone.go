@@ -42,6 +42,11 @@ type CloneOptions struct {
 	// leaves it empty and the resolved default branch is ticked instead.
 	Preselect   []string
 	Interactive bool
+
+	// LenientBranchNames turns unknown --branches entries into warnings and skips them
+	// instead of failing the whole clone. Only `repo add` enables this; `repo set` keeps
+	// refusing names origin does not have.
+	LenientBranchNames bool
 }
 
 type cloneResult struct {
@@ -247,6 +252,8 @@ func resolveCloneOptions(url string) (*CloneOptions, error) {
 		return nil, output.Wrap(output.CodeUsage, err, "invalid group")
 	}
 
+	opts.LenientBranchNames = len(opts.Branches) > 0
+
 	// An already-registered alias is not automatically an error: re-running a clone
 	// that was interrupted must be able to finish. performClone refuses only when the
 	// registered remote actually differs.
@@ -353,7 +360,8 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 	}
 	c.RegisterRepo(opts.Group, opts.Alias, opts.URL, defaultBranch)
 
-	branches, err := resolveCloneBranches(opts, repo, defaultBranch)
+	branches, branchWarnings, err := resolveCloneBranches(opts, repo, defaultBranch)
+	warnings = append(warnings, branchWarnings...)
 	if err != nil {
 		return result, warnings, err
 	}
@@ -501,13 +509,13 @@ func performClone(opts *CloneOptions, c *config.Config, configPath, root string)
 }
 
 // resolveCloneBranches decides which branches get worktrees.
-func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch string) ([]string, error) {
+func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch string) ([]string, []*output.Diagnostic, error) {
 	available, err := git.ListRemoteBranchesCached(repo.BareRepo)
 	if err != nil {
-		return nil, output.Wrap(output.CodeGitFailed, err, "failed to list branches on origin")
+		return nil, nil, output.Wrap(output.CodeGitFailed, err, "failed to list branches on origin")
 	}
 	if len(available) == 0 {
-		return nil, output.Errorf(output.CodeBranchUnknown, "origin has no branches")
+		return nil, nil, output.Errorf(output.CodeBranchUnknown, "origin has no branches")
 	}
 
 	known := make(map[string]struct{}, len(available))
@@ -518,7 +526,7 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 	}
 
 	if opts.AllBranches {
-		return names, nil
+		return names, nil, nil
 	}
 
 	if len(opts.Branches) > 0 {
@@ -526,13 +534,22 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 		// dedupe rather than failing on the second worktree.
 		seen := make(map[string]struct{}, len(opts.Branches))
 		requested := make([]string, 0, len(opts.Branches))
+		var warnings []*output.Diagnostic
 		for _, branch := range opts.Branches {
 			branch = strings.TrimSpace(branch)
 			if branch == "" {
 				continue
 			}
 			if _, ok := known[branch]; !ok {
-				return nil, output.Errorf(output.CodeBranchUnknown,
+				if opts.LenientBranchNames {
+					warnings = append(warnings, output.Warnf(output.CodeBranchUnknown,
+						"branch %q does not exist on origin; skipping", branch).
+						WithSubject("repo", repo.Alias).
+						WithDetail("branch", branch).
+						WithDetail("available", names))
+					continue
+				}
+				return nil, nil, output.Errorf(output.CodeBranchUnknown,
 					"branch %q does not exist on origin", branch).
 					WithDetail("branch", branch).
 					WithDetail("available", names)
@@ -544,23 +561,23 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 			requested = append(requested, branch)
 		}
 		if len(requested) == 0 {
-			return nil, output.Errorf(output.CodeBranchUnknown, "no branches selected")
+			return nil, warnings, output.Errorf(output.CodeBranchUnknown, "no branches selected")
 		}
-		return requested, nil
+		return requested, warnings, nil
 	}
 
 	if !opts.Interactive {
 		// Non-interactive with no selection: the default branch is the only
 		// defensible choice, and it always exists.
 		if defaultBranch != "" {
-			return []string{defaultBranch}, nil
+			return []string{defaultBranch}, nil, nil
 		}
-		return []string{git.GetDefaultBranch(available)}, nil
+		return []string{git.GetDefaultBranch(available)}, nil, nil
 	}
 
 	choices, resolvedDefault, err := branchChoicesForRepo(repo)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	options := make([]huh.Option[string], 0, len(choices))
@@ -594,12 +611,12 @@ func resolveCloneBranches(opts *CloneOptions, repo repoContext, defaultBranch st
 			Value(&selected),
 	))
 	if err := form.Run(); err != nil {
-		return nil, output.Wrap(output.CodeInternal, err, "cancelled")
+		return nil, nil, output.Wrap(output.CodeInternal, err, "cancelled")
 	}
 	if len(selected) == 0 {
-		return nil, output.Errorf(output.CodeBranchUnknown, "no branches selected")
+		return nil, nil, output.Errorf(output.CodeBranchUnknown, "no branches selected")
 	}
-	return selected, nil
+	return selected, nil, nil
 }
 
 func aliasFromURL(url string) string {

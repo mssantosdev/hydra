@@ -37,6 +37,10 @@ func TestHooksRunPostAddInjectsEnvAndCwd(t *testing.T) {
 	projectRoot = env.RootDir
 	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
+	// These fixtures carry hooks, so the trust gate applies: a real user must approve a
+	// workspace before hydra will execute its manifest. Say so here rather than weakening
+	// the gate for tests.
+	trustCurrentWorkspace(t)
 
 	var stdout bytes.Buffer
 	rootCmd.SetOut(&stdout)
@@ -71,6 +75,10 @@ func TestHooksRunRequiredFailure(t *testing.T) {
 	projectRoot = env.RootDir
 	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
+	// These fixtures carry hooks, so the trust gate applies: a real user must approve a
+	// workspace before hydra will execute its manifest. Say so here rather than weakening
+	// the gate for tests.
+	trustCurrentWorkspace(t)
 
 	outputFlag = "text"
 	oldStderr := os.Stderr
@@ -131,6 +139,10 @@ func TestHooksRunOptionalFailureWarns(t *testing.T) {
 	projectRoot = env.RootDir
 	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
+	// These fixtures carry hooks, so the trust gate applies: a real user must approve a
+	// workspace before hydra will execute its manifest. Say so here rather than weakening
+	// the gate for tests.
+	trustCurrentWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
 	rootCmd.SetOut(&stdout)
@@ -206,6 +218,13 @@ func TestStart_PostTopicStartFiresOncePerTopic(t *testing.T) {
 		t.Fatalf("save manifest: %v", err)
 	}
 
+	// This manifest now carries a hook, so the trust gate applies. Load the config into the
+	// command globals and approve it, exactly as a user must before hydra will run it.
+	projectRoot = env.RootDir
+	projectConfigPath = manifest
+	cfg = loaded
+	trustCurrentWorkspace(t)
+
 	fires := func() int {
 		data, err := os.ReadFile(marker)
 		if err != nil {
@@ -256,6 +275,10 @@ func TestHooksLsShowsHookNames(t *testing.T) {
 	projectRoot = env.RootDir
 	projectConfigPath = config.ManifestPath(env.RootDir)
 	cfg = env.LoadConfig()
+	// These fixtures carry hooks, so the trust gate applies: a real user must approve a
+	// workspace before hydra will execute its manifest. Say so here rather than weakening
+	// the gate for tests.
+	trustCurrentWorkspace(t)
 
 	var stdout bytes.Buffer
 	rootCmd.SetOut(&stdout)

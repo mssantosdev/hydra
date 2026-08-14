@@ -678,10 +678,15 @@ func printApplyText(payload applyJSON, summary string) {
 	_, _ = fmt.Fprintln(os.Stdout)
 	for _, result := range payload.Results {
 		label := styles.Label.Render(result.Disposition)
+		// Only a FAILED item carries an error, so the reason is printed only when there is
+		// one. Reading .Message unconditionally panicked on every created or skipped item,
+		// which meant `apply --output text` crashed on any run that worked.
+		reason := ""
 		if result.Error != nil {
 			label = styles.Error.Render(result.Disposition)
+			reason = " " + result.Error.Message
 		}
-		_, _ = fmt.Fprintf(os.Stdout, "  %-14s %s/%s %s\n", label, result.Repo, result.Branch, result.Error.Message)
+		_, _ = fmt.Fprintf(os.Stdout, "  %-14s %s/%s%s\n", label, result.Repo, result.Branch, reason)
 	}
 	_, _ = fmt.Fprintln(os.Stdout)
 }

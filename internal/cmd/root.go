@@ -512,9 +512,21 @@ func runHookEvent(event string, hctx hooks.Context, cwd string) (hooks.Result, e
 
 // runHookEventForProject is the explicit-project form, used by commands that
 // operate on a target other than the ambient one.
+//
+// This is where the TRUST GATE lives, because this is the one function every hook execution
+// funnels through. A hand-maintained list of gated commands was tried on paper and was wrong
+// in both directions: it named `clone`, which is not a registered command, and omitted
+// `repo add`, which is what actually reaches post_clone. Gating the funnel covers every
+// present and future hook site, including a command that gains a hook later.
 func runHookEventForProject(c *config.Config, root, event string, hctx hooks.Context, cwd string) (hooks.Result, error) {
 	if noHooksFlag || c == nil {
 		return hooks.Result{}, nil
+	}
+	// --no-hooks returned above, which is correct: it suppresses execution, and there is
+	// nothing to approve if nothing runs. It does NOT bypass the branch_provider gate, which
+	// is checked separately, because the two sets differ.
+	if err := requireTrustedManifest(c, root); err != nil {
+		return hooks.Result{}, err
 	}
 	// The repo in the context selects the chain: a hook set on that repo, or on its group, runs
 	// after the workspace's. ResolveHooks walks the level chain; c.Hooks alone would skip both.

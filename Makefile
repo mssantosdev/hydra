@@ -48,6 +48,16 @@ vet:
 # clean local run and a red pipeline.
 GOLANGCI_VERSION ?= 2.12.2
 
+# COVERAGE_MIN is the enforced floor for total statement coverage. gate-test fails below it,
+# so the number cannot quietly erode one untested branch at a time. Raise it when the real
+# figure clears the next step; never lower it to make a change pass.
+#
+# Measured with -coverpkg=./..., because this is a CLI: the tests in internal/cmd drive
+# config, git, hooks and topic for real, and per-package profiling scores that execution as
+# zero. It also stops internal/testutil — which every test uses and which has no tests of its
+# own — from counting as 141 dead statements.
+COVERAGE_MIN ?= 80.0
+
 # gate is the Arvia Go quality gate, run locally in the same order as CI:
 # format, vet, lint, vulnerabilities, tests, race.
 #
@@ -85,9 +95,14 @@ gate-vuln: ## govulncheck against the Go vulnerability database
 	@if command -v govulncheck >/dev/null; then govulncheck ./...; \
 	else "$$(go env GOPATH)/bin/govulncheck" ./...; fi
 
-gate-test: ## Tests with coverage
-	go test ./... -coverprofile=coverage.out
-	@go tool cover -func=coverage.out | tail -1
+gate-test: ## Tests with coverage, enforced against COVERAGE_MIN
+	go test ./... -coverpkg=./... -coverprofile=coverage.out
+	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ { gsub(/%/,"",$$NF); print $$NF }'); \
+	if [ -z "$$total" ]; then echo "could not read a coverage total from coverage.out"; exit 1; fi; \
+	awk -v got="$$total" -v min="$(COVERAGE_MIN)" 'BEGIN { \
+		if (got + 0 < min + 0) { \
+			printf "coverage %s%% is below the %s%% threshold\n", got, min; exit 1 } \
+		printf "coverage %s%% (minimum %s%%)\n", got, min }'
 
 gate-race: ## Race detector (requires cgo)
 	CGO_ENABLED=1 go test -race ./...
