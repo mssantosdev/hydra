@@ -10,6 +10,28 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
+## [0.6.1] - 2026-08-15
+
+### Security
+
+- **The toolchain pin in 0.6.0 did not do what its release notes said.** 0.6.0 set
+  `toolchain go1.26.6` in `go.mod` to keep `go install` from producing a binary carrying
+  GO-2026-4970 / CVE-2026-39822 — a root escape in `os` via a symlink plus a trailing slash, in
+  the `os.Root` calls that ARE `carry`'s containment. Verified against the published artifact:
+  `go version -m` on `go install github.com/mssantosdev/hydra@v0.6.0` reports **go1.26.4**, the
+  vulnerable stdlib. The pin was inert.
+
+  `toolchain` is honoured when a main module is present, which is why every local build and the
+  gate used 1.26.6 and the hole stayed invisible. `go install pkg@version` has no main module, so
+  the go command compares the target module's **`go` line** — `1.26.0`, satisfied by 1.26.4 — and
+  never consults `toolchain`. The requirement now lives where it is actually read: `go 1.26.6`,
+  and the redundant `toolchain` line is gone.
+
+  Consequence: building hydra requires Go 1.26.6. With the default `GOTOOLCHAIN=auto` that
+  downloads itself; with `GOTOOLCHAIN=local` on an older Go it fails loudly, which is the correct
+  failure for a security minimum. `carry` cleaning its own destination (0.6.0) is unaffected and
+  remains the reason the escape has no spelling to arrive in.
+
 ## [0.6.0] - 2026-08-14
 
 ### Security
@@ -1470,5 +1492,6 @@ Read this section before upgrading. Each entry says what to do.
   continuation bytes and a truncated multi-byte sequence through it behind a deadline, so the
   property is proven rather than assumed from a version bump.
 
+[0.6.1]: https://github.com/mssantosdev/hydra/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/mssantosdev/hydra/compare/v0.5.2...v0.6.0
 [0.2.0]: https://github.com/mssantosdev/hydra/compare/v0.0.19...v0.2.0
