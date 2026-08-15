@@ -10,7 +10,7 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
-## [Unreleased]
+## [0.6.0] - 2026-08-14
 
 ### Security
 
@@ -1470,4 +1470,5 @@ Read this section before upgrading. Each entry says what to do.
   continuation bytes and a truncated multi-byte sequence through it behind a deadline, so the
   property is proven rather than assumed from a version bump.
 
+[0.6.0]: https://github.com/mssantosdev/hydra/compare/v0.5.2...v0.6.0
 [0.2.0]: https://github.com/mssantosdev/hydra/compare/v0.0.19...v0.2.0
