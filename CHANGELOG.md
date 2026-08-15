@@ -65,7 +65,13 @@ is permanently bound to different content in the Go checksum database, so it can
   `blockedby` where the contract says `blocked_by`, which is worse than having no YAML at all.
   Integers stay integral rather than arriving as `1.2172371e+07`.
 
-- **Every gate has an override, and every refusal names it in `next[]`.** `topic close --force`
+- **Every gate has an override, and every refusal names the invocation THE CALLER can re-run.**
+  The recovery is attached by the command, not by the shared error classifier: `topic link` recovers
+  by appending one edge and `topic update` by re-applying a whole document, so one hardcoded
+  suggestion would hand a document caller a command that builds a different graph than the one they
+  asked for. A refusal naming the wrong recovery is worse than one naming none.
+
+- **The overrides themselves.** `topic close --force`
   closes over open children, unmerged branches and open dependencies; `topic link --force` records
   an edge that closes a cycle or points at itself; `--max-size` raises or removes the document limit.
   Overrides report what they overrode as NOTES rather than warnings, so the outcome stays `success`

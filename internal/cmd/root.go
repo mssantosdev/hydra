@@ -591,10 +591,15 @@ func classifyTopicErr(err error) error {
 			WithDetail("supported_versions", ver.Supported)
 	}
 
-	// A cycle is a refused DEFAULT, not a prohibition, so the error carries the loop it
-	// would close and the invocation that records it anyway. Before this mapping existed the
-	// store's cycle refusal fell through to io_failed, which told the caller hydra had
-	// broken rather than that they had asked for something hydra guards.
+	// A cycle is a refused DEFAULT, not a prohibition, so the error carries the loop it would
+	// close. It does NOT carry the recovery invocation: only the caller knows what it ran, and
+	// this classifier is shared by `topic link` (where re-running with --force appends one edge)
+	// and `topic update` (where it must re-apply a whole document). Advertising the link form for
+	// both would hand a document caller a command that produces a different graph than the one
+	// they asked for. Commands attach their own via withForceNext.
+	//
+	// Before this mapping existed the store's cycle refusal fell through to io_failed, which told
+	// the caller hydra had broken rather than that they had asked for something hydra guards.
 	var cycle *topic.ErrCycle
 	if errors.As(err, &cycle) {
 		e := output.Errorf(output.CodeTopicCycle, "%s", cycle.Error()).
@@ -605,10 +610,7 @@ func classifyTopicErr(err error) error {
 		if len(cycle.Path) > 0 {
 			e = e.WithDetail("path", cycle.Path)
 		}
-		return e.WithNext(output.Next{
-			Argv: []string{"hydra", "topic", "link", cycle.From, cycle.Kind, cycle.To, "--force"},
-			Why:  "record the relationship anyway; every hydra walk is cycle-safe",
-		})
+		return e
 	}
 
 	var missing *topic.ErrLinkUnknown

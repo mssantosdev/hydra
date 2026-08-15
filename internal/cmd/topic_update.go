@@ -181,7 +181,7 @@ func applyTopicDocument(cmd *cobra.Command, id, arg string) (bool, error) {
 			links = append(links, topic.Link{Kind: strings.TrimSpace(l.Kind), To: strings.TrimSpace(l.To)})
 		}
 		if err := store.ReplaceLinks(id, links, topicUpdateForce); err != nil {
-			return false, classifyTopicErr(err)
+			return false, withForceNext(classifyTopicErr(err), "topic", "update", id, arg)
 		}
 	}
 	if doc.Meta != nil {

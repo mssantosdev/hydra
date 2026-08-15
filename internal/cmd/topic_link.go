@@ -11,6 +11,23 @@ import (
 	"github.com/mssantosdev/hydra/internal/ui/styles"
 )
 
+// withForceNext attaches the caller's OWN invocation plus --force to a cycle refusal.
+//
+// The classifier deliberately does not do this: `topic link` recovers by appending one edge and
+// `topic update` by re-applying a whole document, so a shared suggestion would hand one of them a
+// command that builds a different graph than the one they asked for. A refusal that names the
+// wrong recovery is worse than one that names none.
+func withForceNext(err error, argv ...string) error {
+	e := output.Classify(err)
+	if e.Code != output.CodeTopicCycle || len(e.Next) > 0 {
+		return err
+	}
+	return e.WithNext(output.Next{
+		Argv: append(append([]string{"hydra"}, argv...), "--force"),
+		Why:  "record it anyway; every hydra walk carries a visited set, so a cycle cannot hang a command",
+	})
+}
+
 var topicLinkForce bool
 
 var topicLinkCmd = &cobra.Command{
@@ -90,7 +107,7 @@ func runTopicLink(cmd *cobra.Command, args []string) error {
 
 	recorded, err := topicStore().AddLink(id, topic.Link{Kind: kind, To: target}, topicLinkForce)
 	if err != nil {
-		return classifyTopicErr(err)
+		return withForceNext(classifyTopicErr(err), "topic", "link", id, kind, target)
 	}
 
 	payload := topicLinkJSON{Topic: id, Kind: kind, To: target, Recorded: recorded, Forced: topicLinkForce && recorded}

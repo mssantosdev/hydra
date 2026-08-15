@@ -523,6 +523,59 @@ func TestTopicUpdate_EmptyDocumentIsANoOp(t *testing.T) {
 	}
 }
 
+// A cycle refusal must name the invocation THAT CALLER can re-run. `topic link` recovers by
+// appending one edge; `topic update` recovers by re-applying the whole document. Advertising the
+// link form to a document caller would hand them a command that builds a different graph.
+func TestCycleRefusalNamesTheCallersOwnRecovery(t *testing.T) {
+	env := graphEnv(t)
+	if _, err := topicCovExec(t, "link", "a", "depends_on", "b"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// The link path.
+	_, err := topicCovExec(t, "link", "b", "depends_on", "a")
+	if err == nil {
+		t.Fatal("cycle must be refused")
+	}
+	linkNext := forceArgv(t, err)
+	want := "hydra topic link b depends_on a --force"
+	if linkNext != want {
+		t.Errorf("link recovery = %q, want %q", linkNext, want)
+	}
+
+	// The document path: same store error, different recovery.
+	doc := filepath.Join(env.RootDir, "cycle.yaml")
+	if err := os.WriteFile(doc, []byte("links:\n  - kind: depends_on\n    to: a\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, err = topicCovExec(t, "update", "b", doc)
+	if err == nil {
+		t.Fatal("cycle in a document must be refused")
+	}
+	docNext := forceArgv(t, err)
+	want = "hydra topic update b " + doc + " --force"
+	if docNext != want {
+		t.Errorf("document recovery = %q, want %q", docNext, want)
+	}
+	// Re-running exactly what was advertised must succeed, or the suggestion is a lie.
+	if _, err := topicCovExec(t, "update", "b", doc, "--force"); err != nil {
+		t.Fatalf("the advertised recovery failed: %v", err)
+	}
+}
+
+// forceArgv returns the single --force recovery an error advertises.
+func forceArgv(t *testing.T, err error) string {
+	t.Helper()
+	e := output.Classify(err)
+	if e.Code != output.CodeTopicCycle {
+		t.Fatalf("code = %q, want %q", e.Code, output.CodeTopicCycle)
+	}
+	if len(e.Next) != 1 {
+		t.Fatalf("next = %+v, want exactly one recovery", e.Next)
+	}
+	return strings.Join(e.Next[0].Argv, " ")
+}
+
 // Completion is a user-facing surface: a wrong kind list sends someone down a path the command
 // will then refuse.
 func TestCompleteTopicLinkArgs(t *testing.T) {
