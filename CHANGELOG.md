@@ -10,6 +10,85 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
+## [Unreleased]
+
+### Changed
+
+- **Topics relate as a GRAPH, not a tree.** A topic's relationships were one scalar `parent:`,
+  writable only at creation through `start --parent` and read only by `topic close`. They are now
+  typed, directed edges: `part_of` is containment with the same git-derived close gate as before,
+  `depends_on` is a peer that must land first, and any DOT-NAMESPACED kind (`acme.tested-by`) is
+  the user's own — hydra stores and reports it and gates on nothing in it, so plugins, UIs and
+  scripts build their own semantics on the same primitive. Bare words stay reserved so hydra can
+  add a kind later without breaking a workspace that already used that word. Multi-parent is legal
+  and needs no tie-break: each parent gates its own close independently, which the scalar could
+  never express.
+
+  `depends_on` was explicitly REJECTED in `docs/design/workspace-model.md` as "pure assertion with
+  one consumer, about a fact the user typed", which would "rot silently when its target is
+  descoped". That decision is reversed, and the row records why rather than being deleted: the rot
+  is now DETECTED (`doctor` reports `topic_dangling_link` and `--fix` drops the edge) and mostly
+  prevented (deleting a topic sweeps every edge naming it in the SAME write, so the CLI cannot
+  produce a dangling one), and the escape hatches are self-service. What stays true is that it has
+  no git-observable consequence — which is exactly why its gate is "is the target closed" and never
+  a merge check. Peers share no integration branch, and inventing one would be the same false claim
+  in the opposite direction.
+
+- **Topics carry free-form `meta`.** Key/value data hydra never interprets, so an extension keeps
+  its state (a tracker id, a UI's grouping) on the topic that owns it instead of in a sidecar file
+  that drifts. Set it with `topic update --meta k=v`/`--unset-meta k`, or declare it in a document.
+
+- **BREAKING: `topic` JSON replaces `parent` with `links`, `linked_from` and `meta`.** `linked_from`
+  is derived on read, never stored — a second copy of an edge is a second thing that can be wrong.
+  Consumers reading `.parent` must read `.links[] | select(.kind=="part_of") | .to`.
+
+- **`state.yaml` is schema 2.** A v1 file is migrated ON READ, so every query answers correctly
+  before anything is rewritten, and the next mutation persists v2 and drops the old key. No command
+  and no flag: the upgrade is not an event. A v1 hydra reading a v2 file still refuses with
+  `state_version_unsupported`.
+
+### Added
+
+- **`hydra topic link|unlink <id> <kind> <target>`** and **`hydra topic update <id>`**. Following
+  the resource-verb shape the rest of the CLI uses — and deliberately NOT a `meta set`/`meta unset`
+  micro-verb pair, which is how a surface stops being memorable. `update` takes repeatable
+  `--meta k=v`/`--unset-meta k`, or a document by path or `-` for stdin, in JSON **or** YAML through
+  one decoder. A document REPLACES whole sections, which is what makes a checked-in file the source
+  of truth rather than a patch with invented merge rules; an absent section is left alone, an
+  explicitly empty one clears, and a document declaring nothing converges at exit 0 saying so.
+
+- **`--output yaml`**, everywhere. The SAME envelope as JSON, in YAML, on the success AND failure
+  paths — a YAML success envelope followed by a JSON error envelope in one script is a broken
+  contract, not a formatting detail. It is never inferred: `auto` still resolves to JSON for a pipe,
+  because that is what every existing consumer parses. The encoder renders through the JSON form
+  precisely so the field names stay the json-tag names; handing the structs to yaml.v3 would publish
+  `blockedby` where the contract says `blocked_by`, which is worse than having no YAML at all.
+  Integers stay integral rather than arriving as `1.2172371e+07`.
+
+- **Every gate has an override, and every refusal names it in `next[]`.** `topic close --force`
+  closes over open children, unmerged branches and open dependencies; `topic link --force` records
+  an edge that closes a cycle or points at itself; `--max-size` raises or removes the document limit.
+  Overrides report what they overrode as NOTES rather than warnings, so the outcome stays `success`
+  and the process exits 0 — an override that still fails the invocation has overridden nothing, and
+  `hydra topic close X --force && deploy` would never reach deploy. The one refusal with nothing to
+  override is `link_unknown`: the desired state already holds, and it carries `details.recorded` so
+  a mistyped kind is visible instead of silently succeeding.
+
+- **Cycles are refused by default and recordable on demand.** Every walk in the store carries a
+  visited set, so a forced cycle costs mutual close-blocking — breakable with `close --force` — and
+  never a hang, including over a hand-edited state file. A SELF-edge is refused in every kind,
+  reserved or custom: mutuality can be meaningful, being one's own relatum cannot. Multi-hop cycles
+  in a custom kind are allowed, because hydra assigns that kind no semantics to violate.
+
+- **Error codes `topic_cycle` and `link_unknown`**, and `topic_not_closeable` now also covers an
+  open `depends_on` target (`dependency_open`) and one naming a topic that does not exist
+  (`dependency_missing`). The store's cycle refusal previously fell through to `io_failed`, telling
+  the caller hydra had broken when they had asked for something hydra guards.
+
+- **`doctor` check `topic_dangling_link`**, fixable: a relationship whose target does not exist.
+  Only hand-edited state can produce one, and a dangling `depends_on` BLOCKS a close with a refusal
+  nobody could otherwise act on.
+
 ## [0.6.1] - 2026-08-15
 
 ### Security

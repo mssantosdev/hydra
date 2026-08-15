@@ -358,15 +358,22 @@ func suggestionsIn(msg string) []string {
 	return out
 }
 
-// ErrorsAsJSON reports whether a failure should be rendered as a JSON envelope.
-func ErrorsAsJSON() bool {
-	return jsonMode()
+// ErrorsAsEnvelope reports whether a failure should be rendered as a machine envelope
+// rather than prose on stderr. It asks about the FORMAT FAMILY, not about JSON: a YAML
+// success envelope followed by a prose error is the same broken contract as a JSON one.
+func ErrorsAsEnvelope() bool {
+	return machineMode()
+}
+
+// WireMode is the resolved envelope format, for main's failure path.
+func WireMode() output.Mode {
+	return output.Effective(outMode, os.Stdout)
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "path to a .hydra/config.yaml (default: nearest one walking up)")
 	rootCmd.PersistentFlags().StringVar(&projectFlag, "project", "", "registered project name to operate on")
-	rootCmd.PersistentFlags().StringVar(&outputFlag, "output", "", "output mode: auto|text|json (auto emits JSON when stdout is not a terminal)")
+	rootCmd.PersistentFlags().StringVar(&outputFlag, "output", "", "output mode: auto|text|json|yaml (auto emits JSON when stdout is not a terminal)")
 	rootCmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "verbose logging on stderr")
 	rootCmd.PersistentFlags().BoolVar(&noHooksFlag, "no-hooks", false, "skip every configured hook")
 
@@ -403,9 +410,10 @@ func commandName(cmd *cobra.Command) string {
 	return strings.TrimSpace(strings.TrimPrefix(cmd.CommandPath(), rootCmd.Name()))
 }
 
-// jsonMode reports whether the effective output mode for stdout is JSON.
-func jsonMode() bool {
-	return output.Effective(outMode, os.Stdout) == output.ModeJSON
+// machineMode reports whether the effective output mode for stdout is a parseable
+// envelope (JSON or YAML) rather than text.
+func machineMode() bool {
+	return output.Effective(outMode, os.Stdout).Machine()
 }
 
 // interactive reports whether prompts may be shown.
@@ -416,19 +424,19 @@ func jsonMode() bool {
 // was unreachable and therefore unverified.
 func interactive() bool { return promptPolicy() }
 
-// explicitJSON reports whether JSON was actually asked for, rather than inferred
-// from stdout not being a terminal.
-func explicitJSON() bool {
-	return outMode == output.ModeJSON
+// explicitEnvelope reports whether a machine format was actually asked for, rather than
+// inferred from stdout not being a terminal.
+func explicitEnvelope() bool {
+	return outMode.Machine()
 }
 
 // emitValue is the funnel for commands whose payload IS a single value the shell
 // consumes (`hydra path`). Auto mode stays text so `cd "$(hydra path api)"` works;
 // only an explicit --output json (or HYDRA_OUTPUT=json) produces an envelope.
 func emitValue(cmd *cobra.Command, summary string, data any, warnings []*output.Diagnostic, text func()) error {
-	if explicitJSON() {
-		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd),
-			output.Result{Summary: summary, Data: data, Warnings: warnings})
+	if explicitEnvelope() {
+		return output.Emit(cmd.OutOrStdout(), commandName(cmd),
+			output.Result{Summary: summary, Data: data, Warnings: warnings}, WireMode())
 	}
 	for _, warning := range warnings {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
@@ -449,7 +457,7 @@ func emit(cmd *cobra.Command, summary string, data any, warnings []*output.Diagn
 	return emitResult(cmd, output.Result{Summary: summary, Data: data, Warnings: warnings}, text)
 }
 
-// envelopeEmitted records that a JSON envelope already reached stdout, so main does
+// envelopeEmitted records that an envelope already reached stdout, so main does
 // not append a second one for the same command.
 var envelopeEmitted bool
 
@@ -459,9 +467,9 @@ func EnvelopeEmitted() bool { return envelopeEmitted }
 // emitResult is for commands that carry more than a summary — a partial outcome, or
 // a next suggestion.
 func emitResult(cmd *cobra.Command, result output.Result, text func()) error {
-	if jsonMode() {
+	if machineMode() {
 		envelopeEmitted = true
-		return output.EmitJSON(cmd.OutOrStdout(), commandName(cmd), result)
+		return output.Emit(cmd.OutOrStdout(), commandName(cmd), result, WireMode())
 	}
 	for _, warning := range result.Warnings {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
@@ -580,7 +588,66 @@ func classifyTopicErr(err error) error {
 		return output.Errorf(output.CodeStateVersionUnsupported, "%s", ver.Error()).
 			WithDetail("path", ver.Path).
 			WithDetail("found_version", ver.Found).
-			WithDetail("supported_versions", []string{ver.Supported})
+			WithDetail("supported_versions", ver.Supported)
+	}
+
+	// A cycle is a refused DEFAULT, not a prohibition, so the error carries the loop it
+	// would close and the invocation that records it anyway. Before this mapping existed the
+	// store's cycle refusal fell through to io_failed, which told the caller hydra had
+	// broken rather than that they had asked for something hydra guards.
+	var cycle *topic.ErrCycle
+	if errors.As(err, &cycle) {
+		e := output.Errorf(output.CodeTopicCycle, "%s", cycle.Error()).
+			WithSubject("topic", cycle.From).
+			WithDetail("from", cycle.From).
+			WithDetail("kind", cycle.Kind).
+			WithDetail("to", cycle.To)
+		if len(cycle.Path) > 0 {
+			e = e.WithDetail("path", cycle.Path)
+		}
+		return e.WithNext(output.Next{
+			Argv: []string{"hydra", "topic", "link", cycle.From, cycle.Kind, cycle.To, "--force"},
+			Why:  "record the relationship anyway; every hydra walk is cycle-safe",
+		})
+	}
+
+	var missing *topic.ErrLinkUnknown
+	if errors.As(err, &missing) {
+		recorded := make([]string, 0, len(missing.Recorded))
+		for _, l := range missing.Recorded {
+			recorded = append(recorded, l.Kind+" "+l.To)
+		}
+		return output.Errorf(output.CodeLinkUnknown, "%s", missing.Error()).
+			WithSubject("topic", missing.From).
+			WithDetail("topic", missing.From).
+			WithDetail("kind", missing.Kind).
+			WithDetail("to", missing.To).
+			WithDetail("recorded", recorded)
+	}
+
+	// A bad kind or meta key is the CALLER's spelling, not a broken invariant: usage, with
+	// the rule in the message rather than a code the reader has to look up.
+	var kindErr *topic.ErrKind
+	if errors.As(err, &kindErr) {
+		return output.Errorf(output.CodeUsage, "%s", kindErr.Error()).
+			WithDetail("kind", kindErr.Kind).
+			WithDetail("reserved", []string{topic.KindPartOf, topic.KindDependsOn})
+	}
+
+	var metaErr *topic.ErrMetaKey
+	if errors.As(err, &metaErr) {
+		return output.Errorf(output.CodeUsage, "%s", metaErr.Error()).
+			WithDetail("key", metaErr.Key)
+	}
+
+	// An unknown id reaching here came from a store mutation rather than a command's own
+	// lookup, so it must still name the thing that was not found.
+	var unknown *topic.ErrUnknown
+	if errors.As(err, &unknown) {
+		return output.Errorf(output.CodeTopicUnknown,
+			"topic %q is not known; run \"hydra topic list\" to see active topics", unknown.ID).
+			WithSubject("topic", unknown.ID).
+			WithDetail("topic", unknown.ID)
 	}
 
 	if topic.IsBusy(err) {

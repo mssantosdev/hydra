@@ -158,11 +158,26 @@ Then the level work: schema 3, group as an object with `path`, `defaults`, `hook
 resolution workspace → group → repo, scalars nearest-wins and lists appending with `override: true`
 as the explicit escape.
 
-Then hierarchy: `parent:` opt-in with flat as the default, closeability **derived** and
-**member-granular** — for each child member `(repo, branch)`, the parent must have a member in the
-same repo to merge into; if it does not, that is `no_integration_target`, never a silent pass.
-`topic close` is the gate; once-per-operation topic events (`post_topic_start`, `pre_topic_close`,
-`post_topic_close`, `pre_topic_remove`) carry the member set.
+Then the graph. Relationships are **typed edges** on a topic, not a scalar: `part_of` is containment,
+`depends_on` is a peer that must land first, and any dot-namespaced kind (`acme.tested-by`) is the
+user's own, stored and reported but never gated on. `meta` is a free-form key/value bag with the same
+contract — hydra stores it and branches on nothing in it, so plugins and UIs keep their state on the
+topic that owns it. Multi-parent is legal: each parent gates its own close independently, so there is
+nothing to tie-break.
+
+Closeability stays **derived**. For `part_of` it is **member-granular** — for each child member
+`(repo, branch)`, the parent must have a member in the same repo to merge into; if it does not, that
+is `no_integration_target`, never a silent pass. For `depends_on` the gate is only whether the target
+is CLOSED: peers share no integration branch, so there is no merge to verify, and asking git anyway
+would mean inventing a target. `topic close` is the gate and `--force` is its override; once-per-operation
+topic events (`post_topic_start`, `pre_topic_close`, `post_topic_close`, `pre_topic_remove`) carry the
+member set.
+
+**Every gate has an override.** A refusal states the rule and names the invocation that proceeds
+anyway: `close --force` over blockers, `link --force` over a cycle or a self-edge, `--max-size` over a
+document limit. Walks carry visited sets precisely so a forced cycle degrades to mutual close-blocking
+instead of a hang. The one refusal with no override is `link_unknown`, because the desired state
+already holds and there is nothing to force.
 
 ## Design rules
 
@@ -189,13 +204,13 @@ hook already runs once per operation.
 
 | | why |
 |---|---|
-| `depends_on` | pure assertion with one consumer (making `topic close` refuse), about a fact the user typed. `parent:` has a git-observable consequence; this has none. It rots silently when its target is descoped, and the strongest story for it resolves in CI, not on a laptop. `links:` records a note without pretending to enforce it. |
+| ~~`depends_on`~~ **REVERSED — shipped** | The original refusal: "pure assertion with one consumer (making `topic close` refuse), about a fact the user typed. `parent:` has a git-observable consequence; this has none. It rots silently when its target is descoped, and the strongest story for it resolves in CI, not on a laptop." Reversed by the graph work on user direction, and each objection now has an answer rather than a rebuttal: the consumer exists (`topic close` gates on it, `dependency_open`), the rot is DETECTED (`doctor` reports `topic_dangling_link`, `--fix` drops it) and mostly prevented (deleting a topic sweeps the edges naming it in the same write), and the escape hatches are self-service (`unlink`, `close --force`). What remains true is that it has no git-observable consequence — which is why its gate is "is the target closed", never a merge check, and hydra does not pretend otherwise. |
 | sub-topics by naming convention | reintroduces the fuzzy destructive handle `topic.go` rejected. That refusal is about *name-inferred* hierarchy and does not block `parent:`. |
 | demoting groups | reversed — they partition the workspace so it stays comprehensible at scale. |
 | `run_once` on hooks | every hook already runs once per operation; there is no loop. |
 | a `baseline` or `defaults` noun | a property, not a sixth noun. |
 | declared vs topic-owned exclusivity | invented; no such rule is needed. |
-| `hydra group ls\|show`, `groups[]` aggregate, "topic owns its repo set" | no story survived — the same test that cut `depends_on`. |
+| `hydra group ls\|show`, `groups[]` aggregate, "topic owns its repo set" | no story survived — the same test `depends_on` originally failed, which it later passed on the terms above. |
 
 ## Open questions
 

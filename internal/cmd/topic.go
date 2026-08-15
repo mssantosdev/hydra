@@ -135,6 +135,20 @@ type topicMemberJSON struct {
 	Present bool   `json:"present"`
 }
 
+// topicLinkRefJSON is one outgoing edge.
+type topicLinkRefJSON struct {
+	Kind string `json:"kind"`
+	To   string `json:"to"`
+}
+
+// topicLinkFromJSON is one incoming edge. Reported because half a graph is a map with the
+// return roads missing: "what waits on this" is the question that decides whether closing is
+// safe, and a caller should not have to list every topic to answer it.
+type topicLinkFromJSON struct {
+	Kind string `json:"kind"`
+	From string `json:"from"`
+}
+
 type topicJSON struct {
 	ID      string            `json:"id"`
 	Members []topicMemberJSON `json:"members"`
@@ -142,14 +156,20 @@ type topicJSON struct {
 	// clears.
 	Dangling int `json:"dangling"`
 
-	// Parent is containment when declared, absent when the topic is flat — which stays the
-	// default. Reported because a recorded relationship nobody can read is indistinguishable from
-	// no relationship: `--parent` wrote it correctly and `topic list` showed nothing, so the
-	// feature looked broken.
-	Parent string `json:"parent,omitempty"`
+	// Links are the relationships this topic declares; LinkedFrom are the ones declared
+	// about it, derived on read. Both are reported because a recorded relationship nobody
+	// can read is indistinguishable from no relationship: the scalar this replaced was
+	// written correctly by --parent and `topic list` showed nothing, so the feature looked
+	// broken.
+	Links      []topicLinkRefJSON  `json:"links,omitempty"`
+	LinkedFrom []topicLinkFromJSON `json:"linked_from,omitempty"`
 
-	// Closed is the declaration that the work is finished. Whether it MAY be closed is derived on
-	// demand by `topic close`, never stored.
+	// Meta is the user's own key/value space. hydra stores and reports it and branches on
+	// nothing in it, so an extension can keep its state on the topic that owns it.
+	Meta map[string]string `json:"meta,omitempty"`
+
+	// Closed is the declaration that the work is finished. Whether it MAY be closed is
+	// derived on demand by `topic close`, never stored.
 	Closed bool `json:"closed,omitempty"`
 }
 
@@ -183,6 +203,14 @@ func runTopicList(cmd *cobra.Command, args []string) error {
 			label := fmt.Sprintf("%d worktree(s)", len(t.Members))
 			if t.Dangling > 0 {
 				label += fmt.Sprintf(", %d missing", t.Dangling)
+			}
+			// A count, not the edges: the list line answers "what am I working on", and the
+			// graph itself belongs to `show` and to JSON.
+			if len(t.Links) > 0 {
+				label += fmt.Sprintf(", %d link(s)", len(t.Links))
+			}
+			if t.Closed {
+				label += ", closed"
 			}
 			fmt.Printf("  %s  %s\n", styles.Label.Render(t.ID), label)
 		}
@@ -218,7 +246,49 @@ func runTopicShow(cmd *cobra.Command, args []string) error {
 				fmt.Sprintf("  %d member(s) have no worktree; run \"hydra doctor --fix\"", payload.Dangling)))
 			fmt.Println()
 		}
+		printTopicGraph(payload)
 	})
+}
+
+// printTopicGraph renders the relationships and meta, each section only when it has
+// content: a heading over nothing reads as a feature that is broken rather than unused.
+//
+// Direction is drawn, not named: an arrow away from the topic for what it declares, an
+// arrow toward it for what is declared about it. "linked_from api-stage depends_on" is a
+// sentence a reader has to parse twice.
+func printTopicGraph(payload topicJSON) {
+	if len(payload.Links) > 0 {
+		fmt.Println(styles.Label.Render("  Links"))
+		for _, l := range payload.Links {
+			fmt.Printf("    %-14s → %s\n", l.Kind, l.To)
+		}
+		fmt.Println()
+	}
+	if len(payload.LinkedFrom) > 0 {
+		fmt.Println(styles.Label.Render("  Linked from"))
+		for _, l := range payload.LinkedFrom {
+			fmt.Printf("    %-14s ← %s\n", l.Kind, l.From)
+		}
+		fmt.Println()
+	}
+	if len(payload.Meta) > 0 {
+		fmt.Println(styles.Label.Render("  Meta"))
+		for _, key := range sortedMetaKeys(payload.Meta) {
+			fmt.Printf("    %s = %s\n", key, payload.Meta[key])
+		}
+		fmt.Println()
+	}
+}
+
+// sortedMetaKeys orders meta for display. Map iteration order is random, and output that
+// reshuffles between runs cannot be diffed or eyeballed.
+func sortedMetaKeys(meta map[string]string) []string {
+	keys := make([]string, 0, len(meta))
+	for key := range meta {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func topicShowSummary(payload topicJSON) string {
@@ -233,7 +303,23 @@ func topicShowSummary(payload topicJSON) string {
 func describeTopic(t topic.Topic) topicJSON {
 	live := liveWorktreesByKey()
 
-	out := topicJSON{ID: t.ID, Parent: t.Parent, Closed: t.Closed, Members: make([]topicMemberJSON, 0, len(t.Members))}
+	out := topicJSON{
+		ID:      t.ID,
+		Closed:  t.Closed,
+		Meta:    t.Meta,
+		Members: make([]topicMemberJSON, 0, len(t.Members)),
+	}
+	for _, l := range t.Links {
+		out.Links = append(out.Links, topicLinkRefJSON{Kind: l.Kind, To: l.To})
+	}
+	// Inbound is a whole-store scan, so it is read once here rather than per member. A read
+	// failure does not sink the description: the members and outgoing edges are still true,
+	// and dropping them to report one missing derived field would hide more than it tells.
+	if inbound, err := topicStore().Inbound(t.ID); err == nil {
+		for _, in := range inbound {
+			out.LinkedFrom = append(out.LinkedFrom, topicLinkFromJSON{Kind: in.Kind, From: in.From})
+		}
+	}
 	for _, member := range t.Members {
 		entry := topicMemberJSON{Repo: member.Repo, Branch: member.Branch}
 		if wt, ok := live[topicKey(member.Repo, member.Branch)]; ok {
@@ -795,16 +881,29 @@ func printTopicRemoveText(payload topicRemoveJSON, summary string) {
 	fmt.Println()
 }
 
-// completeTopicIDs completes recorded topic ids.
-func completeTopicIDs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 || cfg == nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+// topicIDCandidates lists recorded topic ids, independent of argument position.
+//
+// completeTopicIDs guards on len(args)==0 because its commands take exactly one topic; `link`
+// and `unlink` name a topic in the FIRST and THIRD positions, so they need the listing without
+// that guard rather than a copy of it.
+func topicIDCandidates() []string {
+	if cfg == nil {
+		return nil
 	}
 	names, err := topicStore().Names()
 	if err != nil {
+		return nil
+	}
+	return names
+}
+
+// completeTopicIDs completes recorded topic ids for a command whose only topic is its first
+// positional argument.
+func completeTopicIDs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	return names, cobra.ShellCompDirectiveNoFileComp
+	return topicIDCandidates(), cobra.ShellCompDirectiveNoFileComp
 }
 
 // completeTopicAttachArgs completes the topic id, then any worktree handle.

@@ -110,7 +110,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			if err := os.WriteFile(target, []byte(wt.Path+"\n"), 0644); err != nil {
 				return output.Wrap(output.CodeIOFailed, err, "failed to write the switch target file")
 			}
-		} else if !jsonMode() {
+		} else if !machineMode() {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", switchMarker, wt.Path)
 			return nil
 		}

@@ -329,7 +329,9 @@ Need cleanup?
 | `git_failed` | 1 | an underlying git invocation failed |
 | `topic_unknown` | 1 | `--topic <id>` is not recorded; `details.known` lists valid ids |
 | `topic_conflict` | 1 | that worktree already belongs to another topic |
-| `topic_not_closeable` | 1 | a child is open or unmerged; `details.blocked_by` names every reason |
+| `topic_not_closeable` | 1 | a child or a `depends_on` target is unfinished; `details.blocked_by` names every reason, and `--force` closes anyway |
+| `topic_cycle` | 1 | the relationship would close a loop in `part_of`/`depends_on`, or points a topic at itself; `details.path` names the loop, and `--force` records it anyway |
+| `link_unknown` | 1 | `topic unlink` named a relationship that is not recorded; `details.recorded` lists the ones that are |
 | `state_version_unsupported` | 2 | `.hydra/state.yaml` was written by a newer hydra |
 | `branch_provider_failed` | 1 | a configured `branch_provider` failed or timed out |
 | `project_exists` | 1 | that project name is already registered |

@@ -14,7 +14,7 @@ resolves a conflict, and never talks to a forge.
 - 🌿 **Worktree management**: Create, switch, and remove git worktrees across many repos
 - 🏗️ **Groups**: Partition a workspace by whatever you like — domain, team, or language — with their own layout, defaults and hooks
 - 📐 **Declared shape**: `branches:` in the manifest records which branches each repo keeps, so `hydra repo restore` rebuilds a workspace from that file alone
-- 📌 **Topics**: A unit of work spanning repositories, with optional parent/child nesting and a `topic close` gate that checks children are merged first
+- 📌 **Topics as a graph**: A unit of work spanning repositories, related to others by `part_of` (containment), `depends_on` (a peer that must land first), or a dot-namespaced kind of your own that hydra stores and never interprets — plus free-form `meta` for your tooling. `topic close` derives its gate from git and `--force` overrides it
 - 🚀 **Multi-repo start**: `hydra start` creates one branch across several repos in one command
 - 📦 **carry**: Bring the files git ignores — `.env`, dev certs — into every new worktree
 - ▶️ **Fan-out execution**: `hydra run` runs one command per worktree with no implicit shell

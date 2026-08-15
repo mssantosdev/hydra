@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestOpenTouchesNothing(t *testing.T) {
@@ -184,8 +185,12 @@ func TestNewerSchemaIsRefused(t *testing.T) {
 	if !errors.As(err, &ver) {
 		t.Fatalf("Get on a newer schema = %v, want ErrVersion", err)
 	}
-	if ver.Found != "99" || ver.Supported != SchemaVersion {
+	if ver.Found != "99" || len(ver.Supported) != len(supportedVersions) {
 		t.Fatalf("version error = %+v", ver)
+	}
+	// The message must name what IS readable, so the operator knows which side to move.
+	if !strings.Contains(ver.Error(), "\"1\"") || !strings.Contains(ver.Error(), "\"2\"") {
+		t.Fatalf("version error message = %q", ver.Error())
 	}
 }
 
@@ -301,10 +306,10 @@ func seedState(t *testing.T, root, body string) {
 	}
 }
 
-// Containment is opt-in and recorded, never inferred. The refusal in this package's doc is about
-// deriving membership from branch STEMS — a fuzzy query used as a destructive handle — which a
-// declared parent has nothing to do with.
-func TestSetParentAndChildren(t *testing.T) {
+// Relationships are opt-in and recorded, never inferred. The refusal in this package's doc is
+// about deriving membership from branch STEMS — a fuzzy query used as a destructive handle —
+// which a declared edge has nothing to do with.
+func TestPartOfLinkAndChildren(t *testing.T) {
 	root := t.TempDir()
 	s := Open(root)
 	for _, id := range []string{"epic", "feat-a", "feat-b"} {
@@ -313,8 +318,9 @@ func TestSetParentAndChildren(t *testing.T) {
 		}
 	}
 	for _, child := range []string{"feat-a", "feat-b"} {
-		if err := s.SetParent(child, "epic"); err != nil {
-			t.Fatalf("set parent on %s: %v", child, err)
+		recorded, err := s.AddLink(child, Link{Kind: KindPartOf, To: "epic"}, false)
+		if err != nil || !recorded {
+			t.Fatalf("link %s: (%v, %v)", child, recorded, err)
 		}
 	}
 
@@ -325,15 +331,48 @@ func TestSetParentAndChildren(t *testing.T) {
 	if len(kids) != 2 {
 		t.Fatalf("children = %+v, want two", kids)
 	}
-	// A topic with no parent is flat, which stays the default.
-	if top, _, _ := s.Get("epic"); top.Parent != "" {
-		t.Errorf("epic should have no parent, got %q", top.Parent)
+	// A topic with no outgoing edge is flat, which stays the default.
+	if top, _, _ := s.Get("epic"); len(top.Links) != 0 {
+		t.Errorf("epic should have no links, got %+v", top.Links)
+	}
+	// Re-recording the identical edge is convergent: no error, nothing changed.
+	recorded, err := s.AddLink("feat-a", Link{Kind: KindPartOf, To: "epic"}, false)
+	if err != nil || recorded {
+		t.Fatalf("re-link = (%v, %v), want (false, nil)", recorded, err)
+	}
+	if child, _, _ := s.Get("feat-a"); len(child.Links) != 1 {
+		t.Errorf("convergent re-link duplicated the edge: %+v", child.Links)
 	}
 }
 
-// A cycle would make closeability non-terminating and force every walk to carry a visited set.
-// Refusing the edge that closes it keeps every reader simple.
-func TestSetParentRefusesCycles(t *testing.T) {
+// A topic may integrate into more than one place. Each parent gates its own close, so
+// multi-parent needs no tie-break — and the single-parent limit was an artifact of the
+// scalar field, not a rule anyone asked for.
+func TestMultipleParentsAreRecorded(t *testing.T) {
+	root := t.TempDir()
+	s := Open(root)
+	for _, id := range []string{"epic-a", "epic-b", "feat"} {
+		if err := s.Attach(id, Member{Repo: "api", Branch: id}); err != nil {
+			t.Fatalf("attach %s: %v", id, err)
+		}
+	}
+	for _, parent := range []string{"epic-a", "epic-b"} {
+		if _, err := s.AddLink("feat", Link{Kind: KindPartOf, To: parent}, false); err != nil {
+			t.Fatalf("link to %s: %v", parent, err)
+		}
+	}
+	for _, parent := range []string{"epic-a", "epic-b"} {
+		kids, err := s.Children(parent)
+		if err != nil || len(kids) != 1 || kids[0].ID != "feat" {
+			t.Fatalf("children(%s) = (%+v, %v), want [feat]", parent, kids, err)
+		}
+	}
+}
+
+// A cycle would make closeability non-terminating for a reader without a visited set.
+// Refusing the edge that closes it keeps the default safe; --force is the escape hatch,
+// and every walk carries a visited set so a forced cycle cannot hang anything.
+func TestAddLinkRefusesCyclesUnlessForced(t *testing.T) {
 	root := t.TempDir()
 	s := Open(root)
 	for _, id := range []string{"a", "b", "c"} {
@@ -341,24 +380,93 @@ func TestSetParentRefusesCycles(t *testing.T) {
 			t.Fatalf("attach: %v", err)
 		}
 	}
-	if err := s.SetParent("b", "a"); err != nil {
+	if _, err := s.AddLink("b", Link{Kind: KindPartOf, To: "a"}, false); err != nil {
 		t.Fatalf("b under a: %v", err)
 	}
-	if err := s.SetParent("c", "b"); err != nil {
+	if _, err := s.AddLink("c", Link{Kind: KindPartOf, To: "b"}, false); err != nil {
 		t.Fatalf("c under b: %v", err)
 	}
 
-	// a under c would close a → b → c → a.
-	if err := s.SetParent("a", "c"); err == nil {
+	// a under c would close a → c → b → a.
+	closing := Link{Kind: KindPartOf, To: "c"}
+	if _, err := s.AddLink("a", closing, false); err == nil {
 		t.Error("a cycle must be refused")
 	}
-	// And the trivial self-parent.
-	if err := s.SetParent("a", "a"); err == nil {
-		t.Error("a topic must not be its own parent")
+	// And the trivial self-edge.
+	if _, err := s.AddLink("a", Link{Kind: KindPartOf, To: "a"}, false); err == nil {
+		t.Error("a topic must not be part_of itself")
 	}
 	// Nothing was written by either refusal.
-	if top, _, _ := s.Get("a"); top.Parent != "" {
-		t.Errorf("a refused edge was recorded: %q", top.Parent)
+	if top, _, _ := s.Get("a"); len(top.Links) != 0 {
+		t.Errorf("a refused edge was recorded: %+v", top.Links)
+	}
+
+	// The override records it, and the graph stays walkable afterwards.
+	if _, err := s.AddLink("a", closing, true); err != nil {
+		t.Fatalf("forced link: %v", err)
+	}
+	if top, _, _ := s.Get("a"); len(top.Links) != 1 {
+		t.Fatalf("forced link not recorded: %+v", top.Links)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := s.Children("a"); err != nil {
+			t.Errorf("children over a cyclic graph: %v", err)
+		}
+		if _, err := s.Inbound("a"); err != nil {
+			t.Errorf("inbound over a cyclic graph: %v", err)
+		}
+		// Adding another edge re-walks the cycle; the visited set must terminate it.
+		if _, err := s.AddLink("b", Link{Kind: KindPartOf, To: "c"}, false); err == nil {
+			t.Error("b part_of c also closes a cycle and must be refused")
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a walk over a recorded cycle did not terminate")
+	}
+}
+
+// Custom kinds are the extension point: hydra stores and reports them, gates nothing on
+// them, and reserves the bare identifiers for itself so adding a kind later is not breaking.
+func TestCustomKindsAreNamespaced(t *testing.T) {
+	root := t.TempDir()
+	s := Open(root)
+	for _, id := range []string{"a", "b"} {
+		if err := s.Attach(id, Member{Repo: "api", Branch: id}); err != nil {
+			t.Fatalf("attach: %v", err)
+		}
+	}
+	var kindErr *ErrKind
+	if _, err := s.AddLink("a", Link{Kind: "blocks", To: "b"}, false); !errors.As(err, &kindErr) {
+		t.Fatalf("bare custom kind = %v, want ErrKind", err)
+	}
+	if _, err := s.AddLink("a", Link{Kind: "acme.blocks", To: "b"}, false); err != nil {
+		t.Fatalf("namespaced kind: %v", err)
+	}
+	// A cycle in a custom kind is NOT refused: hydra assigns the kind no semantics, so it
+	// has no invariant to protect, and every walk is cycle-safe regardless.
+	if _, err := s.AddLink("b", Link{Kind: "acme.blocks", To: "a"}, false); err != nil {
+		t.Fatalf("custom-kind cycle must be allowed: %v", err)
+	}
+	// A SELF-edge is refused even in a custom kind. Mutuality can be meaningful; being
+	// one's own relatum cannot, in any vocabulary — so this is a typo, not an extension.
+	var cycle *ErrCycle
+	self := Link{Kind: "acme.blocks", To: "a"}
+	if _, err := s.AddLink("a", self, false); !errors.As(err, &cycle) {
+		t.Fatalf("custom-kind self edge = %v, want ErrCycle", err)
+	}
+	if got, _, _ := s.Get("a"); len(got.Links) != 1 {
+		t.Fatalf("the refused self edge was recorded: %+v", got.Links)
+	}
+	// And force is the override here too, so the user is never stuck.
+	if _, err := s.AddLink("a", self, true); err != nil {
+		t.Fatalf("forced self edge: %v", err)
+	}
+	if got, _, _ := s.Get("a"); len(got.Links) != 2 {
+		t.Fatalf("forced self edge not recorded: %+v", got.Links)
 	}
 }
 

@@ -38,7 +38,7 @@ func newSyncReporter(total int) *syncReporter {
 	return &syncReporter{
 		total: total,
 		tasks: make(map[string]*components.Task, total),
-		quiet: jsonMode(),
+		quiet: machineMode(),
 	}
 }
 

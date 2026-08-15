@@ -44,8 +44,20 @@ func TestResolveModes(t *testing.T) {
 		})
 	}
 
-	if _, err := Resolve("yaml"); err == nil {
+	// yaml is now a mode; an invented one still is not.
+	for _, spelling := range []string{"yaml", "yml", "YAML"} {
+		got, err := Resolve(spelling)
+		if err != nil || got != ModeYAML {
+			t.Errorf("Resolve(%q) = (%v, %v), want ModeYAML", spelling, got, err)
+		}
+	}
+	if _, err := Resolve("xml"); err == nil {
 		t.Error("Resolve must reject an unknown mode")
+	}
+	// The refusal has to list what IS accepted, or the caller guesses again.
+	_, err := Resolve("xml")
+	if e := Classify(err); !strings.Contains(e.Message, "yaml") {
+		t.Errorf("invalid --output message = %q, want it to name yaml", e.Message)
 	}
 }
 
@@ -88,12 +100,12 @@ func TestColorOffForPipesAndNoColor(t *testing.T) {
 	}
 }
 
-func TestEmitJSONEnvelope(t *testing.T) {
+func TestEmitEnvelope(t *testing.T) {
 	var buf bytes.Buffer
 	data := map[string]any{"total": 2}
 
-	if err := EmitJSON(&buf, "list", Result{Summary: "2 worktree(s)", Data: data}); err != nil {
-		t.Fatalf("EmitJSON: %v", err)
+	if err := Emit(&buf, "list", Result{Summary: "2 worktree(s)", Data: data}, ModeJSON); err != nil {
+		t.Fatalf("Emit: %v", err)
 	}
 
 	var envelope struct {
@@ -133,16 +145,16 @@ func TestEmitJSONEnvelope(t *testing.T) {
 
 // A partial outcome travels on the SUCCESS envelope: the data is real and must not
 // be discarded merely because the process will also exit non-zero.
-func TestEmitJSONCarriesPartialOutcomeAndNext(t *testing.T) {
+func TestEmitCarriesPartialOutcomeAndNext(t *testing.T) {
 	var buf bytes.Buffer
-	err := EmitJSON(&buf, "sync", Result{
+	err := Emit(&buf, "sync", Result{
 		Outcome: OutcomePartial,
 		Summary: "1 pulled, 1 failed",
 		Data:    map[string]any{"total": 2},
 		Next:    []Next{{Argv: []string{"hydra", "status"}, Why: "see what landed"}},
-	})
+	}, ModeJSON)
 	if err != nil {
-		t.Fatalf("EmitJSON: %v", err)
+		t.Fatalf("Emit: %v", err)
 	}
 
 	var envelope struct {
@@ -172,7 +184,7 @@ func TestEmitErrorEnvelope(t *testing.T) {
 	var buf bytes.Buffer
 	e := Errorf(CodeWorktreeNameConflict, "taken by %q", "stage").WithDetail("path", "/ws/backend/api")
 
-	if err := EmitError(&buf, "add", e); err != nil {
+	if err := EmitError(&buf, "add", e, ModeJSON); err != nil {
 		t.Fatalf("EmitError: %v", err)
 	}
 
@@ -272,8 +284,14 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		// needs_input replaces blocking on a prompt when output is machine-readable.
 		CodeNeedsInput:        7,
 		CodeTopicNotCloseable: 1,
-		CodeProjectExists:     1,
-		CodeUnknownCommand:    1,
+		// topic_cycle is a refused DEFAULT with an override, so it exits like any other
+		// "change something first" failure rather than claiming the tool broke.
+		CodeTopicCycle: 1,
+		// link_unknown is the only refusal with nothing to override: the desired state
+		// already holds, and the recorded edges ride the error so a typo is visible.
+		CodeLinkUnknown:    1,
+		CodeProjectExists:  1,
+		CodeUnknownCommand: 1,
 		// usage is a malformed invocation: exit 2 like the other "fix your
 		// input, no state changed" codes, not needs_input's 7 - that one means
 		// a prompt was replaced, this one means the flags contradict.

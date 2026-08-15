@@ -979,20 +979,73 @@ check "the retired ui alias is gone" \
 check "the retired alias exits 1, not as a crash" '[ "'"$ui_exit"'" = "1" ]'
 
 echo
-# ------------------------------------------------ topic hierarchy
-echo "== topic hierarchy: containment, and a gate that will not lie =="
+# ------------------------------------------------ topic graph
+echo "== topic graph: typed relationships, and gates that will not lie =="
 "$HYDRA" start epic/login --repos api --topic epic-login --output json >/dev/null
 "$HYDRA" start feat/social --repos api --topic feat-social --parent epic-login --from epic/login --output json >/dev/null
-check "parent is recorded, not inferred"  '"$HYDRA" topic list --output json | jq -e ".data.topics[]|select(.id==\"feat-social\")|.parent==\"epic-login\""'
-check "a leaf closes immediately"         '"$HYDRA" topic close feat-social --output json | jq -e ".data.closed==true"'
+# --parent is sugar for one part_of edge. The relationship is RECORDED, never inferred.
+check "containment is an edge, not a scalar" '"$HYDRA" topic list --output json | jq -e ".data.topics[]|select(.id==\"feat-social\")|.links[0].kind==\"part_of\" and .links[0].to==\"epic-login\""'
+check "and the reverse direction is derived" '"$HYDRA" topic show epic-login --output json | jq -e ".data.linked_from[0].from==\"feat-social\""'
+check "a leaf closes immediately"            '"$HYDRA" topic close feat-social --output json | jq -e ".data.closed==true"'
 # Real work on the child, so the merge check has something to refuse. Until now the branches share
 # a commit, and an identical branch IS trivially an ancestor.
 ( cd backend/api-feat-social && git -c user.email=t@t -c user.name=T commit -q --allow-empty -m work )
 check "epic refuses while a child is unmerged" '{ "$HYDRA" topic close epic-login --output json || true; } | jq -e ".error.code==\"topic_not_closeable\""'
 check "and names the member that is behind"    '{ "$HYDRA" topic close epic-login --output json || true; } | jq -e ".error.details.blocked_by[0].reason==\"not_merged\""'
+# Every refusal names its own override in next[], so a caller never has to guess one.
+check "the refusal offers the override"        '{ "$HYDRA" topic close epic-login --output json || true; } | jq -e "[.next[].argv|join(\" \")]|any(endswith(\"--force\"))"'
+# --force must actually unblock: exit 0, not a partial. A blocked script is not unblocked by an
+# override that still fails the invocation.
+check "--force closes over the blocker at exit 0" '"$HYDRA" topic close epic-login --force --output json | jq -e ".outcome==\"success\" and .data.closed==true and .data.forced==true"'
+check "and still reports what it overrode"        '"$HYDRA" topic close epic-login --reopen --output json >/dev/null; "$HYDRA" topic close epic-login --force --output json | jq -e "[.warnings[]|select(.code==\"topic_not_closeable\")]|length>=1"'
 ( cd backend/api-epic-login && git -c user.email=t@t -c user.name=T merge -q --no-edit feat/social )
-check "closes once the work has landed"        '"$HYDRA" topic close epic-login --output json | jq -e ".data.closed==true"'
-check "reopen is available"                    '"$HYDRA" topic close epic-login --reopen --output json | jq -e ".data.closed==false"'
+"$HYDRA" topic close epic-login --reopen --output json >/dev/null
+check "closes cleanly once the work has landed"   '"$HYDRA" topic close epic-login --output json | jq -e ".outcome==\"success\" and .data.closed==true and (.data.forced|not)"'
+check "reopen is available"                       '"$HYDRA" topic close epic-login --reopen --output json | jq -e ".data.closed==false"'
+
+# --- dependencies: a peer that must land first. No integration branch between peers, so the gate
+# --- is "is it closed", never a merge check.
+"$HYDRA" start feat/tokens --repos api --topic feat-tokens --output json >/dev/null
+check "a dependency is recorded"            '"$HYDRA" topic link feat-social depends_on feat-tokens --output json | jq -e ".data.recorded==true"'
+check "recording it twice is convergent"    '"$HYDRA" topic link feat-social depends_on feat-tokens --output json | jq -e ".outcome==\"success\" and .data.recorded==false"'
+"$HYDRA" topic close feat-social --reopen --output json >/dev/null
+check "an open dependency blocks the close" '{ "$HYDRA" topic close feat-social --output json || true; } | jq -e ".error.details.blocked_by[]|select(.reason==\"dependency_open\")|.topic==\"feat-tokens\""'
+check "closing the dependency clears it"    '"$HYDRA" topic close feat-tokens --output json >/dev/null; "$HYDRA" topic close feat-social --output json | jq -e ".data.closed==true and (.data.forced|not)"'
+
+# --- cycles are refused by DEFAULT and recordable on demand; walks carry visited sets, so a
+# --- recorded cycle costs mutual blocking, never a hang.
+check "a cycle is refused, naming the loop" '{ "$HYDRA" topic link feat-tokens depends_on feat-social --output json || true; } | jq -e ".error.code==\"topic_cycle\" and (.error.details.path|length>=2)"'
+check "--force records it anyway"           '"$HYDRA" topic link feat-tokens depends_on feat-social --force --output json | jq -e ".data.recorded==true and .data.forced==true"'
+check "and every command still terminates"  'timeout 20 "$HYDRA" topic show feat-tokens --output json | jq -e ".data.links|length>=1"'
+check "unlink breaks the cycle"             '"$HYDRA" topic unlink feat-tokens depends_on feat-social --output json | jq -e ".data.removed==true"'
+check "unlinking it twice is link_unknown"  '{ "$HYDRA" topic unlink feat-tokens depends_on feat-social --output json || true; } | jq -e ".error.code==\"link_unknown\""'
+check "and lists what IS recorded"          '{ "$HYDRA" topic unlink feat-social part_of nope --output json || true; } | jq -e ".error.details.recorded|any(startswith(\"depends_on\"))"'
+# A self-edge is refused in EVERY kind: mutuality can be meaningful, being one's own relatum cannot.
+check "a self-edge is refused"              '{ "$HYDRA" topic link feat-social acme.x feat-social --output json || true; } | jq -e ".error.code==\"topic_cycle\""'
+
+# --- custom kinds are the extension point. Bare words stay reserved for hydra.
+check "a bare custom kind is usage"         '{ "$HYDRA" topic link feat-social blocks feat-tokens --output json || true; } | jq -e ".error.code==\"usage\""'
+check "a namespaced one is recorded"        '"$HYDRA" topic link feat-social acme.tested-by feat-tokens --output json | jq -e ".data.recorded==true"'
+check "and hydra never gates on it"         '"$HYDRA" topic close feat-social --reopen --output json >/dev/null; "$HYDRA" topic close feat-social --output json | jq -e ".data.closed==true"'
+
+# --- metadata and the declarative document path
+check "meta is set by flag"                 '"$HYDRA" topic update feat-social --meta acme.pbi=2072958 --output json | jq -e ".data.meta[\"acme.pbi\"]==\"2072958\""'
+check "and unset by flag"                   '"$HYDRA" topic update feat-social --meta drop.me=1 --output json >/dev/null; "$HYDRA" topic update feat-social --unset-meta drop.me --output json | jq -e ".data.meta[\"drop.me\"]==null"'
+check "a YAML document replaces wholesale"  'printf "meta:\n  only.this: \"1\"\n" | "$HYDRA" topic update feat-social - --output json | jq -e ".data.meta==({\"only.this\":\"1\"})"'
+check "JSON goes through the same decoder"  'echo "{\"meta\":{\"j\":\"2\"}}" | "$HYDRA" topic update feat-social - --output json | jq -e ".data.meta==({\"j\":\"2\"})"'
+check "a file path works, not just stdin"   'printf "meta:\n  from.file: \"3\"\n" > "$T/doc.yaml"; "$HYDRA" topic update feat-social "$T/doc.yaml" --output json | jq -e ".data.meta[\"from.file\"]==\"3\""'
+check "flags and a document exclude"        '{ "$HYDRA" topic update feat-social "$T/doc.yaml" --meta a=b --output json || true; } | jq -e ".error.code==\"usage\""'
+check "neither is needs_input"              '{ "$HYDRA" topic update feat-social --output json || true; } | jq -e ".error.code==\"needs_input\""'
+# The size limit is a default with an override, like every other limit.
+check "the document limit is overridable"   '{ "$HYDRA" topic update feat-social "$T/doc.yaml" --max-size 4 --output json || true; } | jq -e ".error.code==\"usage\"" && "$HYDRA" topic update feat-social "$T/doc.yaml" --max-size 0 --output json | jq -e ".data.meta[\"from.file\"]==\"3\""'
+
+# --- YAML is a second serialisation of ONE envelope, on both the success and failure paths
+check "--output yaml parses, ints intact"   '"$HYDRA" topic show feat-social --output yaml | python3 -c "import yaml,sys; d=yaml.safe_load(sys.stdin); assert d[\"schema\"]==3, d[\"schema\"]; assert isinstance(d[\"data\"][\"dangling\"], int)"'
+check "and the failure path answers in it"  '{ "$HYDRA" topic show nope --output yaml || true; } | python3 -c "import yaml,sys; d=yaml.safe_load(sys.stdin); assert d[\"error\"][\"code\"]==\"topic_unknown\", d"'
+
+# --- removing a topic sweeps the edges naming it, in the same write
+check "deletion leaves no dangling edge"    '"$HYDRA" topic remove feat-tokens --yes --output json >/dev/null; "$HYDRA" topic show feat-social --output json | jq -e "[.data.links[]?|select(.to==\"feat-tokens\")]|length==0"'
+check "so doctor reports none"              '{ "$HYDRA" doctor --output json || true; } | jq -e "[.data.checks[]|select(.id==\"topic_dangling_link\")]|length==0"'
 
 # ------------------------------------------------ 20. secrets never reach the envelope
 echo "== 20. a credential in a remote is never echoed =="
@@ -1018,6 +1071,34 @@ check "--fix detaches it, and it stays fixed" \
   '(cd "$T/ws" && { "$HYDRA" doctor --fix --output json || true; } >/dev/null &&
     { "$HYDRA" doctor --output json || true; } |
       jq -e "[.data.checks[]|select(.id==\"topic_unknown_repo\")]|length==0" >/dev/null)'
+
+# ------------------------------------------------ 21b. a v1 state file upgrades itself
+echo "== 21b. a v1 state file migrates its parent into a link, and rewrites as v2 =="
+# The scalar `parent:` was how containment was stored before relationships became typed edges.
+# Reading one must not lose it, and the next write must persist the graph shape.
+printf 'version: "1"\ntopics:\n  v1-epic:\n    members:\n      - repo: api\n        branch: main\n  v1-feat:\n    members:\n      - repo: api\n        branch: stage\n    parent: v1-epic\n' > "$T/ws/.hydra/state.yaml"
+check "the v1 parent reads as a part_of link" \
+  '(cd "$T/ws" && "$HYDRA" topic show v1-feat --output json |
+     jq -e ".data.links[0].kind==\"part_of\" and .data.links[0].to==\"v1-epic\"" >/dev/null)'
+check "and derived containment agrees" \
+  '(cd "$T/ws" && "$HYDRA" topic show v1-epic --output json |
+     jq -e ".data.linked_from[0].from==\"v1-feat\"" >/dev/null)'
+check "the next write persists v2 and drops the scalar" \
+  '(cd "$T/ws" && "$HYDRA" topic update v1-feat --meta touched=1 --output json >/dev/null &&
+    grep -q "version: \"2\"" .hydra/state.yaml && ! grep -q "parent:" .hydra/state.yaml)'
+
+# ------------------------------------------------ 21c. doctor repairs a hand-edited edge
+echo "== 21c. doctor detects a relationship whose target does not exist =="
+# Unreachable through the CLI — removing a topic sweeps the edges naming it — so this is
+# hand-edited state, which is exactly doctor's jurisdiction.
+printf 'version: "2"\ntopics:\n  lonely:\n    members:\n      - repo: api\n        branch: main\n    links:\n      - kind: depends_on\n        to: never-existed\n' > "$T/ws/.hydra/state.yaml"
+check "topic_dangling_link is reported as fixable" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --output json || true; } |
+     jq -e "[.data.checks[]|select(.id==\"topic_dangling_link\" and .status==\"fail\" and .fixable)]|length==1" >/dev/null)'
+check "--fix drops the edge, and it stays fixed" \
+  '(cd "$T/ws" && { "$HYDRA" doctor --fix --output json || true; } >/dev/null &&
+    { "$HYDRA" doctor --output json || true; } |
+      jq -e "[.data.checks[]|select(.id==\"topic_dangling_link\")]|length==0" >/dev/null)'
 
 # ------------------------------------------------ 22. a control character is refused
 echo "== 22. a name with a control character is refused =="

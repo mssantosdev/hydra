@@ -191,7 +191,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
-	if !jsonMode() {
+	if !machineMode() {
 		log.Info(fmt.Sprintf("Found %d worktree(s) with available updates", len(candidates)))
 	}
 	var selected []syncEntry

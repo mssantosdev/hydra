@@ -458,7 +458,7 @@ func TestLifecycleTopic_ListShowAttachDetachCloseRemove(t *testing.T) {
 	if err := store.Attach("feat", topic.Member{Repo: "api", Branch: "stage"}); err != nil {
 		t.Fatalf("seed child: %v", err)
 	}
-	if err := store.SetParent("feat", "epic"); err != nil {
+	if _, err := store.AddLink("feat", topic.Link{Kind: topic.KindPartOf, To: "epic"}, false); err != nil {
 		t.Fatalf("parent link: %v", err)
 	}
 

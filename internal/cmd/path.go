@@ -174,7 +174,7 @@ func resolvePathTarget(name string) (worktreeContext, error) {
 	err := output.Errorf(output.CodeWorktreeUnknown, "worktree not found: %s", name)
 	if len(similar) > 0 {
 		err = err.WithDetail("did_you_mean", similar)
-		if !explicitJSON() {
+		if !explicitEnvelope() {
 			// Suggestions go to stderr so they never pollute the path on stdout.
 			_, _ = fmt.Fprintln(os.Stderr, styles.Error.Render(fmt.Sprintf("Worktree not found: %s", name)))
 			for i, s := range similar {

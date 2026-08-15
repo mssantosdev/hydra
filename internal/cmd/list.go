@@ -163,7 +163,7 @@ func collectProjectWorktrees(targets []projectTarget, sel Selector) ([]projectWo
 		// still carries the project and root: blanking them made `.data.root` an empty
 		// string on a zero-match query, which a caller cannot distinguish from "not in a
 		// project" and cannot use to locate the workspace it just queried.
-		if len(items) == 0 && !sel.empty() && !jsonMode() {
+		if len(items) == 0 && !sel.empty() && !machineMode() {
 			continue
 		}
 		projects = append(projects, projectWorktrees{

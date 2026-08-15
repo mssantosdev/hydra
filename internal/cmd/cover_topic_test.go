@@ -330,13 +330,13 @@ func TestTopicCovClose_ReportsEveryBlockerAtOnce(t *testing.T) {
 	if err := store.Attach("b-open", topic.Member{Repo: "api", Branch: "stage"}); err != nil {
 		t.Fatalf("seed open child: %v", err)
 	}
-	if err := store.SetParent("b-open", "epic"); err != nil {
+	if _, err := store.AddLink("b-open", topic.Link{Kind: topic.KindPartOf, To: "epic"}, false); err != nil {
 		t.Fatalf("link open child: %v", err)
 	}
 	if err := store.Attach("a-stranded", topic.Member{Repo: "web", Branch: "feat/y"}); err != nil {
 		t.Fatalf("seed stranded child: %v", err)
 	}
-	if err := store.SetParent("a-stranded", "epic"); err != nil {
+	if _, err := store.AddLink("a-stranded", topic.Link{Kind: topic.KindPartOf, To: "epic"}, false); err != nil {
 		t.Fatalf("link stranded child: %v", err)
 	}
 	if err := store.SetClosed("a-stranded", true); err != nil {
@@ -387,7 +387,7 @@ func TestTopicCovClose_SucceedsWhenChildrenLanded(t *testing.T) {
 	if err := store.Attach("feat", topic.Member{Repo: "api", Branch: "stage"}); err != nil {
 		t.Fatalf("seed child: %v", err)
 	}
-	if err := store.SetParent("feat", "epic"); err != nil {
+	if _, err := store.AddLink("feat", topic.Link{Kind: topic.KindPartOf, To: "epic"}, false); err != nil {
 		t.Fatalf("parent link: %v", err)
 	}
 	if err := store.SetClosed("feat", true); err != nil {
@@ -560,7 +560,7 @@ func TestTopicCovRemove_DeleteBranchGateRefusesUnmerged(t *testing.T) {
 	}
 }
 
-func TestTopicCovParent_SetAndCycleRefused(t *testing.T) {
+func TestTopicCovLinks_RecordedAndCycleRefused(t *testing.T) {
 	env := topicCovEnv(t)
 	store := topicCovStore(env)
 	for id, branch := range map[string]string{"a": "main", "b": "stage", "c": "feat/two"} {
@@ -568,28 +568,25 @@ func TestTopicCovParent_SetAndCycleRefused(t *testing.T) {
 			t.Fatalf("attach %s: %v", id, err)
 		}
 	}
-	if err := store.SetParent("b", "a"); err != nil {
+	if _, err := store.AddLink("b", topic.Link{Kind: topic.KindPartOf, To: "a"}, false); err != nil {
 		t.Fatalf("b->a: %v", err)
 	}
-	if err := store.SetParent("c", "b"); err != nil {
+	if _, err := store.AddLink("c", topic.Link{Kind: topic.KindPartOf, To: "b"}, false); err != nil {
 		t.Fatalf("c->b: %v", err)
 	}
-	err := store.SetParent("a", "c")
+	_, err := store.AddLink("a", topic.Link{Kind: topic.KindPartOf, To: "c"}, false)
 	var cycle *topic.ErrCycle
 	if !errors.As(err, &cycle) {
 		t.Fatalf("cycle must be refused, got %v", err)
 	}
 	a, ok, err := store.Get("a")
-	if err != nil || !ok || a.Parent != "" {
-		t.Fatalf("refused cycle must not persist parent on a: ok=%v parent=%q err=%v", ok, a.Parent, err)
+	if err != nil || !ok || len(a.Links) != 0 {
+		t.Fatalf("refused cycle must not persist an edge on a: ok=%v links=%+v err=%v", ok, a.Links, err)
 	}
 
-	if err := store.SetParent("b", "a"); err != nil {
-		t.Fatalf("set parent b->a: %v", err)
-	}
 	b, ok, err := store.Get("b")
-	if err != nil || !ok || b.Parent != "a" {
-		t.Fatalf("store parent not recorded: ok=%v parent=%q err=%v", ok, b.Parent, err)
+	if err != nil || !ok || len(b.Links) != 1 || b.Links[0].To != "a" {
+		t.Fatalf("edge not recorded: ok=%v links=%+v err=%v", ok, b.Links, err)
 	}
 
 	stdout, err := topicCovExec(t, "show", "b")
@@ -598,8 +595,19 @@ func TestTopicCovParent_SetAndCycleRefused(t *testing.T) {
 	}
 	var payload topicJSON
 	decodeJSONData(t, stdout, &payload)
-	if payload.Parent != "a" {
-		t.Fatalf("show parent=%q, want a", payload.Parent)
+	if len(payload.Links) != 1 || payload.Links[0].Kind != topic.KindPartOf || payload.Links[0].To != "a" {
+		t.Fatalf("show links=%+v, want one part_of a", payload.Links)
+	}
+	// The reverse direction is derived and reported, so "what is inside a" is answerable
+	// without listing every topic.
+	stdout, err = topicCovExec(t, "show", "a")
+	if err != nil {
+		t.Fatalf("show a: %v", err)
+	}
+	var parent topicJSON
+	decodeJSONData(t, stdout, &parent)
+	if len(parent.LinkedFrom) != 1 || parent.LinkedFrom[0].From != "b" {
+		t.Fatalf("show a linked_from=%+v, want one from b", parent.LinkedFrom)
 	}
 }
 
@@ -721,7 +729,7 @@ func TestTopicCovClose_NotMergedBlocker(t *testing.T) {
 	if err := store.Attach("feat", topic.Member{Repo: "api", Branch: "feature/unmerged"}); err != nil {
 		t.Fatalf("seed child: %v", err)
 	}
-	if err := store.SetParent("feat", "epic"); err != nil {
+	if _, err := store.AddLink("feat", topic.Link{Kind: topic.KindPartOf, To: "epic"}, false); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	if err := store.SetClosed("feat", true); err != nil {

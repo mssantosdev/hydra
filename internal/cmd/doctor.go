@@ -46,6 +46,12 @@ const (
 	// because the two need different messages: one says "recreate the worktree", the other
 	// says "this repo does not exist here at all".
 	checkTopicUnknownRepo = "topic_unknown_repo"
+	// checkTopicDanglingLink is a recorded relationship whose target topic does not exist.
+	// The CLI cannot produce one — removing a topic sweeps the edges naming it in the same
+	// write — so this means a hand-edited state file or a file written by a hydra older than
+	// that sweep. Reported because a dangling depends_on edge BLOCKS a close with
+	// `dependency_missing`, which is a refusal nobody can act on until the edge is dropped.
+	checkTopicDanglingLink = "topic_dangling_link"
 )
 
 var (
@@ -101,10 +107,14 @@ type doctorCheck struct {
 	// Topic and Branch carry the exact identity a topic fix needs. They are typed
 	// fields rather than substrings of Message or Worktree so --fix never has to
 	// parse a human-readable string to decide what to act on.
-	Topic   string `json:"topic,omitempty"`
-	Branch  string `json:"branch,omitempty"`
-	Fixable bool   `json:"fixable"`
-	Fixed   bool   `json:"fixed,omitempty"`
+	Topic  string `json:"topic,omitempty"`
+	Branch string `json:"branch,omitempty"`
+	// LinkKind and LinkTo identify one relationship, for the same reason Topic and Branch
+	// exist: --fix must not parse Message to learn which edge to drop.
+	LinkKind string `json:"link_kind,omitempty"`
+	LinkTo   string `json:"link_to,omitempty"`
+	Fixable  bool   `json:"fixable"`
+	Fixed    bool   `json:"fixed,omitempty"`
 }
 
 type doctorSummary struct {
@@ -436,6 +446,30 @@ func diagnoseTopicMembers(cfg *config.Config, projectRoot string) []doctorCheck 
 			})
 		}
 	}
+
+	// Every edge must name a live topic. Checked against the ids the store reports rather
+	// than against the map keys, so identity that exists but has no members — which the GC
+	// removes — counts as absent here too.
+	liveTopic := make(map[string]bool, len(topics))
+	for _, t := range topics {
+		liveTopic[t.ID] = true
+	}
+	for _, t := range topics {
+		for _, l := range t.Links {
+			if liveTopic[l.To] {
+				continue
+			}
+			checks = append(checks, doctorCheck{
+				ID: checkTopicDanglingLink, Status: "fail", Fixable: true,
+				Message: fmt.Sprintf(
+					"topic %q records %s %q, but no topic %q exists; --fix drops the relationship",
+					t.ID, l.Kind, l.To, l.To),
+				Topic:    t.ID,
+				LinkKind: l.Kind,
+				LinkTo:   l.To,
+			})
+		}
+	}
 	return checks
 }
 
@@ -752,6 +786,17 @@ func applyDoctorFixes(report *doctorReport, cfg *config.Config, projectRoot stri
 				continue
 			}
 			markDoctorFixed(check, fmt.Sprintf("detached %s@%s from topic %q", check.Repo, check.Branch, check.Topic))
+
+		case checkTopicDanglingLink:
+			// Drop only this edge. The topic and every other relationship it declares are
+			// fine; the target is what does not exist.
+			link := topic.Link{Kind: check.LinkKind, To: check.LinkTo}
+			if err := topic.Open(projectRoot).RemoveLink(check.Topic, link); err != nil {
+				check.Message = err.Error()
+				continue
+			}
+			markDoctorFixed(check, fmt.Sprintf("dropped %s %q from topic %q",
+				check.LinkKind, check.LinkTo, check.Topic))
 		}
 	}
 }

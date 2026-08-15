@@ -104,7 +104,7 @@ func init() {
 	startCmd.Flags().BoolVar(&startAll, "all", false, "Target every registered repository")
 	startCmd.Flags().BoolVar(&startDryRun, "dry-run", false, "Report what would happen and change nothing")
 	startCmd.Flags().StringVar(&startParent, "parent", "",
-		"Record this topic as contained by another (opt-in; without it the topic is flat)")
+		"Record this topic as part_of another (sugar for \"hydra topic link <id> part_of <target>\")")
 	startCmd.Flags().BoolVar(&startNoAssign, "no-assign", false,
 		"Create the worktrees without recording topic membership")
 }
@@ -212,9 +212,14 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Containment and the once-per-topic event both come after membership: a parent recorded on a
 	// topic with no members, or a "work started" notification for a topic that failed to create
 	// anything, would both be announcing something that does not exist yet.
+	//
+	// This is sugar over one part_of edge, and it is ADDITIVE: a topic may integrate into more
+	// than one place, so naming a second parent records a second edge rather than replacing the
+	// first. `hydra topic link` and `hydra topic unlink` manage the rest of the graph.
 	if topicID != "" && startParent != "" {
-		if err := topicStore().SetParent(topicID, startParent); err != nil {
-			warnings = append(warnings, output.Warnf(output.CodeTopicConflict, "could not record parent %s: %v", startParent, err).
+		if _, err := topicStore().AddLink(topicID, topic.Link{Kind: topic.KindPartOf, To: startParent}, false); err != nil {
+			warnings = append(warnings, output.Warnf(output.CodeTopicConflict, "could not record parent %s: %v",
+				startParent, output.Classify(classifyTopicErr(err)).Message).
 				WithSubject("topic", topicID).
 				WithCause(err.Error()))
 		}

@@ -90,7 +90,7 @@ func TestSeverityDecidesFaultWarnings(t *testing.T) {
 // The enforcement point: a command cannot claim success while carrying an error or a fault
 // warning. This is asserted at the envelope rather than per command, because per-command
 // assertions are the thing that kept being forgotten.
-func TestEmitJSONCorrectsAnOverclaimedOutcome(t *testing.T) {
+func TestEmitCorrectsAnOverclaimedOutcome(t *testing.T) {
 	tests := []struct {
 		name string
 		r    Result
@@ -121,8 +121,8 @@ func TestEmitJSONCorrectsAnOverclaimedOutcome(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf writerStub
-			if err := EmitJSON(&buf, "test", tc.r); err != nil {
-				t.Fatalf("EmitJSON: %v", err)
+			if err := Emit(&buf, "test", tc.r, ModeJSON); err != nil {
+				t.Fatalf("Emit: %v", err)
 			}
 			if got := buf.outcome(t); got != string(tc.want) {
 				t.Errorf("outcome = %q, want %q", got, tc.want)
@@ -193,8 +193,8 @@ func TestEmittedVerdictDrivesTheExitStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ResetVerdict()
 			var buf writerStub
-			if err := EmitJSON(&buf, "test", tc.result); err != nil {
-				t.Fatalf("EmitJSON: %v", err)
+			if err := Emit(&buf, "test", tc.result, ModeJSON); err != nil {
+				t.Fatalf("Emit: %v", err)
 			}
 
 			outcome, code := EmittedVerdict()

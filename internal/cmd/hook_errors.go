@@ -11,7 +11,7 @@ import (
 // emitTextFailure renders hook failures for text mode and adopts the exit verdict.
 // It returns true when err was fully handled and Execute should return nil.
 func emitTextFailure(err error) bool {
-	if err == nil || jsonMode() {
+	if err == nil || machineMode() {
 		return false
 	}
 	e := output.Classify(err)

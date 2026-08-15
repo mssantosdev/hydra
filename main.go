@@ -27,13 +27,15 @@ func main() {
 
 	e := output.Classify(err)
 	switch {
-	case !cmd.ErrorsAsJSON():
+	case !cmd.ErrorsAsEnvelope():
 		fmt.Fprintf(os.Stderr, "Error: %v\n", e.Message)
 	case cmd.EnvelopeEmitted():
 		// A partial already wrote one envelope carrying both the data and this error.
 		// A second envelope on the same stream would be unparseable.
 	default:
-		if emitErr := output.EmitError(os.Stdout, name, e); emitErr != nil {
+		// Same format the success path would have used: a script that asked for YAML must
+		// not get a JSON error envelope on the failing invocation.
+		if emitErr := output.EmitError(os.Stdout, name, e, cmd.WireMode()); emitErr != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", e.Message)
 		}
 	}

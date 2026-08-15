@@ -3,13 +3,17 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Schema is the envelope schema version.
@@ -29,6 +33,10 @@ const (
 	ModeAuto Mode = iota
 	ModeText
 	ModeJSON
+	// ModeYAML emits the SAME envelope as ModeJSON in YAML. It is never inferred: a
+	// pipe gets JSON unless YAML was asked for, because JSON is what every existing
+	// consumer parses.
+	ModeYAML
 )
 
 func (m Mode) String() string {
@@ -37,9 +45,19 @@ func (m Mode) String() string {
 		return "text"
 	case ModeJSON:
 		return "json"
+	case ModeYAML:
+		return "yaml"
 	}
 	return "auto"
 }
+
+// Machine reports whether the mode emits a parseable envelope rather than prose.
+//
+// Every branch that used to ask "is this JSON" means this: suppress progress, emit an
+// envelope, do not prompt. Asking about JSON specifically is what would leave YAML
+// half-supported — a YAML success envelope followed by a JSON error envelope in the same
+// script is a broken contract, not a formatting detail.
+func (m Mode) Machine() bool { return m == ModeJSON || m == ModeYAML }
 
 // Resolve parses an --output flag value. An empty value falls back to
 // HYDRA_OUTPUT, then to auto.
@@ -57,8 +75,11 @@ func Resolve(flag string) (Mode, error) {
 		return ModeText, nil
 	case "json":
 		return ModeJSON, nil
+	case "yaml", "yml":
+		return ModeYAML, nil
 	}
-	return ModeAuto, Errorf(CodeUsage, "invalid --output value %q (want auto, text, or json)", flag)
+	return ModeAuto, Errorf(CodeUsage,
+		"invalid --output value %q (want auto, text, json, or yaml)", flag)
 }
 
 // Effective collapses ModeAuto against the real terminal state of out.
@@ -165,7 +186,7 @@ type Result struct {
 	Err *Error
 }
 
-// EmitJSON writes the envelope for a success or partial result.
+// Emit writes the envelope for a success or partial result in the given wire format.
 //
 // The outcome is CORRECTED here rather than trusted. Every aggregate-reporting bug this
 // tool has shipped came from a command deciding its own verdict from "my code path
@@ -173,7 +194,11 @@ type Result struct {
 // under `outcome: success`, status saying "all clean" with a worktree missing, add exiting
 // 1 under success with the failing hook absent from the envelope. Enforcing it at the one
 // boundary every command passes through is the fix applied once instead of five times.
-func EmitJSON(w io.Writer, cmd string, r Result) error {
+//
+// The format is a PARAMETER rather than package state: the envelope is the contract, and
+// which serialisation carries it is the caller's single decision, made once from the
+// resolved --output mode.
+func Emit(w io.Writer, cmd string, r Result, m Mode) error {
 	if r.Outcome == "" {
 		r.Outcome = OutcomeSuccess
 	}
@@ -198,7 +223,7 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 		}
 	}
 	// A partial's error carries its own recovery, and it was being dropped: EmitError lifts
-	// an error's next[] onto the envelope, EmitJSON did not, so exactly the guidance a
+	// an error's next[] onto the envelope, Emit did not, so exactly the guidance a
 	// half-completed command needs to hand back never reached the caller. Guidance a caller
 	// has to know to ask for is not an affordance.
 	if len(r.Next) == 0 && r.Err != nil {
@@ -206,7 +231,7 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 	}
 	recordVerdict(r.Outcome, r.Err)
 
-	return encode(w, envelope{
+	return encode(w, m, envelope{
 		Schema:   Schema,
 		Command:  cmd,
 		Outcome:  r.Outcome,
@@ -220,7 +245,7 @@ func EmitJSON(w io.Writer, cmd string, r Result) error {
 
 // emittedOutcome and emittedCode remember the verdict that actually reached stdout.
 //
-// The outcome is corrected in EmitJSON, but the process EXIT comes from whatever the command
+// The outcome is corrected in Emit, but the process EXIT comes from whatever the command
 // returned to main — so a command could emit a corrected `partial` envelope and then return
 // nil, exiting 0. `sync` did exactly that twice in one release: once on its normal path and
 // again on its "nothing to pull" early return, which skipped the outcome logic entirely.
@@ -258,12 +283,12 @@ func AdoptTextFailure(e *Error) { recordVerdict(OutcomeFailure, e) }
 // EmitError writes the envelope for a total failure. Callers write it to STDOUT: a
 // failure envelope is as machine-readable as a success one, and putting it on stderr
 // made the two impossible to read with one idiom.
-func EmitError(w io.Writer, cmd string, e *Error) error {
+func EmitError(w io.Writer, cmd string, e *Error, m Mode) error {
 	var next []Next
 	if e != nil {
 		next = e.Next
 	}
-	return encode(w, envelope{
+	return encode(w, m, envelope{
 		Schema:   Schema,
 		Command:  cmd,
 		Outcome:  OutcomeFailure,
@@ -273,11 +298,72 @@ func EmitError(w io.Writer, cmd string, e *Error) error {
 	})
 }
 
-func encode(w io.Writer, e envelope) error {
+func encode(w io.Writer, m Mode, e envelope) error {
+	if m == ModeYAML {
+		return encodeYAML(w, e)
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(e); err != nil {
 		return fmt.Errorf("failed to encode output: %w", err)
 	}
 	return nil
+}
+
+// encodeYAML renders the envelope through its JSON form.
+//
+// It marshals to JSON first and re-decodes into a generic tree rather than handing the
+// structs to the YAML encoder, because the envelope types carry ONLY json tags: yaml.v3
+// would lowercase the Go field names instead, silently publishing `blockedby` where the
+// contract says `blocked_by` — two dialects of one envelope, which is worse than having no
+// YAML at all.
+//
+// UseNumber keeps integers integral. Decoding into `any` normally yields float64, and a
+// large count then renders as 1.2172371e+07; json.Number left alone renders as a quoted
+// string. Neither is the number the JSON envelope reports.
+func encodeYAML(w io.Writer, e envelope) error {
+	raw, err := json.Marshal(e)
+	if err != nil {
+		return fmt.Errorf("failed to encode output: %w", err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var tree any
+	if err := dec.Decode(&tree); err != nil {
+		return fmt.Errorf("failed to encode output: %w", err)
+	}
+
+	enc := yaml.NewEncoder(w)
+	enc.SetIndent(2)
+	if err := enc.Encode(numbersToScalars(tree)); err != nil {
+		return fmt.Errorf("failed to encode output: %w", err)
+	}
+	return enc.Close()
+}
+
+// numbersToScalars replaces every json.Number with the narrowest Go scalar that holds it,
+// so YAML shows 3 and 0.5 rather than "3" and "0.5".
+func numbersToScalars(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, inner := range t {
+			t[k] = numbersToScalars(inner)
+		}
+		return t
+	case []any:
+		for i, inner := range t {
+			t[i] = numbersToScalars(inner)
+		}
+		return t
+	case json.Number:
+		if i, err := strconv.ParseInt(t.String(), 10, 64); err == nil {
+			return i
+		}
+		if f, err := strconv.ParseFloat(t.String(), 64); err == nil {
+			return f
+		}
+		// Unrepresentable as either: keep the literal rather than losing it.
+		return t.String()
+	}
+	return v
 }

@@ -122,8 +122,11 @@ sync
 topic
 topic attach
 topic close
+  --force                            bool
   --reopen                           bool
 topic detach
+topic link
+  --force                            bool
 topic list (ls)
 topic remove (rm)
   --delete-branch                    bool
@@ -132,6 +135,12 @@ topic remove (rm)
   --with-worktrees                   bool
   --yes                              bool
 topic show (view)
+topic unlink
+topic update
+  --force                            bool
+  --max-size                         int64 (default 1048576)
+  --meta                             stringArray
+  --unset-meta                       stringArray
 trust
   --accept                           string
   --revoke                           bool
@@ -150,6 +159,7 @@ where
   hook_failed                  exit 1
   internal                     exit 1
   io_failed                    exit 1
+  link_unknown                 exit 1
   manifest_untrusted           exit 2
   needs_input                  exit 7
   not_in_project               exit 2
@@ -160,6 +170,7 @@ where
   shell_helper_missing         exit 3
   state_version_unsupported    exit 2
   topic_conflict               exit 1
+  topic_cycle                  exit 1
   topic_not_closeable          exit 1
   topic_unknown                exit 1
   unknown_command              exit 1

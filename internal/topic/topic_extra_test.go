@@ -104,7 +104,7 @@ func TestErrorTypesFormatUsefully(t *testing.T) {
 	if !strings.Contains(claimed.Error(), "api@main") || !strings.Contains(claimed.Error(), "topic 1") {
 		t.Errorf("ErrClaimed = %q", claimed.Error())
 	}
-	version := &ErrVersion{Path: "/p/state.yaml", Found: "99", Supported: "1"}
+	version := &ErrVersion{Path: "/p/state.yaml", Found: "99", Supported: []string{"1", "2"}}
 	if !strings.Contains(version.Error(), "99") || !strings.Contains(version.Error(), "upgrade hydra") {
 		t.Errorf("ErrVersion = %q", version.Error())
 	}
@@ -112,13 +112,35 @@ func TestErrorTypesFormatUsefully(t *testing.T) {
 	if !strings.Contains(unknown.Error(), "nope") {
 		t.Errorf("ErrUnknown = %q", unknown.Error())
 	}
-	cycle := &ErrCycle{ID: "a", Parent: "c"}
-	if !strings.Contains(cycle.Error(), "cycle") {
+	cycle := &ErrCycle{From: "a", Kind: KindPartOf, To: "c", Path: []string{"a", "c", "b", "a"}}
+	if !strings.Contains(cycle.Error(), "cycle") || !strings.Contains(cycle.Error(), "a → c → b → a") {
 		t.Errorf("ErrCycle = %q", cycle.Error())
+	}
+	// A self-edge has no path to print, so it gets its own sentence rather than an
+	// empty arrow chain.
+	self := &ErrCycle{From: "a", Kind: KindDependsOn, To: "a"}
+	if !strings.Contains(self.Error(), "itself") {
+		t.Errorf("self ErrCycle = %q", self.Error())
+	}
+	missing := &ErrLinkUnknown{From: "a", Kind: KindDependsOn, To: "b"}
+	if !strings.Contains(missing.Error(), "no depends_on link to b") {
+		t.Errorf("ErrLinkUnknown = %q", missing.Error())
+	}
+	// The kind error must teach the rule, not just refuse: it is the only place a user
+	// learns that a custom kind needs a namespace.
+	kind := &ErrKind{Kind: "blocks"}
+	if !strings.Contains(kind.Error(), "dot") || !strings.Contains(kind.Error(), "acme.tested-by") {
+		t.Errorf("ErrKind = %q", kind.Error())
+	}
+	metaKey := &ErrMetaKey{Key: "", Reason: "a meta key cannot be empty"}
+	if !strings.Contains(metaKey.Error(), "cannot be empty") {
+		t.Errorf("ErrMetaKey = %q", metaKey.Error())
 	}
 }
 
-func TestSetParentClearsContainment(t *testing.T) {
+// Removing the containment edge makes the topic flat again — the behaviour the old
+// SetParent("") clear pinned, now expressed as edge removal.
+func TestRemoveLinkClearsContainment(t *testing.T) {
 	root := t.TempDir()
 	s := Open(root)
 	for _, id := range []string{"parent", "child"} {
@@ -126,15 +148,22 @@ func TestSetParentClearsContainment(t *testing.T) {
 			t.Fatalf("attach %s: %v", id, err)
 		}
 	}
-	if err := s.SetParent("child", "parent"); err != nil {
-		t.Fatalf("set parent: %v", err)
+	link := Link{Kind: KindPartOf, To: "parent"}
+	if _, err := s.AddLink("child", link, false); err != nil {
+		t.Fatalf("add link: %v", err)
 	}
-	if err := s.SetParent("child", ""); err != nil {
-		t.Fatalf("clear parent: %v", err)
+	if err := s.RemoveLink("child", link); err != nil {
+		t.Fatalf("remove link: %v", err)
 	}
 	child, ok, err := s.Get("child")
-	if err != nil || !ok || child.Parent != "" {
+	if err != nil || !ok || len(child.Links) != 0 {
 		t.Fatalf("child = (%+v, %v, %v), want flat topic", child, ok, err)
+	}
+	// Removing it twice is not silently fine: there is nothing to converge on, and a
+	// typo in the kind must not read as success.
+	var unknown *ErrLinkUnknown
+	if err := s.RemoveLink("child", link); !errors.As(err, &unknown) {
+		t.Fatalf("second remove = %v, want ErrLinkUnknown", err)
 	}
 }
 
@@ -147,7 +176,7 @@ func TestChildrenReturnsOrderedMatchesOnly(t *testing.T) {
 		}
 	}
 	for _, child := range []string{"a", "b"} {
-		if err := s.SetParent(child, "root"); err != nil {
+		if _, err := s.AddLink(child, Link{Kind: KindPartOf, To: "root"}, false); err != nil {
 			t.Fatalf("parent %s: %v", child, err)
 		}
 	}
@@ -164,7 +193,7 @@ func TestChildrenReturnsOrderedMatchesOnly(t *testing.T) {
 	}
 }
 
-func TestSetParentReturnsErrCycle(t *testing.T) {
+func TestAddLinkReturnsErrCycle(t *testing.T) {
 	root := t.TempDir()
 	s := Open(root)
 	for _, id := range []string{"a", "b", "c"} {
@@ -172,17 +201,21 @@ func TestSetParentReturnsErrCycle(t *testing.T) {
 			t.Fatalf("attach: %v", err)
 		}
 	}
-	if err := s.SetParent("b", "a"); err != nil {
+	if _, err := s.AddLink("b", Link{Kind: KindPartOf, To: "a"}, false); err != nil {
 		t.Fatalf("b under a: %v", err)
 	}
-	if err := s.SetParent("c", "b"); err != nil {
+	if _, err := s.AddLink("c", Link{Kind: KindPartOf, To: "b"}, false); err != nil {
 		t.Fatalf("c under b: %v", err)
 	}
 
-	err := s.SetParent("a", "c")
+	_, err := s.AddLink("a", Link{Kind: KindPartOf, To: "c"}, false)
 	var cycle *ErrCycle
 	if !errors.As(err, &cycle) {
 		t.Fatalf("cycle = %v, want ErrCycle", err)
+	}
+	// The path is what makes the refusal actionable.
+	if len(cycle.Path) == 0 {
+		t.Error("ErrCycle carried no path")
 	}
 }
 

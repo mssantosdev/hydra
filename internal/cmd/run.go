@@ -323,7 +323,7 @@ func runOne(ctx context.Context, t fanout.Target, command []string) fanout.ItemR
 	// to see it arrive. Under --output json they are CAPTURED per worktree instead,
 	// because passthrough output from several worktrees is unattributable — and with
 	// --jobs it interleaves mid-line, so no caller can reconstruct who wrote what.
-	if jsonMode() {
+	if machineMode() {
 		out, errOut := &headWriter{}, &tailWriter{}
 		proc.Stdout, proc.Stderr = out, errOut
 		defer func() {

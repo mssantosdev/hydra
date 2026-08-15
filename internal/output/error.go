@@ -36,7 +36,17 @@ const (
 	// CodeTopicNotCloseable: children are open, or their work has not reached this topic's
 	// branch yet. `details.blocked_by` names every reason at once, so a caller fixes them in one
 	// pass rather than one refusal at a time. Not retryable — something has to change first.
-	CodeTopicNotCloseable       = "topic_not_closeable"
+	CodeTopicNotCloseable = "topic_not_closeable"
+	// CodeTopicCycle is an edge that would close a loop in a relationship hydra assigns
+	// meaning to, or a topic pointed at itself in any kind. `details.path` names the loop and
+	// `next` carries the --force re-run: the refusal is the safe DEFAULT, not a prohibition —
+	// every walk in the store carries a visited set, so a recorded cycle costs mutual
+	// close-blocking rather than a hang.
+	CodeTopicCycle = "topic_cycle"
+	// CodeLinkUnknown is an unlink of an edge that is not recorded. `details.recorded` lists
+	// the edges that ARE, because the usual cause is a mistyped kind or target, and silently
+	// succeeding would hide it. There is nothing to override: the desired state already holds.
+	CodeLinkUnknown             = "link_unknown"
 	CodeStateVersionUnsupported = "state_version_unsupported"
 	CodeBranchProviderFailed    = "branch_provider_failed"
 	// CodeBusy is the ONLY retryable code: a git lock or the topic state lock was
@@ -102,6 +112,8 @@ var exitCodes = map[string]int{
 	CodeTopicUnknown:             1,
 	CodeTopicConflict:            1,
 	CodeTopicNotCloseable:        1,
+	CodeTopicCycle:               1,
+	CodeLinkUnknown:              1,
 	CodeStateVersionUnsupported:  2,
 	CodeBranchProviderFailed:     1,
 	CodeBusy:                     6,
