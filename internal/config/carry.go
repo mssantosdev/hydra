@@ -66,9 +66,19 @@ func (e CarryEntry) Dest() string {
 	}
 }
 
-// FromWorkspace reports whether the source is a fixed workspace path rather than the source
+// FromWorkspace reports whether the source is a fixed path rather than the source
 // worktree. These are the only entries that can be satisfied on a fresh clone.
 func (e CarryEntry) FromWorkspace() bool { return e.From != "" }
+
+// OutsideWorkspace reports whether this entry's source reaches outside the workspace.
+//
+// Only the EXPLICIT spellings count: an absolute path or `~/`. A relative `from:` is resolved
+// against the workspace root and stays containment-checked at carry time — the obfuscated
+// spellings of "outside" (`..`, a symlink that leaves) are refused, so a manifest that reads
+// beyond its workspace SAYS so in the diff a trust approval reviews.
+func (e CarryEntry) OutsideWorkspace() bool {
+	return e.From != "" && (path.IsAbs(e.From) || strings.HasPrefix(e.From, "~/"))
+}
 
 // UnmarshalYAML accepts either a bare string or a mapping, so the common case reads as a
 // list of filenames instead of a list of single-key objects.
@@ -126,8 +136,16 @@ func (e CarryEntry) validate() error {
 	if path.IsAbs(dest) || strings.HasPrefix(path.Clean(dest), "..") {
 		return fmt.Errorf("carry destination %q must stay inside the worktree", dest)
 	}
-	if e.From != "" && (path.IsAbs(e.From) || strings.HasPrefix(path.Clean(e.From), "..")) {
-		return fmt.Errorf("carry source %q must stay inside the workspace", e.From)
+	if e.From != "" {
+		switch {
+		case strings.HasPrefix(path.Clean(e.From), ".."):
+			// `..` stays refused even though absolute paths are now legal: an outside source
+			// must be SPELLED as outside (absolute or ~/), so the manifest diff a trust
+			// approval reviews says what it reaches. Dot-dot walking is the obfuscated spelling.
+			return fmt.Errorf("carry source %q must not walk out of the workspace with ..; name the target explicitly (an absolute or ~/ path)", e.From)
+		case e.From == "~" || (strings.HasPrefix(e.From, "~") && !strings.HasPrefix(e.From, "~/")):
+			return fmt.Errorf("carry source %q: only ~/ expands (to your home directory); ~user is not supported", e.From)
+		}
 	}
 	return nil
 }

@@ -65,6 +65,29 @@ is permanently bound to different content in the Go checksum database, so it can
 
 ### Added
 
+- **`carry` sources may reach outside the workspace — by saying so.** `from:` accepts an absolute
+  or `~/` path (`~/.arvia/mcp.json`), which is a machine-local store, a mount, or anything else a
+  path can name. The explicit spelling is the contract: the entry joins the manifest's TRUST
+  surface next to hooks, so a teammate cloning the manifest gets `manifest_untrusted` (the entry is
+  withheld; the worktree still lands) instead of an unprompted read of their machine. The whole
+  entry is approved — source, destination and mode — so gaining one, retargeting `from:`, re-aiming
+  `to:`, or flipping `mode:` each re-block until `hydra trust` approves the diff: containment stops
+  a write leaving the worktree, but not an approved secret re-aimed at a tracked path and published
+  on the next push. The obfuscated spellings stay refused: `..` at parse time, a relative
+  `from:` resolving outside through a symlink at carry time (`carry_refused`) — a committed symlink
+  must never be an outside read the reviewed diff does not show. `~user` is refused at parse; only
+  `~/` expands. `mode: link` with an outside source links to the ABSOLUTE store path, so the one
+  editable copy stays in the store and moving the worktree cannot break the pointer; inside sources
+  keep relative targets so a moved workspace survives. This settles the question `ExecutableSurface`
+  had recorded as open: inside entries are containment-checked and stay off the surface, outside
+  entries are machine authority and are on it.
+
+  Remote hosts and git objects stay a composition, not a fetcher: an external job materialises the
+  file at a local path BEFORE the worktree is created (carry runs before `post_add`, so a hook
+  cannot feed the worktree that fires it), and `carry` names the path. hydra never fetches, the
+  same way it never merges.
+
+
 - **`hydra topic link|unlink <id> <kind> <target>`** and **`hydra topic update <id>`**. Following
   the resource-verb shape the rest of the CLI uses — and deliberately NOT a `meta set`/`meta unset`
   micro-verb pair, which is how a surface stops being memorable. `update` takes repeatable

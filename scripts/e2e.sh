@@ -1100,6 +1100,57 @@ check "--fix drops the edge, and it stays fixed" \
     { "$HYDRA" doctor --output json || true; } |
       jq -e "[.data.checks[]|select(.id==\"topic_dangling_link\")]|length==0" >/dev/null)'
 
+# ------------------------------------------------ 21d. carry reaches outside only with trust
+echo "== 21d. an outside carry source is machine authority, gated like a hook =="
+# A source is a path. Workspace-relative stays containment-checked; an absolute (or ~/) source
+# is the EXPLICIT spelling of outside, joins the manifest's trust surface, and carries only
+# after approval — a cloned hostile manifest must not read the victim's machine unprompted.
+CSTORE="$T/carrystore"; mkdir -p "$CSTORE"; printf 'STORE-BYTES\n' > "$CSTORE/ca.pem"
+cp "$T/ws/.hydra/config.yaml" "$T/manifest-carry.bak"
+sed -i "s|^groups:|carry:\n    - from: $CSTORE/ca.pem\n      to: certs/ca.pem\ngroups:|" "$T/ws/.hydra/config.yaml"
+check "untrusted: worktree created, file withheld, code names trust" \
+  '(cd "$T/ws" && { "$HYDRA" add api carry/one --output json || true; } |
+     jq -e ".outcome==\"partial\" and ([.warnings[]|select(.code==\"manifest_untrusted\")]|length==1)" >/dev/null &&
+   [ -d "$T/ws/backend/api-carry-one" ] && [ ! -e "$T/ws/backend/api-carry-one/certs/ca.pem" ])'
+check "trusted: the file arrives with the store's bytes" \
+  '(cd "$T/ws" && "$HYDRA" trust --output json >/dev/null &&
+    "$HYDRA" add api carry/two --output json | jq -e ".outcome==\"success\"" >/dev/null &&
+    [ "$(cat "$T/ws/backend/api-carry-two/certs/ca.pem")" = "STORE-BYTES" ])'
+# Retargeting the approved source must re-block: the approval covered a specific path.
+sed -i "s|$CSTORE/ca.pem|$CSTORE/other.pem|" "$T/ws/.hydra/config.yaml"
+check "retargeting from: re-blocks and names the entry" \
+  '(cd "$T/ws" && { "$HYDRA" trust --show --output json || true; } |
+     jq -e "(.data.trusted==false) and (.data.changed|index(\"carry[0]\")!=null)" >/dev/null)'
+check "and the retargeted file is withheld" \
+  '(cd "$T/ws" && { "$HYDRA" add api carry/three --output json || true; } |
+     jq -e "[.warnings[]|select(.code==\"manifest_untrusted\")]|length==1" >/dev/null &&
+   [ ! -e "$T/ws/backend/api-carry-three/certs/ca.pem" ])'
+# Retargeting the DESTINATION of an approved entry re-blocks as well: an approved read aimed at a
+# tracked path would publish the secret on the next push, which containment cannot prevent because
+# that is publication, not traversal.
+sed -i "s|$CSTORE/other.pem|$CSTORE/ca.pem|" "$T/ws/.hydra/config.yaml"
+( cd "$T/ws" && "$HYDRA" trust --output json >/dev/null )
+sed -i "s|      to: certs/ca.pem|      to: published/ca.pem|" "$T/ws/.hydra/config.yaml"
+check "retargeting to: re-blocks the approved entry" \
+  '(cd "$T/ws" && { "$HYDRA" trust --show --output json || true; } |
+     jq -e "(.data.trusted==false) and (.data.changed|index(\"carry[0]\")!=null)" >/dev/null &&
+   { "$HYDRA" add api carry/pub --output json || true; } |
+     jq -e "[.warnings[]|select(.code==\"manifest_untrusted\")]|length==1" >/dev/null &&
+   [ ! -e "$T/ws/backend/api-carry-pub/published/ca.pem" ])'
+sed -i "s|      to: published/ca.pem|      to: certs/ca.pem|" "$T/ws/.hydra/config.yaml"
+
+# The obfuscated spelling of outside — a relative path through an escaping symlink — stays
+# refused even on a TRUSTED manifest: outside must be said out loud.
+ln -s "$CSTORE" "$T/ws/.shared-esc"
+sed -i "s|$CSTORE/ca.pem|.shared-esc/ca.pem|" "$T/ws/.hydra/config.yaml"
+check "a relative symlink escape is still carry_refused" \
+  '(cd "$T/ws" && "$HYDRA" trust --output json >/dev/null &&
+    { "$HYDRA" add api carry/esc --output json || true; } |
+     jq -e "[.warnings[]|select(.code==\"carry_refused\")]|length==1" >/dev/null &&
+   [ ! -e "$T/ws/backend/api-carry-esc/certs/ca.pem" ])'
+cp "$T/manifest-carry.bak" "$T/ws/.hydra/config.yaml"
+( cd "$T/ws" && "$HYDRA" trust --output json >/dev/null )
+
 # ------------------------------------------------ 22. a control character is refused
 echo "== 22. a name with a control character is refused =="
 check "add --as with an embedded newline is usage, not a truncated name" \

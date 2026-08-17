@@ -51,6 +51,11 @@ type Plan struct {
 	// WorkspaceRoot resolves `from:` entries, which are the only ones that work without a
 	// prior worktree.
 	WorkspaceRoot string
+	// OutsideAllowed permits entries whose source reaches outside the workspace (absolute or
+	// ~/). Set by the caller only when the manifest is trusted; carry never reads the trust
+	// store itself — the store is a cmd-layer concern, and this package stays testable
+	// without one.
+	OutsideAllowed bool
 }
 
 // Apply places every entry and returns one Result each, plus warnings for anything it could
@@ -131,7 +136,7 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []*output.Diagnost
 			continue
 		}
 
-		if err := place(root, src, rel, res.Mode); err != nil {
+		if err := place(root, src, rel, res.Mode, entry.OutsideWorkspace()); err != nil {
 			// The Lstat above is a check, not a lock: something can appear between it and
 			// the write. Reporting that as Placed would claim a write that never happened.
 			if errors.Is(err, errAlreadyPresent) {
@@ -171,6 +176,25 @@ var errAlreadyPresent = errors.New("already present")
 // expected case.
 func source(e config.CarryEntry, plan Plan) (src, reason, code string) {
 	if e.FromWorkspace() {
+		if e.OutsideWorkspace() {
+			// The EXPLICIT outside spellings (absolute, ~/). Reading beyond the workspace is
+			// machine authority like running a hook, so it takes the same approval; the entry
+			// is on the manifest's trust surface, and the caller sets OutsideAllowed only when
+			// that surface is approved. No within() here — the declaration plus the approval
+			// IS the containment decision.
+			if !plan.OutsideAllowed {
+				return "", "source reaches outside the workspace and the manifest is not trusted; run \"hydra trust\"",
+					output.CodeManifestUntrusted
+			}
+			abs, err := expandHome(e.From)
+			if err != nil {
+				return "", fmt.Sprintf("cannot resolve %s: %v", e.From, err), output.CodeCarryRefused
+			}
+			if _, err := os.Stat(abs); err != nil {
+				return "", fmt.Sprintf("%s does not exist on this machine", e.From), output.CodeCarryRefused
+			}
+			return abs, "", ""
+		}
 		if plan.WorkspaceRoot == "" {
 			// No workspace to resolve against is the ENVIRONMENT lacking one, not a refusal and
 			// not a broken invariant: nothing was declared wrongly and nothing was denied, so it
@@ -179,7 +203,8 @@ func source(e config.CarryEntry, plan Plan) (src, reason, code string) {
 		}
 		abs := filepath.Join(plan.WorkspaceRoot, filepath.FromSlash(e.From))
 		if !within(plan.WorkspaceRoot, abs) {
-			return "", "source escapes the workspace; refused", output.CodeCarryRefused
+			return "", "source escapes the workspace; refused — name the target explicitly (an absolute or ~/ path, requires \"hydra trust\")",
+				output.CodeCarryRefused
 		}
 		if _, err := os.Stat(abs); err != nil {
 			// A `from:` entry names a fixed workspace path, so an absent file is NOT the
@@ -205,6 +230,20 @@ func source(e config.CarryEntry, plan Plan) (src, reason, code string) {
 	return abs, "", ""
 }
 
+// expandHome resolves a leading ~/ against this machine's home. Only ~/ expands: $VARS and
+// ~user would be a second and third expansion language for no named need, and the manifest
+// validator already refused them at parse time.
+func expandHome(p string) (string, error) {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, strings.TrimPrefix(p, "~")), nil
+	}
+	return p, nil
+}
+
 // place writes one entry. dest is relative to root, so every operation is confined by the
 // kernel: os.Root resolves each component itself and refuses anything leaving the root, which
 // is what closes the symlink TOCTOU a filepath.Join plus a string check leaves open.
@@ -214,7 +253,7 @@ func source(e config.CarryEntry, plan Plan) (src, reason, code string) {
 // had a hole reachable from a manifest-authored `to:` value. go.mod pins a patched toolchain, but
 // a control that only holds when the builder's Go is current is not a control — cleaning here
 // means the escape has no spelling to arrive in.
-func place(root *os.Root, src, dest, m string) error {
+func place(root *os.Root, src, dest, m string, outside bool) error {
 	dest = filepath.Clean(dest)
 	if dir := filepath.Dir(dest); dir != "." {
 		if err := root.MkdirAll(dir, 0o750); err != nil {
@@ -222,12 +261,19 @@ func place(root *os.Root, src, dest, m string) error {
 		}
 	}
 	if m == config.CarryLink {
-		// A relative target, so the workspace survives being moved or mounted elsewhere.
 		// The link is created inside the root; where it POINTS is not the root's business,
 		// and pointing outside is the whole purpose of carrying a shared file by link.
-		target, err := filepath.Rel(filepath.Dir(filepath.Join(root.Name(), dest)), src)
-		if err != nil {
-			target = src
+		//
+		// INSIDE sources get a relative target, so the workspace survives being moved or
+		// mounted elsewhere. OUTSIDE sources get the absolute path: the store lives at a fixed
+		// machine location the workspace does not contain, so relativizing would break the
+		// link the first time the worktree moves — and `ls -l` showing `/home/me/.arvia/…` is
+		// the honest rendering of what the manifest declared.
+		target := src
+		if !outside {
+			if rel, err := filepath.Rel(filepath.Dir(filepath.Join(root.Name(), dest)), src); err == nil {
+				target = rel
+			}
 		}
 		return root.Symlink(target, dest)
 	}

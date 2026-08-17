@@ -52,15 +52,19 @@ func TestCarryEntry_MappingForm(t *testing.T) {
 	}
 }
 
-// Rejected at PARSE time, so a manifest that could write outside a worktree is refused when
-// it is read rather than warned about when it is acted on. A manifest is designed to be handed
-// between people; this is the boundary that makes that safe.
+// Rejected at PARSE time, so a manifest that could write outside a worktree — or spell an
+// outside READ in an obfuscated way — is refused when it is read rather than warned about when
+// it is acted on. A manifest is designed to be handed between people; this is the boundary
+// that makes that safe. Outside sources are legal only in their EXPLICIT spellings (absolute,
+// ~/), which is what makes the diff a trust approval reviews say what the manifest reaches.
 func TestCarryEntry_RejectsUnsafeAndAmbiguousEntries(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"escaping destination", "carry:\n  - from: a\n    to: ../../etc/passwd\n", "inside the worktree"},
 		{"absolute destination", "carry:\n  - from: a\n    to: /etc/cron.d/pwn\n", "inside the worktree"},
-		{"escaping source", "carry:\n  - from: ../../../.ssh/id_rsa\n    to: k\n", "inside the workspace"},
-		{"absolute source", "carry:\n  - from: /etc/shadow\n    to: k\n", "inside the workspace"},
+		{"escaping source", "carry:\n  - from: ../../../.ssh/id_rsa\n    to: k\n", "name the target explicitly"},
+		{"sneaky interior dot-dot", "carry:\n  - from: a/../../../.ssh/id_rsa\n    to: k\n", "name the target explicitly"},
+		{"tilde-user source", "carry:\n  - from: ~root/.ssh/id_rsa\n    to: k\n", "~user is not supported"},
+		{"bare tilde source", "carry:\n  - from: \"~\"\n    to: k\n", "~user is not supported"},
 		{"no source at all", "carry:\n  - mode: link\n", "needs either a path"},
 		{"two sources", "carry:\n  - path: .env\n    from: other\n", "cannot have both"},
 		{"bare path with to", "carry:\n  - path: .env\n    to: elsewhere\n", "use from/to"},
@@ -76,6 +80,34 @@ func TestCarryEntry_RejectsUnsafeAndAmbiguousEntries(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not explain the problem (want %q)", err, tc.want)
+			}
+		})
+	}
+}
+
+// The explicit outside spellings are LEGAL at parse time — the gate is trust, applied where the
+// entry is acted on, not a parse error. What is pinned here is exactly which spellings count as
+// outside, because that predicate feeds both the trust surface and carry's resolution.
+func TestCarryEntry_OutsideSpellings(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		body    string
+		outside bool
+	}{
+		{"absolute", "carry:\n  - from: /srv/store/ca.pem\n    to: k\n", true},
+		{"home", "carry:\n  - from: ~/.arvia/mcp.json\n    to: k\n", true},
+		{"workspace-relative", "carry:\n  - from: .shared/ca.pem\n    to: k\n", false},
+		{"bare path form", "carry:\n  - .env\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got struct {
+				Carry []CarryEntry `yaml:"carry"`
+			}
+			if err := yaml.Unmarshal([]byte(tc.body), &got); err != nil {
+				t.Fatalf("%s was refused: %v", tc.name, err)
+			}
+			if got.Carry[0].OutsideWorkspace() != tc.outside {
+				t.Errorf("OutsideWorkspace() = %v, want %v", got.Carry[0].OutsideWorkspace(), tc.outside)
 			}
 		})
 	}
@@ -279,5 +311,29 @@ func TestResolveDefaults_NearestLevelWins(t *testing.T) {
 	// An unknown alias falls back to the workspace rather than inventing anything.
 	if got := ResolveDefaults(c, "nope"); got.BaseBranch != "main" {
 		t.Errorf("unknown alias resolved to %+v", got)
+	}
+}
+
+// An outside source REQUIRES an explicit `to:`. Dest() falls back to From, so omitting it would
+// make the destination absolute — which destination containment refuses, correctly. Pinned because
+// the two rules interact: relaxing the SOURCE did not relax the destination, and the resulting
+// error should point at the destination rather than looking like the source was rejected.
+func TestCarryEntry_OutsideSourceNeedsAnExplicitDestination(t *testing.T) {
+	var got struct {
+		Carry []CarryEntry `yaml:"carry"`
+	}
+	err := yaml.Unmarshal([]byte("carry:\n  - from: /srv/store/ca.pem\n"), &got)
+	if err == nil {
+		t.Fatalf("an outside source with no to: was accepted; parsed %+v", got.Carry)
+	}
+	if !strings.Contains(err.Error(), "inside the worktree") {
+		t.Errorf("error %q should name the destination as the problem", err)
+	}
+	// With a destination it parses, and it is outside.
+	if err := yaml.Unmarshal([]byte("carry:\n  - from: /srv/store/ca.pem\n    to: certs/ca.pem\n"), &got); err != nil {
+		t.Fatalf("outside source with a destination was refused: %v", err)
+	}
+	if !got.Carry[0].OutsideWorkspace() {
+		t.Error("an absolute source must report as outside")
 	}
 }

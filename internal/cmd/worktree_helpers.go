@@ -624,12 +624,28 @@ func createWorktreeForBranch(cfg *config.Config, repo repoContext, targetPath, b
 	// Carry runs here rather than in each of the six callers, and BEFORE post_add: a hook
 	// that installs dependencies or starts a service can then rely on the configuration
 	// being in place. A missing source is a warning, never a failure — see internal/carry.
+	//
+	// Entries reaching OUTSIDE the workspace (absolute or ~/) are on the manifest's trust
+	// surface, so they carry only when the manifest is approved. The gate's rich error is
+	// deliberately discarded: the per-entry warning inside carry names the code and the
+	// recovery, and a trust refusal must not fail the worktree that was just created — the
+	// same rule a failing post_add follows. Checked once per creation; trust.Check is a
+	// read-only load, safe under fanout.
+	entries := config.ResolveCarry(cfg, repo.Alias)
+	outsideAllowed := false
+	for _, e := range entries {
+		if e.OutsideWorkspace() {
+			outsideAllowed = requireTrustedManifest(cfg, projectRoot) == nil
+			break
+		}
+	}
 	results, warnings := carry.Apply(
-		config.ResolveCarry(cfg, repo.Alias),
+		entries,
 		carry.Plan{
 			WorktreePath:   targetPath,
 			SourceWorktree: carrySourceWorktree(repo, from),
 			WorkspaceRoot:  projectRoot,
+			OutsideAllowed: outsideAllowed,
 		},
 	)
 	return carryOutcome{Results: results, Warnings: warnings}, nil

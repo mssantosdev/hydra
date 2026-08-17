@@ -203,7 +203,7 @@ groups:
 |-------|------|-------------|
 | *(bare string)* | string | Shorthand for `path:`. Copied from the same relative location in the source worktree. |
 | `path` | string | Source **and** destination, relative to the worktree. Mutually exclusive with `from`/`to`. |
-| `from` | string | Source path relative to the **workspace root**. |
+| `from` | string | Source path. Workspace-relative, or — requiring `hydra trust` — absolute or `~/` for a machine-local path (`~/.arvia/mcp.json`). |
 | `to` | string | Destination inside the worktree. Defaults to `from`. |
 | `mode` | string | `copy` (default) duplicates the file; `link` symlinks it, so one file is edited in one place. |
 
@@ -219,11 +219,26 @@ bare entries cannot be satisfied — `repo restore` and `apply` replay **structu
 `from:` entries, whose source is a fixed workspace path, survive a fresh machine. The warning names
 the file so you know what to provide.
 
-Paths may not escape, and the guard fires at two points. An absolute or `..`-containing `path`,
-`from` or `to` is **refused when the manifest is parsed**. A path that is legal on its face but
-**resolves** outside — a `from:` naming a symlink that leaves the workspace — cannot be caught
-there, so it is refused **when the file is carried**, reported as `carry_refused`. Every write is
-separately confined to the worktree by the kernel. A manifest is meant
+**Destinations may not escape**: an absolute or `..`-containing `path` or `to` is refused when the
+manifest is parsed, and every write is separately confined to the worktree by the kernel.
+
+**Sources may reach outside the workspace — but only by saying so.** An absolute or `~/` `from:`
+is the explicit spelling: the entry joins the manifest's trust surface next to hooks, so a teammate
+cloning the manifest gets `manifest_untrusted` instead of an unprompted read of their machine. What
+is approved is the whole entry — source, destination and mode — so gaining one, retargeting its
+`from:`, aiming its `to:` somewhere else, or flipping `mode:` all re-block until `hydra trust`
+approves the diff. Destination containment stops a write leaving the worktree; it cannot stop an
+approved secret being re-aimed at a *tracked* path and published on the next push, which is why the
+destination is part of the approval. An outside source needs an explicit `to:`: the default
+destination is the source path, and an absolute destination is refused. The obfuscated spellings stay refused: `..` at parse time, and a relative `from:`
+whose path resolves outside (a symlink that leaves the workspace) at carry time, as
+`carry_refused` — otherwise a committed symlink would be an outside read the diff never shows.
+
+hydra never fetches, the same way it never merges. A source on a remote host or in a git object is
+a composition: an external job — a cron, a bootstrap script, a mount — materialises it at a local
+path (`~/.arvia/mcp.json`) BEFORE the worktree is created, and `carry` names the path. Carry runs
+before `post_add`, so a hook cannot feed the very worktree that fires it; a source that is not
+there yet is a `carry_refused` warning naming the file, and the next created worktree gets it. A manifest is meant
 to be shared, so it must not be able to write outside the workspace it describes.
 
 **Carry what git ignores.** A carried file that is *not* in `.gitignore` is an untracked file like
