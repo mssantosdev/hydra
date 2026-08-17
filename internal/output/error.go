@@ -46,7 +46,14 @@ const (
 	// CodeLinkUnknown is an unlink of an edge that is not recorded. `details.recorded` lists
 	// the edges that ARE, because the usual cause is a mistyped kind or target, and silently
 	// succeeding would hide it. There is nothing to override: the desired state already holds.
-	CodeLinkUnknown             = "link_unknown"
+	CodeLinkUnknown = "link_unknown"
+	// CodeCarryRefused is a `carry` entry hydra will not satisfy because of what it POINTS AT,
+	// not because of a machine failure: a source that resolves outside the workspace, or a
+	// declared workspace file that is not there. It rides as a warning so the envelope degrades
+	// to partial — a declared file that did not arrive must not read as a clean success — and it
+	// carries a code so an agent can tell it from the one carry outcome that IS expected: a bare
+	// entry on a fresh clone, which has no source worktree and stays an uncoded note.
+	CodeCarryRefused            = "carry_refused"
 	CodeStateVersionUnsupported = "state_version_unsupported"
 	CodeBranchProviderFailed    = "branch_provider_failed"
 	// CodeBusy is the ONLY retryable code: a git lock or the topic state lock was
@@ -114,13 +121,16 @@ var exitCodes = map[string]int{
 	CodeTopicNotCloseable:        1,
 	CodeTopicCycle:               1,
 	CodeLinkUnknown:              1,
-	CodeStateVersionUnsupported:  2,
-	CodeBranchProviderFailed:     1,
-	CodeBusy:                     6,
-	CodeNeedsInput:               7,
-	CodeProjectExists:            1,
-	CodeUnknownCommand:           1,
-	CodeInternal:                 1,
+	// carry_refused: a human must provide the file or change the manifest — the config family,
+	// not a retry.
+	CodeCarryRefused:            2,
+	CodeStateVersionUnsupported: 2,
+	CodeBranchProviderFailed:    1,
+	CodeBusy:                    6,
+	CodeNeedsInput:              7,
+	CodeProjectExists:           1,
+	CodeUnknownCommand:          1,
+	CodeInternal:                1,
 }
 
 // ExitCodes returns a copy of the code -> exit-code map.

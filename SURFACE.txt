@@ -153,6 +153,7 @@ where
   branch_unknown               exit 1
   busy                         exit 6  retryable
   cancelled                    exit 130
+  carry_refused                exit 2
   config_invalid               exit 2
   config_version_unsupported   exit 2
   git_failed                   exit 1

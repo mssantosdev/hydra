@@ -289,7 +289,11 @@ func TestExitCodesAreBoundToErrorCodes(t *testing.T) {
 		CodeTopicCycle: 1,
 		// link_unknown is the only refusal with nothing to override: the desired state
 		// already holds, and the recorded edges ride the error so a typo is visible.
-		CodeLinkUnknown:    1,
+		CodeLinkUnknown: 1,
+		// carry_refused joins the config family: a human provides the file or edits the manifest.
+		// It rides as a WARNING, so what decides the exit is the partial outcome it forces — a
+		// declared file that never arrived is not a clean success.
+		CodeCarryRefused:   2,
 		CodeProjectExists:  1,
 		CodeUnknownCommand: 1,
 		// usage is a malformed invocation: exit 2 like the other "fix your

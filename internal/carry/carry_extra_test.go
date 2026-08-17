@@ -256,3 +256,83 @@ func TestSummary(t *testing.T) {
 		t.Errorf("single placed = %q, want %q", single, "1 carried")
 	}
 }
+
+// A refusal and an expected absence are different verdicts, and one emission site used to make
+// them indistinguishable: both arrived as an uncoded note, so a declared file that never landed
+// read as a clean success at exit 0 and no agent could branch on it.
+func TestApply_RefusalIsACodedWarningNotANote(t *testing.T) {
+	root := t.TempDir()
+	dst := filepath.Join(root, "wt")
+	if err := os.MkdirAll(dst, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// .shared is inside the workspace but resolves outside it — the machine-local store pattern.
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "ca.pem"), []byte("CA"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, ".shared")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	_, warnings := Apply([]config.CarryEntry{{From: ".shared/ca.pem", To: "certs/ca.pem"}},
+		Plan{WorktreePath: dst, WorkspaceRoot: root})
+
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one", warnings)
+	}
+	if warnings[0].Severity != output.SeverityWarning {
+		t.Errorf("a refusal must be a warning, got %q", warnings[0].Severity)
+	}
+	if warnings[0].Code != output.CodeCarryRefused {
+		t.Errorf("code = %q, want %q — an uncoded refusal cannot be branched on",
+			warnings[0].Code, output.CodeCarryRefused)
+	}
+	// It must force a non-success verdict, or the override-free failure is invisible to a script.
+	if !warnings[0].IsFault() {
+		t.Error("a refusal must degrade the outcome; a note would exit 0 on a file that never arrived")
+	}
+}
+
+// A declared workspace file that is simply absent is the case docs/configuration.md promises as
+// "a warning naming the file so you know what to provide" — not a note.
+func TestApply_MissingDeclaredWorkspaceFileIsAWarning(t *testing.T) {
+	root := t.TempDir()
+	dst := filepath.Join(root, "wt")
+	if err := os.MkdirAll(dst, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	_, warnings := Apply([]config.CarryEntry{{From: ".shared/absent.pem", To: "certs/x.pem"}},
+		Plan{WorktreePath: dst, WorkspaceRoot: root})
+
+	if len(warnings) != 1 || warnings[0].Code != output.CodeCarryRefused {
+		t.Fatalf("warnings = %v, want one carry_refused", warnings)
+	}
+	if !strings.Contains(warnings[0].Message, ".shared/absent.pem") {
+		t.Errorf("the warning must name the file to provide, got %q", warnings[0].Message)
+	}
+}
+
+// The one outcome that stays a note: a bare entry on a fresh clone has no source worktree, which
+// is the documented limit of replaying a manifest — structure, not secrets. Coding this would
+// make every fresh restore report a fault for working exactly as designed.
+func TestApply_FreshCloneAbsenceStaysAnUncodedNote(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "wt")
+	if err := os.MkdirAll(dst, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	_, warnings := Apply([]config.CarryEntry{{Path: ".env"}}, Plan{WorktreePath: dst})
+
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one", warnings)
+	}
+	if warnings[0].Severity != output.SeverityNote || warnings[0].Code != "" {
+		t.Errorf("fresh-clone absence = (%q, %q), want an uncoded note",
+			warnings[0].Severity, warnings[0].Code)
+	}
+	if warnings[0].IsFault() {
+		t.Error("the expected case must not degrade the outcome")
+	}
+}

@@ -219,8 +219,11 @@ bare entries cannot be satisfied — `repo restore` and `apply` replay **structu
 `from:` entries, whose source is a fixed workspace path, survive a fresh machine. The warning names
 the file so you know what to provide.
 
-Paths may not escape: an absolute or `..`-containing `path`, `from` or `to` is **refused when the
-manifest is parsed**, and every write is confined to the worktree by the kernel. A manifest is meant
+Paths may not escape, and the guard fires at two points. An absolute or `..`-containing `path`,
+`from` or `to` is **refused when the manifest is parsed**. A path that is legal on its face but
+**resolves** outside — a `from:` naming a symlink that leaves the workspace — cannot be caught
+there, so it is refused **when the file is carried**, reported as `carry_refused`. Every write is
+separately confined to the worktree by the kernel. A manifest is meant
 to be shared, so it must not be able to write outside the workspace it describes.
 
 **Carry what git ignores.** A carried file that is *not* in `.gitignore` is an untracked file like

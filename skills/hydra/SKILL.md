@@ -36,7 +36,7 @@ own words). `error`/`warning` force `partial`; a `note` never does — an accept
 `start --topic <id> --repos a,b`; a captured set → `list -o json | … | apply -`.
 
 **Topics relate as a graph.** `topic link <id> part_of|depends_on <target>` — both gate `close` — or a
-dot-namespaced kind of your own (`acme.tested-by`), stored, never gated on. `topic update` takes `--meta k=v`, or a JSON/YAML document on `-`/a path replacing `links:`/`meta:` wholesale.
+dot-namespaced kind of your own (`acme.tested-by`), stored, never gated on. `topic update` takes `--meta k=v`, or a JSON/YAML document on `-`/a path replacing `links:`/`meta:`.
 
 **Which worktrees?** A bare handle (`api-stage`, `backend/api-stage`) → one; `--topic <id>` → members;
 `--repos`/`--group`/`--all` → those repos; `--filter dirty|behind|branch:<glob>` narrows; they intersect. Aliases: `ls`, `rm`, `view`, `cd`.
@@ -44,7 +44,7 @@ dot-namespaced kind of your own (`acme.tested-by`), stored, never gated on. `top
 **Rebuilding elsewhere?** `repo restore` creates the `branches:` a manifest declares (additive, `--jobs N`);
 `repo set <alias> --branches a,b` declares them later; undeclared → default branches only. `sync` needs `--dirty stash|reset|skip`.
 
-**Workspace looks wrong?** `doctor --output json`; `checks[].fixable` says whether `--fix` repairs it. **`manifest_untrusted`?** `hydra hooks ls`, then `hydra trust` — in CI `--accept sha256:…`, pinned in CI config, never the repo.
+**Workspace wrong?** `doctor --output json`; `checks[].fixable` says whether `--fix` repairs it. **`manifest_untrusted`?** `hydra hooks ls`, then `hydra trust` — in CI `--accept sha256:…`, pinned in CI config, never the repo.
 
 ## Commands
 
@@ -99,11 +99,12 @@ dot-namespaced kind of your own (`acme.tested-by`), stored, never gated on. `top
 | `topic_cycle` | 1 | link closes a loop or self-points; `details.path`, override `--force` |
 | `link_unknown` | 1 | no such link; `details.recorded` lists the real ones |
 | `branch_provider_failed` | 1 | the `branch_provider` script failed or timed out |
-| `hook_failed` | 1 | a non-`optional` hook failed; the worktree IS created — fix, then `hooks run <event>` |
+| `hook_failed` | 1 | a non-`optional` hook failed; the worktree IS created — then `hooks run <event>` |
 | `git_failed` | 1 | a git invocation failed; `cause` has git's words |
 | `project_exists` | 1 | that project name is already registered |
 | `unknown_command` | 1 | no such subcommand; see `details.did_you_mean` |
 | `io_failed` | 1 | the machine: a path hydra cannot create, write or read |
+| `carry_refused` | 2 | a `carry` source resolves outside the workspace, or is absent |
 | `cancelled` | 130 | you stopped a prompt; nothing changed |
 | `internal` | 1 | a broken hydra invariant — report it |
 | `shell_helper_missing` | 3 | `switch --cd` with no shell helper |
@@ -114,7 +115,6 @@ dot-namespaced kind of your own (`acme.tested-by`), stored, never gated on. `top
 
 ## Anti-patterns
 
-- Rebuilding `<group>/<repo>-<branch>` instead of reading `data[].path` — `--as` may override it. Treating `upstream: null` as failure; it is a branch with no upstream.
-- Deleting after a failure: re-running `add` is safe, reports `skipped`, does NOT re-run the hook. Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged — ask.
+- Rebuilding `<group>/<repo>-<branch>` instead of `data[].path`; treating `upstream: null` as failure. Deleting after a failure: re-running `add` is safe, reports `skipped`, does NOT re-run the hook. Retrying `remove --delete-branch --force` after `git_failed`: the branch is NOT merged — ask.
 - Assuming `hydra run` gets a shell. It does not — pass `-- sh -c '…'`.
 - Treating a refusal as final: `topic close`/`link` refusals name an override in `next[]`.

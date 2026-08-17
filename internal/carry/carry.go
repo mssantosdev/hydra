@@ -83,12 +83,21 @@ func Apply(entries []config.CarryEntry, plan Plan) ([]Result, []*output.Diagnost
 	for _, entry := range entries {
 		res := Result{Dest: entry.Dest(), Mode: mode(entry)}
 
-		src, reason := source(entry, plan)
+		src, reason, code := source(entry, plan)
 		if src == "" {
 			res.Disposition = Missing
 			res.Reason = reason
 			results = append(results, res)
-			warnings = append(warnings, output.Notef("", "carry %s: %s", res.Dest, reason).
+			// A code means hydra REFUSED or the declared file is absent: the caller asked for a
+			// file and did not get it, so this is a warning and the envelope degrades to partial.
+			// No code means the one expected outcome — a bare entry on a fresh clone, which has
+			// no source worktree — and that stays a note, because replaying structure without
+			// secrets is the documented limit rather than a fault.
+			diag := output.Notef("", "carry %s: %s", res.Dest, reason)
+			if code != "" {
+				diag = output.Warnf(code, "carry %s: %s", res.Dest, reason)
+			}
+			warnings = append(warnings, diag.
 				WithSubject("worktree", filepath.Base(plan.WorktreePath)))
 			continue
 		}
@@ -157,35 +166,43 @@ func mode(e config.CarryEntry) string {
 // carried files never includes one that was already there.
 var errAlreadyPresent = errors.New("already present")
 
-// source resolves an entry to an absolute path, or returns why it could not.
-func source(e config.CarryEntry, plan Plan) (string, string) {
+// source resolves an entry to an absolute path, or returns why it could not and how severe that
+// is: a non-empty code marks an outcome the caller must act on, an empty one marks the single
+// expected case.
+func source(e config.CarryEntry, plan Plan) (src, reason, code string) {
 	if e.FromWorkspace() {
 		if plan.WorkspaceRoot == "" {
-			return "", "no workspace root to resolve `from:` against"
+			// No workspace to resolve against is the ENVIRONMENT lacking one, not a refusal and
+			// not a broken invariant: nothing was declared wrongly and nothing was denied, so it
+			// stays an uncoded note. TestApply_MissingWorkspaceRootIsANoteNotAFailure pins this.
+			return "", "no workspace root to resolve `from:` against", ""
 		}
-		src := filepath.Join(plan.WorkspaceRoot, filepath.FromSlash(e.From))
-		if !within(plan.WorkspaceRoot, src) {
-			return "", "source escapes the workspace; refused"
+		abs := filepath.Join(plan.WorkspaceRoot, filepath.FromSlash(e.From))
+		if !within(plan.WorkspaceRoot, abs) {
+			return "", "source escapes the workspace; refused", output.CodeCarryRefused
 		}
-		if _, err := os.Stat(src); err != nil {
-			return "", fmt.Sprintf("%s does not exist in the workspace", e.From)
+		if _, err := os.Stat(abs); err != nil {
+			// A `from:` entry names a fixed workspace path, so an absent file is NOT the
+			// fresh-clone case below: the workspace exists and the declared file is missing from
+			// it. The docs promise a warning naming the file so you know what to provide.
+			return "", fmt.Sprintf("%s does not exist in the workspace", e.From), output.CodeCarryRefused
 		}
-		return src, ""
+		return abs, "", ""
 	}
 	// Bare form: the same relative path in the source worktree. On a fresh clone there is no
 	// source worktree, which is the honest limit of replaying a manifest — structure, not
-	// secrets.
+	// secrets. That one is expected, so it carries no code.
 	if plan.SourceWorktree == "" {
-		return "", "no source worktree to copy from (a fresh workspace carries structure, not secrets)"
+		return "", "no source worktree to copy from (a fresh workspace carries structure, not secrets)", ""
 	}
-	src := filepath.Join(plan.SourceWorktree, filepath.FromSlash(e.Path))
-	if !within(plan.SourceWorktree, src) {
-		return "", "source escapes the source worktree; refused"
+	abs := filepath.Join(plan.SourceWorktree, filepath.FromSlash(e.Path))
+	if !within(plan.SourceWorktree, abs) {
+		return "", "source escapes the source worktree; refused", output.CodeCarryRefused
 	}
-	if _, err := os.Stat(src); err != nil {
-		return "", fmt.Sprintf("%s is not in %s", e.Path, filepath.Base(plan.SourceWorktree))
+	if _, err := os.Stat(abs); err != nil {
+		return "", fmt.Sprintf("%s is not in %s", e.Path, filepath.Base(plan.SourceWorktree)), ""
 	}
-	return src, ""
+	return abs, "", ""
 }
 
 // place writes one entry. dest is relative to root, so every operation is confined by the

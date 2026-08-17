@@ -47,6 +47,22 @@ is permanently bound to different content in the Go checksum database, so it can
   and no flag: the upgrade is not an event. A v1 hydra reading a v2 file still refuses with
   `state_version_unsupported`.
 
+### Fixed
+
+- **A refused `carry` reported a clean success.** Every reason `carry` could not source a file went
+  through one emission site as an uncoded NOTE, so a policy refusal was indistinguishable from the
+  one outcome that is expected. A `from:` resolving outside the workspace, or a declared workspace
+  file that was simply absent, left the file uncarried while the envelope said `outcome: success`
+  and the process exited 0 — with `code: ""`, so nothing could branch on it either. Both are now
+  `carry_refused` warnings, which degrade the envelope to `partial`. A bare entry on a fresh clone
+  keeps its uncoded note, because replaying structure without secrets is the documented limit rather
+  than a fault; coding that one would make every fresh restore report a fault for working as designed.
+
+- **`docs/configuration.md` overstated when the escape guard fires.** It claimed escapes are
+  "refused when the manifest is parsed", which cannot be true of a path that is legal on its face
+  and resolves outside — a `from:` naming a symlink that leaves the workspace. Both checkpoints are
+  now stated.
+
 ### Added
 
 - **`hydra topic link|unlink <id> <kind> <target>`** and **`hydra topic update <id>`**. Following

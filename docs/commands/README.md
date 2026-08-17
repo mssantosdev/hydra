@@ -332,6 +332,7 @@ Need cleanup?
 | `topic_not_closeable` | 1 | a child or a `depends_on` target is unfinished; `details.blocked_by` names every reason, and `--force` closes anyway |
 | `topic_cycle` | 1 | the relationship would close a loop in `part_of`/`depends_on`, or points a topic at itself; `details.path` names the loop, and `--force` records it anyway |
 | `link_unknown` | 1 | `topic unlink` named a relationship that is not recorded; `details.recorded` lists the ones that are |
+| `carry_refused` | 2 | a `carry` entry could not be satisfied because of what it POINTS AT: a source resolving outside the workspace, or a declared workspace file that is absent. It rides as a warning, so the envelope degrades to `partial` — a declared file that never arrived is not a clean success. A bare entry on a fresh clone is the one expected case and stays an uncoded note |
 | `state_version_unsupported` | 2 | `.hydra/state.yaml` was written by a newer hydra |
 | `branch_provider_failed` | 1 | a configured `branch_provider` failed or timed out |
 | `project_exists` | 1 | that project name is already registered |
