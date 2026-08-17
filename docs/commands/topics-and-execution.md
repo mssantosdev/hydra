@@ -12,6 +12,35 @@ A topic is a name for one piece of work, plus the record of which worktrees belo
 
 There is no `topic create`: a topic exists because work was put in it (`hydra start --topic` or `hydra topic attach`). It disappears when its last member is detached.
 
+### Topics relate as a graph
+
+Work does not form a tree, so relationships are **typed, directed edges** rather than one parent. Two kinds carry meaning to hydra:
+
+| kind | meaning | what `topic close` derives |
+|------|---------|----------------------------|
+| `part_of` | containment — this work integrates into that | every topic inside must be closed, **and** each of their member branches must have reached this topic's branch in the same repository, asked of git on every call |
+| `depends_on` | a peer that must land first | the target must be **closed**. Peers share no integration branch, so merged-ness is not checkable and is not pretended |
+
+Any other kind must be **dot-namespaced** (`acme.tested-by`). hydra stores and reports those and gates on nothing in them, so a plugin, a UI or a script can build its own semantics on the same primitive; bare words stay reserved for kinds hydra may define later. A topic may declare more than one `part_of` — each parent gates its own close independently.
+
+`meta` is free-form key/value data hydra never interprets, so an extension keeps its state on the topic that owns it instead of in a sidecar that drifts.
+
+Relationships are stored once, on the topic that declares them. `linked_from` in `topic show` is **derived** on read — a second copy of an edge would be a second thing that can be wrong. Deleting a topic sweeps every edge naming it in the same write, so the CLI cannot leave a dangling one; `hydra doctor` reports the hand-edited case as `topic_dangling_link` and `--fix` drops it.
+
+```bash
+hydra topic link feat-social part_of epic-login        # containment
+hydra topic link feat-social depends_on feat-tokens    # a peer that lands first
+hydra topic link feat-social acme.tested-by qa-suite   # yours; hydra never gates on it
+hydra topic unlink feat-social depends_on feat-tokens
+
+hydra topic update feat-social --meta acme.pbi=2072958 --unset-meta stale.key
+printf 'meta:\n  acme.pbi: "2072958"\n' | hydra topic update feat-social -   # JSON or YAML
+```
+
+A relationship that would close a loop is refused (`topic_cycle`, with the loop in `details.path`); `--force` records it anyway, and every walk carries a visited set so a recorded cycle costs mutual close-blocking rather than a hang. A self-edge is refused in **every** kind: mutuality can be meaningful, being one's own relatum cannot.
+
+A document REPLACES whole sections, which is what makes a checked-in file the source of truth rather than a patch with invented merge rules: `links:` or `meta:` present replaces that section, absent leaves it alone, explicitly empty clears it, and a document declaring neither converges at exit 0 saying so. Flags and a document cannot be combined.
+
 ---
 
 ## hydra topic
@@ -38,6 +67,10 @@ hydra topic <subcommand> [args] [flags]
 | `show` | `view` | Show one topic's members, joined to worktrees on disk |
 | `attach` | | Record that a worktree belongs to a topic |
 | `detach` | | Drop membership without touching the worktree |
+| `close` | | Declare the work finished, if its children and dependencies are in |
+| `link` | | Record a relationship to another topic |
+| `unlink` | | Remove a recorded relationship |
+| `update` | | Set metadata and relationships, from flags or a document |
 | `remove` | `rm` | Detach every member, optionally removing worktrees |
 
 ### Examples
@@ -56,6 +89,9 @@ hydra topic remove 2072958 --with-worktrees --yes
 |------|------|------|
 | `topic_unknown` | 1 | `show`, `detach`, or `remove` with an id that is not recorded; `details.known` lists valid ids |
 | `topic_conflict` | 1 | `attach` when the worktree already belongs to a different topic |
+| `topic_not_closeable` | 1 | `close` when a child or a `depends_on` target is unfinished; `details.blocked_by` names every reason at once, and `--force` closes anyway |
+| `topic_cycle` | 1 | `link` when the relationship would close a loop in `part_of`/`depends_on`, or points a topic at itself in any kind; `details.path` names the loop, and `--force` records it anyway |
+| `link_unknown` | 1 | `unlink` naming a relationship that is not recorded; `details.recorded` lists the ones that are |
 | `worktree_unknown` | 1 | `attach` or `detach` when the worktree handle does not resolve |
 | `worktree_name_conflict` | 1 | worktree handle matches more than one worktree |
 | `worktree_dirty` | 5 | `remove --with-worktrees` when a target has uncommitted changes and `--force` was not passed |

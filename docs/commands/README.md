@@ -10,7 +10,7 @@ Complete reference for all Hydra commands. Global flags on every command:
 
 | Flag | Description |
 |------|-------------|
-| `--output auto\|text\|json` | Output mode (`HYDRA_OUTPUT` env override; `auto` → JSON when stdout is not a TTY) |
+| `--output auto\|text\|json\|yaml` | Output mode (`HYDRA_OUTPUT` env override; `auto` → JSON when stdout is not a TTY). `yaml` carries the SAME envelope as `json`, on both the success and failure paths, and is never inferred |
 | `--project <name>` | Target a registered project by name |
 | `--config <path>` | Path to `.hydra/config.yaml` |
 | `--verbose` | Verbose logging |

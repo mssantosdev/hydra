@@ -117,6 +117,8 @@ hydra list
 ```bash
 hydra start <branch> --repos a,b --topic <id>
 hydra list --topic <id>
+hydra topic link <id> part_of|depends_on <target>   # relationships; both gate `topic close`
+hydra topic update <id> --meta k=v                  # your own metadata, never interpreted
 ```
 
 ## On-Disk Layout
@@ -285,7 +287,8 @@ Hydra can emit structured JSON for scripting and agents.
 | `--output auto` | Default. JSON when stdout is not a terminal; styled text in a TTY |
 | `--output json` | Always JSON on stdout |
 | `--output text` | Always human text |
-| `HYDRA_OUTPUT` | Environment override for the default mode (`auto`, `json`, or `text`) |
+| `--output yaml` | The same envelope as `json`, in YAML, on both the success and failure paths. Never inferred: a pipe gets JSON unless you ask |
+| `HYDRA_OUTPUT` | Environment override for the default mode (`auto`, `json`, `yaml`, or `text`) |
 | `NO_COLOR` | Disables color in text mode |
 
 Two commands are value emitters rather than reporters, and are exempt from the

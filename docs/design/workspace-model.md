@@ -205,7 +205,7 @@ hook already runs once per operation.
 | | why |
 |---|---|
 | ~~`depends_on`~~ **REVERSED — shipped** | The original refusal: "pure assertion with one consumer (making `topic close` refuse), about a fact the user typed. `parent:` has a git-observable consequence; this has none. It rots silently when its target is descoped, and the strongest story for it resolves in CI, not on a laptop." Reversed by the graph work on user direction, and each objection now has an answer rather than a rebuttal: the consumer exists (`topic close` gates on it, `dependency_open`), the rot is DETECTED (`doctor` reports `topic_dangling_link`, `--fix` drops it) and mostly prevented (deleting a topic sweeps the edges naming it in the same write), and the escape hatches are self-service (`unlink`, `close --force`). What remains true is that it has no git-observable consequence — which is why its gate is "is the target closed", never a merge check, and hydra does not pretend otherwise. |
-| sub-topics by naming convention | reintroduces the fuzzy destructive handle `topic.go` rejected. That refusal is about *name-inferred* hierarchy and does not block `parent:`. |
+| sub-topics by naming convention | reintroduces the fuzzy destructive handle `topic.go` rejected. That refusal is about *name-inferred* hierarchy and does not block a declared `part_of` edge. |
 | demoting groups | reversed — they partition the workspace so it stays comprehensible at scale. |
 | `run_once` on hooks | every hook already runs once per operation; there is no loop. |
 | a `baseline` or `defaults` noun | a property, not a sixth noun. |

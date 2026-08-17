@@ -301,8 +301,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         </div>
         <div>
           <h3><span lang="en">if you are an agent</span><span lang="pt-BR">se você é um agente</span></h3>
-          <p><span lang="en">Skip to <a href="#contract">the contract</a> for the envelope, the 23 error codes and
-            their exit statuses. Then run <code>hydra skill</code>.</span><span lang="pt-BR">Pule para <a href="#contract">o contrato</a> para o envelope, os 23 códigos de erro e
+          <p><span lang="en">Skip to <a href="#contract">the contract</a> for the envelope, the 32 error codes and
+            their exit statuses. Then run <code>hydra skill</code>.</span><span lang="pt-BR">Pule para <a href="#contract">o contrato</a> para o envelope, os 32 códigos de erro e
             seus status de saída. Depois execute <code>hydra skill</code>.</span></p>
         </div>
       </div>
@@ -658,6 +658,66 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <figcaption><span><span lang="en">plate 11 &middot; <span class="v">copied</span> &middot; safe to repeat: run it twice and the second is a no-op at exit 0</span><span lang="pt-BR">placa 11 &middot; <span class="v">copiado</span> &middot; seguro repetir: executar duas vezes e a segunda é no-op com saída 0</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
       </figure>
 
+      <p><span lang="en">Work does not form a tree, so topics relate as a <b>graph</b>. Two relationships
+        mean something to hydra: <code>part_of</code> is containment, and <code>depends_on</code> is a peer
+        that must land first. Any other kind must be dot-namespaced &mdash; <code>acme.tested-by</code> &mdash;
+        and hydra stores and reports those while gating on nothing in them, so your own tooling builds on the
+        same primitive. <code>meta</code> is free-form key/value data hydra never
+        interprets.</span><span lang="pt-BR">O trabalho não forma uma árvore, então tópicos se relacionam como
+        um <b>grafo</b>. Duas relações significam algo para o hydra: <code>part_of</code> é contenção, e
+        <code>depends_on</code> é um par que precisa entrar primeiro. Qualquer outro tipo precisa de namespace
+        com ponto &mdash; <code>acme.tested-by</code> &mdash; e o hydra armazena e reporta esses sem impor nada
+        sobre eles, então sua ferramenta constrói sobre a mesma primitiva. <code>meta</code> é dado
+        chave/valor livre que o hydra nunca interpreta.</span></p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra topic link PAY-4417 depends_on PAY-4418</b>
+<span class="p">$</span> <b>hydra topic update PAY-4417 --meta jira.epic=PAY-EPIC</b>
+<span class="p">$</span> <b>hydra topic show PAY-4417 --output text</b>
+
+<span class="hi">Topic PAY-4417</span>
+
+  billing-worker           <span class="bl">feat/split-tender</span>            <span class="ok">present</span>
+  checkout-api             <span class="bl">feat/split-tender</span>            <span class="ok">present</span>
+
+  <span class="hi">Links</span>
+    depends_on     &rarr; PAY-4418
+    part_of        &rarr; PAY-EPIC
+
+  <span class="hi">Meta</span>
+    jira.epic = PAY-EPIC
+</div>
+        <figcaption><span><span lang="en">plate 11b &middot; <span class="v">copied</span> &middot; the reverse direction, <code>linked_from</code>, is derived on read and never stored</span><span lang="pt-BR">placa 11b &middot; <span class="v">copiado</span> &middot; a direção inversa, <code>linked_from</code>, é derivada na leitura e nunca armazenada</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
+      </figure>
+
+      <p><span lang="en"><code>hydra topic close</code> is the gate, and it derives rather than trusts: a
+        <code>part_of</code> child must be closed <i>and</i> its branches must have reached this topic's branch
+        in the same repository, which git is asked on every call. A <code>depends_on</code> target only has to
+        be closed &mdash; peers share no integration branch, so merged-ness is not checkable and is not
+        pretended. Every refusal names its own override in <code>next[]</code>, and <code>--force</code>
+        closes anyway while still reporting what it overrode, at exit
+        0.</span><span lang="pt-BR"><code>hydra topic close</code> é o portão, e ele deriva em vez de confiar:
+        um filho <code>part_of</code> precisa estar fechado <i>e</i> seus branches precisam ter alcançado o
+        branch deste tópico no mesmo repositório, o que é perguntado ao git em cada chamada. Um alvo
+        <code>depends_on</code> só precisa estar fechado &mdash; pares não compartilham branch de integração,
+        então merge não é verificável e não é fingido. Toda recusa nomeia seu próprio override em
+        <code>next[]</code>, e <code>--force</code> fecha mesmo assim, ainda reportando o que sobrepôs, com
+        saída 0.</span></p>
+
+      <figure>
+        <div class="plate"><span class="p">$</span> <b>hydra topic close PAY-4417 --force --output text</b>
+
+warning: closed over blocker: dependency PAY-4418 is still open
+
+<span class="ok">✓</span> Topic closed
+  Topic:    PAY-4417
+  Children: 0
+
+  <span class="v">forced over 1 blocker(s)</span>
+</div>
+        <figcaption><span><span lang="en">plate 11c &middot; an override that still failed the invocation would have overridden nothing, so the blockers ride as notes and the exit stays 0</span><span lang="pt-BR">placa 11c &middot; um override que ainda falhasse a invocação não teria sobreposto nada, então os bloqueios viajam como notas e a saída continua 0</span></span><span class="x0"><span lang="en">exit 0</span><span lang="pt-BR">saída 0</span></span></figcaption>
+      </figure>
+
       <figure>
         <div class="plate"><span class="p">$</span> <b>hydra topic show PAY-4417 --output text</b>
 
@@ -779,8 +839,10 @@ feat/split-tender
         <span class="aside"><span lang="en">for scripts and agents</span><span lang="pt-BR">para scripts e agentes</span></span></div>
 
       <p class="wide"><span lang="en">Every command prints one JSON object. That object is the <strong>envelope</strong>.
+        <code>--output yaml</code> carries the same envelope in YAML, on success and failure alike.
         <code>--output json</code> is implied whenever stdout is not a terminal, so a pipe already
         gets JSON without asking.</span><span lang="pt-BR">Cada comando imprime um objeto JSON. Esse objeto é o <strong>envelope</strong>.
+        <code>--output yaml</code> carrega o mesmo envelope em YAML, tanto no sucesso quanto na falha.
         <code>--output json</code> é implícito quando stdout não é um terminal, então um pipe já
         recebe JSON sem pedir.</span></p>
 
@@ -830,7 +892,7 @@ feat/split-tender
         <figcaption><span><span lang="en">plate 18 &middot; <span class="v">copied</span> &middot; <code>next[]</code> is argv plus a reason, never auto-run</span><span lang="pt-BR">placa 18 &middot; <span class="v">copiado</span> &middot; <code>next[]</code> é argv mais um motivo, nunca auto-run</span></span><span class="xe"><span lang="en">exit 1</span><span lang="pt-BR">saída 1</span></span></figcaption>
       </figure>
 
-      <h3 class="h3"><span lang="en">23 codes, 8 exit statuses</span><span lang="pt-BR">23 códigos, 8 status de saída</span></h3>
+      <h3 class="h3"><span lang="en">32 codes, 8 exit statuses</span><span lang="pt-BR">32 códigos, 8 status de saída</span></h3>
 
       <div class="exits">
         <div><div class="e ok">0</div><div class="n"><span lang="en">success</span><span lang="pt-BR">sucesso</span></div>
