@@ -10,6 +10,35 @@ There is no `0.1.0`: that version string was published once in an earlier life o
 is permanently bound to different content in the Go checksum database, so it can never be installed.
 
 
+## [0.7.1] - 2026-08-17
+
+### Fixed
+
+- **The guide advertised "23 codes, 8 exit statuses"; the binary publishes 32.** Wrong in both
+  languages and in the agent shortcut, and stale for several releases —
+  `scripts/check-docs-claims.sh` verifies the command COUNT against the surface but never the error
+  code count, so nothing caught it. The exit-status figure was right.
+
+- **`docs/commands/README.md` advertised `--output auto|text|json`**, omitting the `yaml` mode that
+  shipped in 0.7.0.
+
+- **0.7.0's new commands were undocumented outside the agent skill.** `topic link`, `topic unlink`
+  and `topic update` appeared in `skills/hydra/SKILL.md` — which two tests force to stay current —
+  and nowhere else. `docs/commands/topics-and-execution.md`, whose whole subject is topics,
+  mentioned none of them and did not describe the relationship model at all. It now carries the
+  three verbs, a "Topics relate as a graph" section (`part_of` vs `depends_on` and what `close`
+  derives from each, dot-namespaced custom kinds, `meta`, why `linked_from` is derived, cycles and
+  their override, and document-replaces-wholesale), and the three error codes 0.7.0 added.
+
+- **`docs/guide.html` §06 now describes the graph**, with two plates transcribed from the installed
+  binary rather than written by hand: `topic show` rendering `Links`/`Meta`, and a forced close
+  reporting `forced over 1 blocker(s)` at exit 0. Both languages. A `--output yaml` sentence added
+  to the English envelope paragraph in 0.7.0 had never been translated; it is now.
+
+- **`docs/design/workspace-model.md`** still referred to `parent:` as a live field.
+
+Docs only — no behaviour change, and the 2026-08-17 0.7.0 release is unaffected at runtime.
+
 ## [0.7.0] - 2026-08-17
 
 ### Changed
@@ -1616,6 +1645,7 @@ Read this section before upgrading. Each entry says what to do.
   continuation bytes and a truncated multi-byte sequence through it behind a deadline, so the
   property is proven rather than assumed from a version bump.
 
+[0.7.1]: https://github.com/mssantosdev/hydra/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/mssantosdev/hydra/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/mssantosdev/hydra/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/mssantosdev/hydra/compare/v0.5.2...v0.6.0
